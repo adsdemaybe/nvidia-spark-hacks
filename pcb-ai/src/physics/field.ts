@@ -323,6 +323,45 @@ export function averageOver(
   return count ? sum / count : undefined
 }
 
+/**
+ * The largest value of `field` under a component's own footprint.
+ *
+ * The companion to `averageOver`, and the one a junction limit should be compared
+ * against. A chip is its own heat source, so the field under it is a peak with a skirt:
+ * hottest under the die, cooling towards the edges of the package outline. Averaging
+ * across the whole bounding box mixes the die temperature with that cooler edge copper
+ * and reports a number the silicon never sees.
+ *
+ * Measured on rover-motor-driver, U1 at 0.300 W: the average reads 67.1 °C and the
+ * hotspot 79.0 °C — 140 °C/W against 180 °C/W for the same package in the same solve.
+ * The margin against a 150 °C limit was being computed from the lower one.
+ *
+ * This is deliberately the whole-footprint max rather than the value at the centre
+ * point: a single cell is at the mercy of where the grid lines happen to fall, and the
+ * max over the outline is stable under a change of resolution.
+ */
+export function maxOver(
+  g: Grid,
+  field: Float64Array,
+  mask: Float64Array,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+): number | undefined {
+  const [i0, j0] = cellOf(g, cx - w / 2, cy - h / 2)
+  const [i1, j1] = cellOf(g, cx + w / 2, cy + h / 2)
+  let best: number | undefined
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const k = idx(g, i, j)
+      if (mask[k] <= 0) continue
+      if (best === undefined || field[k] > best) best = field[k]
+    }
+  }
+  return best
+}
+
 export interface HeatmapLabel {
   x: number
   y: number

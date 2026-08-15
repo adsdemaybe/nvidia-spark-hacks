@@ -13,6 +13,7 @@ import {
   solve,
   paintRect,
   averageOver,
+  maxOver,
   renderHeatmap,
   idx,
 } from "./field.ts"
@@ -29,6 +30,8 @@ export interface ComponentTemperature {
   component: string
   power_w: number
   temperature_c: number
+  /** Mean rise across the package outline — reported for contrast, not for the margin. */
+  mean_temperature_c?: number
   max_temp_c: number
   margin_c: number
 }
@@ -110,15 +113,21 @@ export function analyzeThermal(
   for (let k = 0; k < n; k++) peakRise = Math.max(peakRise, rise[k])
 
   const components: ComponentTemperature[] = placed.map(({ name, el, power }) => {
-    const local =
+    const mean =
       averageOver(g, rise, inDomain, el.center.x, el.center.y, el.width, el.height) ?? 0
+    // The margin is taken against the hotspot under the package, not the average across
+    // it. A component's own dissipation makes the field under it a peak with a skirt, so
+    // the mean mixes the die temperature with cooler copper at the package edges and
+    // flatters the margin — on U1 here by 12 °C, which is 30% of the rise.
+    const hot = maxOver(g, rise, inDomain, el.center.x, el.center.y, el.width, el.height) ?? mean
     const model = powerOf.get(name)
-    const temperature = op.ambient_c + local
+    const temperature = op.ambient_c + hot
     const max = model?.max_temp_c ?? 85
     return {
       component: name,
       power_w: power,
       temperature_c: temperature,
+      mean_temperature_c: op.ambient_c + mean,
       max_temp_c: max,
       margin_c: max - temperature,
     }

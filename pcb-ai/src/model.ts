@@ -57,6 +57,22 @@ export interface ModelSpec {
    * surfacing — the failure arrives so late it is hard to attribute.
    */
   maxRetries?: number
+  /**
+   * Cap on generated tokens.
+   *
+   * Without one the server's only stop is the 32k context limit, and at ~4 tok/s that is
+   * over two hours — so the *timeout* became the de-facto stop condition. That is the
+   * worst way to bound a generation: the request is cut mid-token, the SDK raises
+   * `TimeoutError`, and the whole iteration is discarded having written nothing. The
+   * ai-indicator run failed exactly this way, producing no output at all in 30 minutes.
+   *
+   * A cap turns that into a *finished* response with `finish_reason: "length"` — still a
+   * failure, but a legible one that arrives with its partial work and can be attributed
+   * to a stage. `extractCode()` already detects precisely this truncation. Sized so the
+   * worst case lands inside `timeoutMs`: 6000 tokens at 4 tok/s is 25 minutes against a
+   * 30-minute budget.
+   */
+  maxTokens?: number
 }
 
 /**
@@ -147,6 +163,22 @@ interface LocalEndpoint {
    * surfacing — the failure arrives so late it is hard to attribute.
    */
   maxRetries?: number
+  /**
+   * Cap on generated tokens.
+   *
+   * Without one the server's only stop is the 32k context limit, and at ~4 tok/s that is
+   * over two hours — so the *timeout* became the de-facto stop condition. That is the
+   * worst way to bound a generation: the request is cut mid-token, the SDK raises
+   * `TimeoutError`, and the whole iteration is discarded having written nothing. The
+   * ai-indicator run failed exactly this way, producing no output at all in 30 minutes.
+   *
+   * A cap turns that into a *finished* response with `finish_reason: "length"` — still a
+   * failure, but a legible one that arrives with its partial work and can be attributed
+   * to a stage. `extractCode()` already detects precisely this truncation. Sized so the
+   * worst case lands inside `timeoutMs`: 6000 tokens at 4 tok/s is 25 minutes against a
+   * 30-minute budget.
+   */
+  maxTokens?: number
 }
 
 const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
@@ -164,6 +196,7 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     vision: false,
     timeoutMs: 30 * 60_000,
     maxRetries: 1,
+    maxTokens: 6000,
   },
   // The GPU tier as of 2026-08-15: Qwen3.8-27B replaced Laguna S 2.1.
   //
@@ -184,6 +217,7 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     extraBody: { chat_template_kwargs: { enable_thinking: false } },
     timeoutMs: 30 * 60_000,
     maxRetries: 1,
+    maxTokens: 6000,
   },
   // The CPU tier. llama.cpp on the Spark's ARM cores, holding **zero GPU memory** — so
   // the design loop keeps running while Isaac Sim, gsplat or a fine-tune owns the GB10.
@@ -199,6 +233,7 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     vision: false,
     timeoutMs: 30 * 60_000,
     maxRetries: 1,
+    maxTokens: 6000,
   },
   // Generic escape hatch for any other locally-served OpenAI-compatible model
   // (a second vLLM, llama.cpp, TGI). `--model local:my-model --base-url ...`.
@@ -212,6 +247,7 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     vision: false,
     timeoutMs: 30 * 60_000,
     maxRetries: 1,
+    maxTokens: 6000,
   },
 }
 
@@ -304,6 +340,7 @@ export async function resolveModel(spec: ModelSpec): Promise<ChatLike> {
       configuration: { baseURL },
       ...(endpoint.timeoutMs ? { timeout: endpoint.timeoutMs } : {}),
       ...(endpoint.maxRetries !== undefined ? { maxRetries: endpoint.maxRetries } : {}),
+      ...(endpoint.maxTokens ? { maxTokens: endpoint.maxTokens } : {}),
       ...(Object.keys(extraBody).length ? { modelKwargs: extraBody } : {}),
       ...spec.kwargs,
     })

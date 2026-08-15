@@ -45,15 +45,28 @@ class DriverLimits:
 
 
 # Measured on rover-motor-driver rather than taken from a datasheet: tssop16 gives
-# 6.96 mm² of pad copper and no thermal pad, and the PCG solver puts that at ~190 °C/W.
-# The real DRV8833 is an HTSSOP-16 PowerPAD part and would be far better; this is what
-# the board as drawn actually achieves.
+# 6.96 mm² of pad copper and no thermal pad. The real DRV8833 is an HTSSOP-16 PowerPAD
+# part and would be far better; this is what the board as drawn actually achieves.
+#
+# 180 °C/W is reproducible rather than remembered:
+#
+#     npx tsx src/cli.ts --seed examples/rover-motor-driver.tsx --model stub \
+#         --operating-point runs/rover-motor-driver/iter-0/operating-point.json
+#
+# reports "U1: 79.0°C at 0.300W" against a 25 °C ambient — a 54.0 °C rise, so 180 °C/W.
+#
+# It was 190 here for a while, carried over from an earlier solve, and F1's own physics
+# stage read 140 °C/W at the same time. All three were the same package: the gap was that
+# the PCB solver averaged the temperature field across U1's whole outline while the
+# junction limit applies to the hotspot under the die. Fixing that put F1 at 180 and this
+# constant now quotes it. Two independent models agreeing to 5% is the point of having
+# both — they disagreed by 36% and that disagreement was the bug.
 DRV8833_AS_BUILT = DriverLimits(
     name="DRV8833 in tssop16, no thermal pad",
     continuous_current_a=1.5,
     peak_current_a=2.0,
     r_ds_on_ohm=0.72,
-    thermal_c_per_w=190.0,
+    thermal_c_per_w=180.0,
 )
 
 
