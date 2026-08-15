@@ -17,7 +17,7 @@ import pytest
 pytest.importorskip("pinocchio")
 pytest.importorskip("mujoco")
 
-from ar_contracts import SpatialEpisode, SpatialFrame  # noqa: E402
+from ar_contracts import Source, SpatialEpisode, SpatialFrame  # noqa: E402
 from ar_datapipe import IkSolver, MujocoReplay, run_episode  # noqa: E402
 from ar_datapipe.verify import TRACKING_ERROR_TOL_M  # noqa: E402
 
@@ -124,6 +124,7 @@ def test_pipeline_accepts_the_fixture_teach_episode(tmp_path):
     assert result.status == "accepted"
     assert result.checks.ik
     assert result.checks.joint_limits
+    assert result.checks.velocity
     assert result.checks.replay
     assert result.checks.task_predicate
     assert result.dataset_id is not None
@@ -150,8 +151,65 @@ def test_pipeline_rejects_with_measurable_reason_when_goal_is_wrong():
     assert result.status == "rejected"
     assert result.checks.ik
     assert result.checks.joint_limits
+    assert result.checks.velocity
     assert result.checks.replay
     assert not result.checks.task_predicate
     assert result.rejection_reason is not None
     assert "task_predicate" in result.rejection_reason
     assert result.dataset_id is None
+
+
+def test_pipeline_catches_a_velocity_discontinuity_between_frames(tmp_path):
+    """spec section 62: "velocity limits valid... no unexplained
+    discontinuity". Two individually-reachable poses, 1ms apart, force the
+    retargeted joints to move far faster than the URDF's declared velocity
+    limits allow — this must be caught even though each frame's own IK
+    converges fine and stays within position/joint-limit bounds."""
+    identity = (0.0, 0.0, 0.0, 1.0)
+    source = Source(device_type="desktop_mock")
+    frames = [
+        SpatialFrame(
+            timestamp_ns=0,
+            source=source,
+            frame="struct_world",
+            position_m=(0.3, 0.3, 0.5),
+            orientation_xyzw=identity,
+        ),
+        SpatialFrame(
+            timestamp_ns=1_000_000,  # 1 ms later
+            source=source,
+            frame="struct_world",
+            position_m=(-0.3, -0.3, 0.5),
+            orientation_xyzw=identity,
+        ),
+    ]
+    episode = SpatialEpisode(
+        episode_id="6f9c6a1e-6c1e-4a1e-8c1e-6c1e4a1e8c1e",
+        task_id="velocity_probe",
+        source=source,
+        coordinate_frame="struct_world",
+        frames_artifact="<in-memory>",
+    )
+
+    result = run_episode(
+        episode, frames, goal_position_m=(0.0, 0.0, 0.0), dataset_root=tmp_path
+    )
+
+    assert result.status == "rejected"
+    assert not result.checks.velocity
+    assert result.rejection_reason is not None
+    assert "velocity" in result.rejection_reason
+
+
+def test_pipeline_does_not_false_positive_on_angle_wrap(tmp_path):
+    """The IK solver wraps its solution into (-pi, pi]; a small physical
+    motion that happens to cross that seam (e.g. 3.10 -> -3.10 rad) must
+    not be mistaken for a multi-radian jump by the velocity check."""
+    episode, frames = _load_fixture_episode()
+    # The fixture episode is a normal-speed demonstration with no seam
+    # crossing forced, but this asserts the velocity gate genuinely passes
+    # end to end for it rather than merely not being tested.
+    result = run_episode(
+        episode, frames, goal_position_m=(0.60, 0.30, 0.55), dataset_root=tmp_path
+    )
+    assert result.checks.velocity

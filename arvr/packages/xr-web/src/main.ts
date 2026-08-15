@@ -1,11 +1,11 @@
 /**
- * STRUCT browser spatial client (STRUCT_2.md 28).
+ * STRUCT browser spatial client (ar-xr-plan.md 28).
  *
  * The same modes as the phone app -- PLACE, TEACH, REPLAY, FOLLOW, TWIN,
  * CORRECT -- driven by whatever spatial input is available. With a headset that
  * is a tracked controller; without one it is the mouse and WASD. Both go
  * through a SpatialAdapter, so the downstream path is identical either way,
- * which is the claim in STRUCT_2.md 5 made concrete.
+ * which is the claim in ar-xr-plan.md 5 made concrete.
  *
  * This is the optional client. It exists to prove hardware optionality and to
  * be developable without a Mac; the phone remains the primary demo device.

@@ -1,5 +1,5 @@
 /**
- * TwinStateProvider (STRUCT_2.md 25).
+ * TwinStateProvider (ar-xr-plan.md 25).
  *
  * The renderer must not care which of these is behind it. That is what lets the
  * Isaac bridge replace the fixture stream with no client rewrite -- and it is
@@ -7,7 +7,7 @@
  * inside the renderer.
  *
  * Whichever is connected, the UI has to say so. Presenting fixture state as
- * live Isaac state is explicitly forbidden (STRUCT_2.md 82).
+ * live Isaac state is explicitly forbidden (ar-xr-plan.md 82).
  */
 
 import type { TwinState } from "./contracts";

@@ -1,5 +1,5 @@
 /**
- * TypeScript mirror of the frozen STRUCT contracts (STRUCT_2.md 29-34).
+ * TypeScript mirror of the frozen STRUCT contracts (ar-xr-plan.md 29-34).
  *
  * These must stay identical to arxr-core's Pydantic models. They are duplicated
  * rather than generated because the two runtimes ship separately; the guard
@@ -107,7 +107,7 @@ export interface SceneManifest {
 }
 
 /**
- * Reject a payload whose schema_version we do not implement (STRUCT_2.md 60).
+ * Reject a payload whose schema_version we do not implement (ar-xr-plan.md 60).
  *
  * Silently rendering a newer contract is worse than failing: the client would
  * show a plausible but wrong world and nobody would know which fields it

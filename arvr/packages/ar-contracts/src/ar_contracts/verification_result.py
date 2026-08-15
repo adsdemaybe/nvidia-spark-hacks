@@ -6,7 +6,11 @@ provisional until reviewed alongside the retarget/verify pipeline (Phase 5-6):
   - fields mirror the `GET /xr/episodes/{id}` example (section 36):
     status, tracking_error_m, task_success, dataset_id.
   - `checks` mirrors the acceptance-gate checklist shown in the demo script
-    (section 75): IK, joint limits, replay, task predicate.
+    (section 75): IK, joint limits, replay, task predicate — plus
+    `velocity`, added separately per section 62's acceptance gate for
+    Retarget ("velocity limits valid... no unexplained discontinuity"),
+    which the demo script's checklist doesn't call out by name but the
+    gate section does.
   - rejected demonstrations must carry a machine-readable reason (spec
     section 63: "Rejected demos must return a measurable reason"; rule
     85.10: "preserve rejected episode reasons") — enforced structurally
@@ -30,6 +34,7 @@ VerificationStatus = Literal["accepted", "rejected"]
 class VerificationChecks(FrozenModel):
     ik: bool
     joint_limits: bool
+    velocity: bool
     replay: bool
     task_predicate: bool
 

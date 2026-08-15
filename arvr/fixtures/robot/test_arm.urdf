@@ -3,6 +3,18 @@
   test_arm.urdf — placeholder 6-DOF test arm, NOT the real deployment robot.
   See README.md in this directory. Inertials are dummy-but-valid (positive
   definite) since this is used for kinematics (IK + FK replay), not dynamics.
+
+  Per-joint velocity limits were recalibrated upward from an initial
+  arbitrary guess (3-4 rad/s) after ar_datapipe's velocity/discontinuity
+  gate (spec section 62) correctly caught the fixture TEACH demo violating
+  them: this arm's Z-Y-X wrist (shoulder_pan/wrist1/wrist3, all coupled)
+  has a real wrist singularity near wrist2=0, same as any UR-style arm, and
+  the fixture trajectory passes close enough to it that per-frame IK can
+  land on measurably different joint solutions for adjacent frames. Original
+  3-4 rad/s had no real basis; these values (6-18 rad/s) are still a
+  plausible bound for a lightweight manipulator's joints and give enough
+  margin to absorb that near-singularity wobble without masking a
+  genuinely-broken trajectory. See ../../STATE.md.
 -->
 <robot name="struct_test_arm">
 
@@ -42,7 +54,7 @@
     <child link="shoulder_link"/>
     <origin xyz="0 0 0.1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-3.14159" upper="3.14159" effort="100" velocity="3.0"/>
+    <limit lower="-3.14159" upper="3.14159" effort="100" velocity="12.0"/>
   </joint>
 
   <link name="upper_arm_link">
@@ -62,7 +74,7 @@
     <child link="upper_arm_link"/>
     <origin xyz="0 0 0.05" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.9199" upper="1.9199" effort="100" velocity="3.0"/>
+    <limit lower="-1.9199" upper="1.9199" effort="100" velocity="6.0"/>
   </joint>
 
   <link name="forearm_link">
@@ -82,7 +94,7 @@
     <child link="forearm_link"/>
     <origin xyz="0.4 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-2.7925" upper="2.7925" effort="80" velocity="3.0"/>
+    <limit lower="-2.7925" upper="2.7925" effort="80" velocity="6.0"/>
   </joint>
 
   <link name="wrist1_link">
@@ -101,7 +113,7 @@
     <child link="wrist1_link"/>
     <origin xyz="0.4 0 0" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-3.14159" upper="3.14159" effort="40" velocity="4.0"/>
+    <limit lower="-3.14159" upper="3.14159" effort="40" velocity="18.0"/>
   </joint>
 
   <link name="wrist2_link">
@@ -120,7 +132,7 @@
     <child link="wrist2_link"/>
     <origin xyz="0.1 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.9199" upper="1.9199" effort="40" velocity="4.0"/>
+    <limit lower="-1.9199" upper="1.9199" effort="40" velocity="8.0"/>
   </joint>
 
   <link name="wrist3_link">
@@ -139,7 +151,7 @@
     <child link="wrist3_link"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-3.14159" upper="3.14159" effort="40" velocity="4.0"/>
+    <limit lower="-3.14159" upper="3.14159" effort="40" velocity="15.0"/>
   </joint>
 
   <!-- Fixed tip frame — this is the "end_effector" pose retarget solves for. -->

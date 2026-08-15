@@ -9,8 +9,11 @@ Primary interface: smartphone AR. Working now: a browser client
 Simulation: MuJoCo locally (`packages/ar-sim/`), NVIDIA Isaac Sim / OpenUSD
 on the Spark eventually.
 
-See `../STRUCT_2.md` (or the pasted master plan) for the full spec this
-directory implements. Start here for current status: [`STATE.md`](STATE.md).
+See [`../ar-xr-plan.md`](../ar-xr-plan.md) for the full spec this directory
+implements — every "spec section N" comment in this codebase cites that
+file, not `STRUCT_2.md` (the whole-project master plan, a different,
+broader document covering all 5 feats). Start here for current status:
+[`STATE.md`](STATE.md).
 
 ## Layout
 

@@ -8,7 +8,12 @@
       0.2,
       0.5
     ],
-    "orientation_xyzw": null
+    "orientation_xyzw": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
   },
   "corrected_target": {
     "position_m": [
@@ -16,7 +21,12 @@
       0.25,
       0.58
     ],
-    "orientation_xyzw": null
+    "orientation_xyzw": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
   },
   "reason": "collision_avoidance"
 }

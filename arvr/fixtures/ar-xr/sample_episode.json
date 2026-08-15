@@ -3,7 +3,8 @@
   "episode_id": "5b1f7b0a-6b8b-4a3a-9c1a-7a2f6b0c9d1e",
   "task_id": "cube_to_bin",
   "source": {
-    "device_type": "phone"
+    "device_type": "phone",
+    "input_type": null
   },
   "coordinate_frame": "struct_world",
   "frames_artifact": "sample_episode.jsonl",

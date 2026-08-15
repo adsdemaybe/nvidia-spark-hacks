@@ -1,5 +1,5 @@
 /**
- * TEACH-mode episode recorder (STRUCT_2.md 17-19).
+ * TEACH-mode episode recorder (ar-xr-plan.md 17-19).
  *
  * Frames are buffered locally and only handed over as a finished artifact. That
  * ordering is deliberate: "If Wi-Fi disappears: demo must survive." A recorder

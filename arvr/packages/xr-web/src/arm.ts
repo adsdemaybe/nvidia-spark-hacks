@@ -4,7 +4,7 @@
  * Without this, TWIN renders a static robot GLB and prints a joint angle as
  * text -- which is a number changing next to a model that never moves, and
  * proves nothing about whether the client is really following the simulation
- * (STRUCT_2.md 65 requires joint state to visibly update the robot).
+ * (ar-xr-plan.md 65 requires joint state to visibly update the robot).
  *
  * The kinematics mirror arxr-sim/scene_mjcf.py exactly. It is a second
  * description of one robot, which is a real risk; the guard is that both are

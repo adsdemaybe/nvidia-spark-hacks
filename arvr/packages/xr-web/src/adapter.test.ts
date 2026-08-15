@@ -79,7 +79,7 @@ describe("XRControllerAdapter", () => {
 
 describe("DesktopMockAdapter", () => {
   it("produces the same contract as a real device", () => {
-    // The whole point of the adapter split (STRUCT_2.md 5): a developer with no
+    // The whole point of the adapter split (ar-xr-plan.md 5): a developer with no
     // headset must exercise exactly the downstream path a headset would.
     const adapter = new DesktopMockAdapter();
 

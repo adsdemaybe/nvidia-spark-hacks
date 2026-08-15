@@ -1,9 +1,9 @@
 /**
- * Builds the three.js scene from a SceneManifest (STRUCT_2.md 34, 41).
+ * Builds the three.js scene from a SceneManifest (ar-xr-plan.md 34, 41).
  *
  * USD stays the simulation's authoritative representation; this client only
  * ever loads the GLB visualisation half. The fixture pack stands in until F3
- * hands over real room assets (STRUCT_2.md 84).
+ * hands over real room assets (ar-xr-plan.md 84).
  *
  * Everything rendered lives in WebXR's Y-up space, so STRUCT poses are
  * converted on the way in. The conversion lives in adapter.ts and nowhere else.
@@ -23,7 +23,7 @@ export const FIXTURES_BASE = "/ar-xr/";
  * The table spans x in [-0.2, 1.0] and y in [-0.4, 0.4], so the bin has to
  * clear that footprint and the robot has to stand off the near edge. These
  * agree with MockTwinSource's object positions on the Python side; SceneManifest
- * carries no placement field (STRUCT_2.md 34), so until it does, the two live
+ * carries no placement field (ar-xr-plan.md 34), so until it does, the two live
  * side by side and have to be changed together.
  */
 export const LAYOUT: Record<string, Vec3> = {
@@ -132,7 +132,7 @@ export function buildEnvironment(scene: THREE.Scene): { grid: THREE.GridHelper }
 
 /**
  * A dashed line from the human to where the robot should stand. FOLLOW's
- * entire visible output (STRUCT_2.md 23).
+ * entire visible output (ar-xr-plan.md 23).
  */
 export function makeTargetLine(color = 0x00d4aa): THREE.Line {
   const geometry = new THREE.BufferGeometry().setFromPoints([
@@ -150,7 +150,7 @@ export function updateLine(line: THREE.Line, from: Vec3, to: Vec3): void {
 }
 
 /**
- * The trail a TEACH demonstration leaves behind (STRUCT_2.md 18).
+ * The trail a TEACH demonstration leaves behind (ar-xr-plan.md 18).
  *
  * The buffer is allocated once at full size and revealed with setDrawRange.
  * Calling setFromPoints on a growing array instead makes three.js reuse a

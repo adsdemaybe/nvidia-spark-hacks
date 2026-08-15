@@ -56,7 +56,7 @@ describe("EpisodeRecorder", () => {
 
   it("rejects a frame that arrives out of order", () => {
     // A recorder that silently accepts these produces training data whose
-    // trajectory jumps backwards (STRUCT_2.md 61, 62).
+    // trajectory jumps backwards (ar-xr-plan.md 61, 62).
     const recorder = new EpisodeRecorder({ taskId: "cube_to_bin" });
     recorder.start(0);
     record(recorder, 2, 5_000);
@@ -72,7 +72,7 @@ describe("EpisodeRecorder", () => {
   });
 
   it("keeps the frames locally so a demo survives losing the network", () => {
-    // STRUCT_2.md 19: "If Wi-Fi disappears: demo must survive."
+    // ar-xr-plan.md 19: "If Wi-Fi disappears: demo must survive."
     const recorder = new EpisodeRecorder({ taskId: "cube_to_bin" });
     recorder.start(0);
     record(recorder, 10);

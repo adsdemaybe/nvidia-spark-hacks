@@ -1,6 +1,6 @@
 /**
  * Uploads a finished TEACH recording through ar_backend's Episodes API
- * (STRUCT_2.md 36, section 42's TEACH pipeline) and reports the verdict.
+ * (ar-xr-plan.md 36, section 42's TEACH pipeline) and reports the verdict.
  *
  * The recorder (recorder.ts) buffers locally and hands over a complete
  * SpatialEpisode + frame list only once FINISH is pressed — this module is

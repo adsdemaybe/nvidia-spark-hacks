@@ -1,7 +1,7 @@
 /**
- * Loading a recorded demonstration for REPLAY (STRUCT_2.md 20, 43).
+ * Loading a recorded demonstration for REPLAY (ar-xr-plan.md 20, 43).
  *
- * The pipeline's artifact format is Parquet (STRUCT_2.md 35); the fixture pack
+ * The pipeline's artifact format is Parquet (ar-xr-plan.md 35); the fixture pack
  * publishes the identical frames as JSONL because a browser cannot read Parquet
  * without a large decoder. A Python test asserts the two encodings agree, so
  * what REPLAY shows here is the same recording the backend retargets.

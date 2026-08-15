@@ -31,6 +31,34 @@ ROBOT_TYPE = "struct_test_arm"  # matches fixtures/robot/test_arm.urdf <robot na
 DEFAULT_GOAL_TOLERANCE_M = 0.05
 
 
+def _velocity_ok(
+    frames: list[SpatialFrame],
+    retargets: list[RetargetResult],
+    velocity_limits: np.ndarray,
+) -> bool:
+    """spec section 62: "velocity limits valid... no unexplained
+    discontinuity". A joint solution that jumps between two consecutive
+    demo frames faster than the robot's declared velocity limit allows is
+    exactly that discontinuity — whether it came from a genuinely fast
+    human motion or an IK solver landing on a different local solution,
+    the robot cannot reproduce it, so it must not pass silently."""
+    for prev, curr, prev_r, curr_r in zip(
+        frames, frames[1:], retargets, retargets[1:], strict=False
+    ):
+        dt = (curr.timestamp_ns - prev.timestamp_ns) / 1e9
+        if dt <= 0:
+            continue
+        raw_delta = np.array(curr_r.joint_positions) - np.array(prev_r.joint_positions)
+        # retarget.py wraps each solution into (-pi, pi]; a legitimate small
+        # motion that crosses that boundary (e.g. 3.10 -> -3.10) would
+        # otherwise look like a ~6.2 rad jump. Wrap the delta itself so
+        # crossing the seam isn't mistaken for a discontinuity.
+        wrapped_delta = np.abs((raw_delta + np.pi) % (2 * np.pi) - np.pi)
+        if np.any(wrapped_delta / dt > velocity_limits):
+            return False
+    return True
+
+
 def _frame_index_of_last_event(
     episode: SpatialEpisode, frames: list[SpatialFrame], event_type: str
 ) -> int:
@@ -83,6 +111,7 @@ def run_episode(
 
     ik_ok = all(r.converged for r in retargets)
     limits_ok = all(r.within_limits for r in retargets)
+    velocity_ok = _velocity_ok(frames, retargets, solver.velocity_limits)
     replay_ok = all(r.within_tolerance for r in replays)
     max_tracking_error = max((r.tracking_error_m for r in replays), default=0.0)
 
@@ -94,10 +123,14 @@ def run_episode(
     task_ok = task_error <= goal_tolerance_m
 
     checks = VerificationChecks(
-        ik=ik_ok, joint_limits=limits_ok, replay=replay_ok, task_predicate=task_ok
+        ik=ik_ok,
+        joint_limits=limits_ok,
+        velocity=velocity_ok,
+        replay=replay_ok,
+        task_predicate=task_ok,
     )
 
-    if ik_ok and limits_ok and replay_ok and task_ok:
+    if ik_ok and limits_ok and velocity_ok and replay_ok and task_ok:
         timestamps_s = [(f.timestamp_ns - frames[0].timestamp_ns) / 1e9 for f in frames]
         if len(frames) > 1:
             avg_dt = (timestamps_s[-1] - timestamps_s[0]) / (len(frames) - 1)
@@ -113,7 +146,7 @@ def run_episode(
             fps=fps,
             timestamps_s=timestamps_s,
             actions=[r.joint_positions for r in retargets],
-            gripper=[f.gripper if f.gripper is not None else 0.0 for f in frames],
+            gripper=[f.gripper for f in frames],
         )
         return VerificationResult(
             episode_id=episode.episode_id,
@@ -129,6 +162,7 @@ def run_episode(
         for name, ok in (
             ("ik", ik_ok),
             ("joint_limits", limits_ok),
+            ("velocity", velocity_ok),
             ("replay", replay_ok),
             (f"task_predicate (error {task_error:.4f}m > tol {goal_tolerance_m}m)", task_ok),
         )

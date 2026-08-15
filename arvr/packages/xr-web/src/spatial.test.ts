@@ -49,7 +49,7 @@ describe("followTarget", () => {
   it("agrees with the Python implementation on every fixture frame", () => {
     // This is the contract doing its job. The phone, this browser client and
     // the backend all have to land on the same numbers, or "same pipeline
-    // regardless of device" (STRUCT_2.md 5) is a slogan rather than a fact.
+    // regardless of device" (ar-xr-plan.md 5) is a slogan rather than a fact.
     const lines = readFileSync(`${FIXTURES}sample_follow.jsonl`, "utf8")
       .split("\n")
       .filter((l) => l.trim());

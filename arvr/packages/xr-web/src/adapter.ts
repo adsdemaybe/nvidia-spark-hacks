@@ -1,5 +1,5 @@
 /**
- * Spatial adapters (STRUCT_2.md 5, 28).
+ * Spatial adapters (ar-xr-plan.md 5, 28).
  *
  * This file is the entire reason a headset does not create a new robot backend.
  * A tracked controller, a hand, or a mouse all land in the same SpatialFrame,

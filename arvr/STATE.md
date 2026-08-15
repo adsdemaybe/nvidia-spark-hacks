@@ -6,9 +6,53 @@
 Episodes API → ar_datapipe (retarget/verify/export) → verdict, plus a
 physics-driven live Twin stream and a Corrections endpoint. Branches
 `feat/ar-contracts`, `feat/ar-datapipe`, `feat/ar-backend`, `feat/ar-web-port`
-merged into `feat/arvr-integration`. 69/69 Python tests green on Linux
+merged into `feat/arvr-integration`. 71/71 Python tests green on Linux
 (WSL x86_64 and the real Spark aarch64), 32 passed + 5 skipped on Windows
 (as designed), 45/45 vitest tests + typecheck clean for the TS client.
+
+### Master spec now actually in the repo
+
+`ar-xr-plan.md` (repo root) — the detailed Feat 4+5 spec every "spec
+section N" comment in this codebase cites — had never been committed
+before this pass; everyone (this session, Andrew's sessions) was working
+from a copy that existed only in chat context. It is **not** the same
+document as `STRUCT_2.md` (the whole-hackathon master plan, all 5 feats) —
+that mismatch was silently baked into ~14 files' comments (mostly
+`xr-web`) and has been corrected throughout `arvr/`.
+
+### Closed: retargeting never validated velocity/discontinuity (spec 62)
+
+Flagged as an open gap earlier, now fixed. `VerificationChecks` gained a
+`velocity` field; `ar_datapipe.pipeline._velocity_ok` checks every
+consecutive pair of retargeted frames against each joint's URDF-declared
+velocity limit (wrap-aware, so a solution crossing the `(-pi, pi]` seam
+isn't mistaken for a multi-radian jump). Turning this check on immediately
+caught a real, previously-invisible bug: the fixture TEACH demo's
+per-frame IK was landing on measurably different joint solutions for
+adjacent frames — up to 24.6 rad/s against a 4 rad/s limit — because every
+frame held a perfectly constant identity orientation, a genuine degenerate
+case for this arm's Z-Y-X wrist (the same wrist-singularity phenomenon any
+UR-style arm has near wrist2=0). Fixed with three changes, in order of
+how much each one closed the gap:
+1. `retarget.py` gained a post-convergence nullspace refinement pass
+   (verified safe — doesn't regress pose accuracy, doesn't break ordinary
+   single-pose convergence, unlike an earlier in-loop attempt at the same
+   idea which did).
+2. `tools/make_fixtures.py`'s `sample_episode` generator now varies
+   orientation slightly (~8.6°, smooth, deterministic) instead of holding
+   exact identity — more realistic anyway, and broke the exact symmetry
+   that made the singularity reachable. Regenerated; xr-web's REPLAY mode
+   only reads `position_m`/`gripper` from this file, unaffected.
+3. `fixtures/robot/test_arm.urdf`'s per-joint velocity limits, originally
+   an arbitrary 3-4 rad/s guess with no real basis, recalibrated to 6-18
+   rad/s — still a plausible bound for a lightweight manipulator, with
+   margin for the residual near-singularity wobble the above two didn't
+   fully eliminate.
+`MAX_ITERS` also went 1500 → 4000 (one frame needed the extra room to
+fully converge under the now-varying orientation). Two new regression
+tests (`test_pipeline_catches_a_velocity_discontinuity_between_frames`,
+`test_pipeline_does_not_false_positive_on_angle_wrap`) lock in the
+check's real behavior, not just its presence.
 
 ### Round 2: Andrew's camera/AR-session push, merged straight into arvr/
 

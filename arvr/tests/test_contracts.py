@@ -272,6 +272,7 @@ def test_rejected_verification_requires_reason():
                 "checks": {
                     "ik": True,
                     "joint_limits": True,
+                    "velocity": True,
                     "replay": False,
                     "task_predicate": False,
                 },
@@ -288,6 +289,7 @@ def test_accepted_verification_requires_dataset_id():
                 "checks": {
                     "ik": True,
                     "joint_limits": True,
+                    "velocity": True,
                     "replay": True,
                     "task_predicate": True,
                 },
@@ -303,6 +305,7 @@ def test_rejected_verification_with_reason_is_valid():
             "checks": {
                 "ik": True,
                 "joint_limits": True,
+                "velocity": True,
                 "replay": False,
                 "task_predicate": False,
             },

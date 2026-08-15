@@ -4,10 +4,10 @@
     uv run python tools/make_fixtures.py
 
 Regenerates everything under fixtures/ar-xr/ except the GLB binary assets
-(table.glb, cube.glb, bin.glb, robot.glb), which are not fabricated here —
-see fixtures/ar-xr/ASSETS_TODO.md. Nobody should wait on another feat to
-start developing (spec section 57); this script is what makes that true for
-the schema/motion side of the fixture pack.
+(table.glb, cube.glb, bin.glb, robot.glb, generated separately by
+tools/make_assets.py). Nobody should wait on another feat to start
+developing (spec section 57); this script is what makes that true for the
+schema/motion side of the fixture pack.
 """
 
 from __future__ import annotations
@@ -146,7 +146,6 @@ def make_sample_episode(hz: float = 30.0) -> None:
     frames = []
     events = []
     t = 0.0
-    orientation = (0.0, 0.0, 0.0, 1.0)
     for idx, (duration, start, end, gripper) in enumerate(waypoints):
         n = max(2, int(duration * hz))
         for k in range(n):
@@ -155,6 +154,18 @@ def make_sample_episode(hz: float = 30.0) -> None:
                 round(s + (e - s) * frac + rng.uniform(-0.0015, 0.0015), 6)
                 for s, e in zip(start, end, strict=True)
             )
+            # A small, smoothly-varying yaw rather than a perfectly constant
+            # identity orientation. A human hand never holds an exactly rigid
+            # orientation for 3.5s anyway, and constant identity turned out
+            # to be a genuine degenerate case for this fixture's 3-axis
+            # wrist (Z/Y/X): retargeting it hit a discrete IK branch switch
+            # (verified: not a continuous nullspace, one solve's Jacobian
+            # was full rank) that silently produced a multi-radian joint
+            # jump between two adjacent, individually-valid frames — caught
+            # by ar_datapipe's velocity/discontinuity gate (spec section
+            # 62), traced here. ~8.6 degrees amplitude, deterministic.
+            yaw = 0.15 * math.sin(2 * math.pi * t / 3.5)
+            orientation = (0.0, 0.0, round(math.sin(yaw / 2), 6), round(math.cos(yaw / 2), 6))
             ts = BASE_TS_NS + int(t * NS_PER_S)
             frame = SpatialFrame(
                 timestamp_ns=ts,

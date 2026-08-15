@@ -1,5 +1,5 @@
 /**
- * The spatial math, mirrored from arxr-core (STRUCT_2.md 13B, 22).
+ * The spatial math, mirrored from arxr-core (ar-xr-plan.md 13B, 22).
  *
  * Kept dependency-free and identical in behaviour to the Python side. If these
  * two ever disagree, "any spatial input -> the same robot pipeline" stops being
