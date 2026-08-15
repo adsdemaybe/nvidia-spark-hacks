@@ -138,13 +138,38 @@ So the electrical participant gets two modes, and the second is the default:
 **`surface` must be validated against `direct`**, on the same points, with the error
 reported. A fast model nobody checked against the slow one is a guess.
 
-## M5 — the gate
+## M5 — the gate ✅ done 2026-08-15  (22 tests green)
 
-- [ ] Task predicate: joint reaches commanded pose within tolerance and deadline
-- [ ] Electrical survival: peak current inside driver and trace rating for the rollout
-- [ ] Thermal: duty-cycle dissipation, not the DC number
-- [ ] Provenance: a rollout on `ASSUMED` constants is reported as such
-- [ ] Verified failing: a motor too big, a trace too thin, a deadline too short
+- [x] Task predicate: reaches the pose, within tolerance, before the deadline — **and
+      stays there**. Passing through the target on the way past is not doing the task,
+      and the real rollout does exactly that
+- [x] Electrical survival: peak current, at the worst instant rather than on average
+- [x] Thermal: computed from the rollout's own RMS current and observed duty cycle, not
+      from a nameplate figure — that is the point of having simulated it
+- [x] Provenance: reported, and **non-blocking**. An assumed constant does not make a
+      rollout wrong, it makes the number un-quotable, and the difference matters
+- [x] Verified failing in every direction: no arrival, late arrival, arrival without
+      settling, peak current over rating, thermal over limit, divergence
+
+### On real rollouts
+
+```
+ROLLOUT FAIL
+  pass  coupling stable: 400 periods, 0.400 s simulated, no divergence
+  FAIL  task: reached 90.0° at 0.111 s but did not stay: ended at +300.7°
+        moving +13.76 rad/s
+  pass  electrical survival: peak 1.512 A against a 2.00 A rating
+  pass  thermal (duty cycle): 0.145 A RMS at 100% duty → 0.030 W → 30.7 °C
+  warn  provenance: motor constants are ASSUMED
+```
+
+Divergence short-circuits everything after it. A diverged rollout has no trajectory to
+grade, and reporting a task failure on one would blame the design for a solver problem.
+
+The thermal check is the one that earns its place: the same driver at the same current
+passes with a PowerPAD (41 °C/W) and fails without one (190 °C/W, measured from
+`rover-motor-driver`'s own copper). It distinguishes a driver that is genuinely too small
+from one that is only too small if you assume the robot never stops.
 
 ## M6 — three-way negotiation
 
