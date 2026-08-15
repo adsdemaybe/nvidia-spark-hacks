@@ -22,7 +22,8 @@ One rule runs through all of it:
 | [`ar-vr/`](ar-vr/) | F5: WebXR / hand-tracking teleoperation against the SO-101. |
 | [`setup/`](setup/) | Model serving, OpenShell, and box configuration. |
 
-Plans: [`master-plan.md`](master-plan.md) · [`text-to-pcb-plan.md`](text-to-pcb-plan.md) ·
+Plans: [`master-example.md`](master-example.md) — the end-to-end demo, from one prompt to a robot hand picking up a cup in VR ·
+[`master-plan.md`](master-plan.md) · [`text-to-pcb-plan.md`](text-to-pcb-plan.md) ·
 [`electromechanical-cosim-plan.md`](electromechanical-cosim-plan.md)
 
 ## The whole stack, end to end
@@ -175,6 +176,15 @@ compound.
 
 **Footprint decides whether a model fits; bytes-per-token decides whether it is usable.**
 Only the second was ever the binding constraint, and it took two model choices to notice.
+
+**The design loop is local-only, on purpose.** `engine.agent_loop` has one transport —
+the OpenAI-compatible server at `:8100` — and no hosted-API provider. Both previous ones
+were removed rather than left as fallbacks: `laguna` because a 93 GB floor is not a
+backup but a model that does not fit, and `claude` because Claude writes this codebase
+*in a chat session*, where a human reads the diff before it lands. A design loop runs
+thousands of iterations; putting a billed outbound call inside it would break local-first
+for the call that least needs to leave the box. Passing either name now raises a named
+error instead of being quietly accepted.
 
 ## Iterating
 
