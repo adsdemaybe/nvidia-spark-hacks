@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { REACH_M, SHOULDER_HEIGHT, reachStatus } from "./arm";
 import type { Vec3 } from "./contracts";
 
-// Matches ROBOT_BASE in ar-sim/scene_mjcf.py.
+// Matches ROBOT_BASE in arxr-sim/scene_mjcf.py.
 const BASE: Vec3 = [0.15, -0.7, 0];
 const CUBE: Vec3 = [0.3, 0.1, 0.78];
 // The release point above the bin, not the bin floor -- the arm lets go at
-// RELEASE_HEIGHT and gravity does the rest (ar-sim/director.py).
+// RELEASE_HEIGHT and gravity does the rest (arxr-sim/director.py).
 const BIN_RELEASE: Vec3 = [0.6, -0.7, 0.34];
 
 describe("reachStatus", () => {

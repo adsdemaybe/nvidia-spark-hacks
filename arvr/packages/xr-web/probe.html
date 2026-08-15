@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STRUCT — WebXR capability probe</title>
+    <style>
+      body { margin: 0; padding: 24px; background: #14171c; color: #e8eaed;
+        font: 15px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      h1 { font-size: 18px; letter-spacing: .06em; margin: 0 0 4px; }
+      p.sub { color: #9aa0a6; margin: 0 0 20px; }
+      table { border-collapse: collapse; margin-bottom: 20px; width: 100%; max-width: 640px; }
+      td { padding: 7px 12px; border-bottom: 1px solid #2a2f3a; vertical-align: top; }
+      td:first-child { color: #9aa0a6; width: 42%; }
+      .yes { color: #98c379; } .no { color: #e06c75; } .warn { color: #ffb347; }
+      pre { background: #1d2129; border: 1px solid #2a2f3a; border-radius: 6px;
+        padding: 12px; white-space: pre-wrap; word-break: break-word;
+        max-width: 640px; color: #9aa0a6; }
+      button { background: #00d4aa; color: #14171c; border: 0; padding: 12px 22px;
+        border-radius: 6px; font: inherit; font-weight: 700; cursor: pointer;
+        margin-right: 8px; margin-bottom: 8px; }
+      button[disabled] { opacity: .35; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <h1>STRUCT — WebXR capability probe</h1>
+    <p class="sub">Load this on the headset's browser. It reports what the runtime
+      actually supports, so nobody has to guess.</p>
+
+    <table id="report"><tbody><tr><td>status</td><td>probing…</td></tr></tbody></table>
+
+    <button id="try-ar">Try immersive-ar</button>
+    <button id="try-vr">Try immersive-vr</button>
+
+    <pre id="log">session log will appear here</pre>
+
+    <script type="module" src="/src/probe.ts"></script>
+  </body>
+</html>

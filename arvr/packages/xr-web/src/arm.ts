@@ -6,7 +6,7 @@
  * proves nothing about whether the client is really following the simulation
  * (STRUCT_2.md 65 requires joint state to visibly update the robot).
  *
- * The kinematics mirror ar-sim/scene_mjcf.py exactly. It is a second
+ * The kinematics mirror arxr-sim/scene_mjcf.py exactly. It is a second
  * description of one robot, which is a real risk; the guard is that both are
  * built from the same published link lengths and the reach envelope drawn from
  * them is what PLACE tests against.
@@ -16,7 +16,7 @@ import * as THREE from "three";
 import { structToWebxr } from "./adapter";
 import type { Vec3 } from "./contracts";
 
-/** Mirrors LINK in ar-sim/scene_mjcf.py: column, upper, forearm, wrist. */
+/** Mirrors LINK in arxr-sim/scene_mjcf.py: column, upper, forearm, wrist. */
 export const LINK = { column: 0.95, upper: 0.45, forearm: 0.36, wrist: 0.16 } as const;
 export const BASE_HEIGHT = 0.1;
 

@@ -1,7 +1,7 @@
 /**
  * TypeScript mirror of the frozen STRUCT contracts (STRUCT_2.md 29-34).
  *
- * These must stay identical to ar_contracts (Python)'s Pydantic models. They are duplicated
+ * These must stay identical to arxr-core's Pydantic models. They are duplicated
  * rather than generated because the two runtimes ship separately; the guard
  * against drift is that the tests here validate the same fixture bytes the
  * Python tests do, and spatial.test.ts checks the two produce the same numbers.

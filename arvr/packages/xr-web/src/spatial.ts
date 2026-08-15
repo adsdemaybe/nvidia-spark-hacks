@@ -1,5 +1,5 @@
 /**
- * The spatial math, mirrored from ar_contracts (Python) (STRUCT_2.md 13B, 22).
+ * The spatial math, mirrored from arxr-core (STRUCT_2.md 13B, 22).
  *
  * Kept dependency-free and identical in behaviour to the Python side. If these
  * two ever disagree, "any spatial input -> the same robot pipeline" stops being
@@ -9,7 +9,7 @@
 import type { Pose, Quat, Vec3 } from "./contracts";
 import { IDENTITY_QUATERNION } from "./contracts";
 
-/** Matches ar_contracts.common.QUAT_NORM_TOLERANCE. */
+/** Matches arxr.core.schemas.pose.QUAT_NORM_TOLERANCE. */
 export const QUAT_NORM_TOLERANCE = 1e-2;
 
 /** Forward is +X in the canonical Z-up right-handed frame. */

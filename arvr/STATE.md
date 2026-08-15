@@ -5,11 +5,41 @@
 **The full loop is wired and live-tested end-to-end**: xr-web client →
 Episodes API → ar_datapipe (retarget/verify/export) → verdict, plus a
 physics-driven live Twin stream and a Corrections endpoint. Branches
-`feat/ar-contracts`, `feat/ar-datapipe`, `feat/ar-backend` merged into
-`feat/arvr-integration`; `feat/ar-web-port` new, pending merge — 69/69
-Python tests green on Linux (WSL x86_64 verified, Spark aarch64 pending
-this branch's turn), 32 passed + 5 skipped on Windows (as designed), 30/30
-vitest tests + typecheck clean for the TS client.
+`feat/ar-contracts`, `feat/ar-datapipe`, `feat/ar-backend`, `feat/ar-web-port`
+merged into `feat/arvr-integration`. 69/69 Python tests green on Linux
+(WSL x86_64 and the real Spark aarch64), 32 passed + 5 skipped on Windows
+(as designed), 45/45 vitest tests + typecheck clean for the TS client.
+
+### Round 2: Andrew's camera/AR-session push, merged straight into arvr/
+
+After the arxr/arvr consolidation below, Andrew adopted `arvr/` directly —
+his `feat/ar-local-sim` branch merged *my* `feat/arvr-integration` and kept
+building on top of it: `xr.ts` (WebXR AR session entry, capability
+detection, degrading AR → VR → flat), `probe.ts`/`probe.html` (headset
+capability probe), `hands.ts` (WebXR Hand Input → gripper via pinch), and
+`camera.ts` (webcam feed as scene background — closes the literal gap the
+user flagged: "every mode rendered on a black void", and spec section 66's
+requirement that a real twin shows the physical environment, not just a
+floor grid).
+
+Merging his follow-up push back into `feat/arvr-integration` needed manual
+conflict resolution: both branches had independently added files at
+`packages/xr-web/src/*` from the same pre-port base, so most of the client
+(`contracts.ts`, `arm.ts`, `scene.ts`, `spatial.ts`, `index.html`,
+`package.json`, `tsconfig.json`, `vite.config.ts`) conflicted as add/add.
+Resolved by taking his version everywhere (newer, and — checked by diff,
+not assumed — his `contracts.ts` was byte-identical to mine except a stale
+comment). `main.ts` diverged more (his added the XR/camera/hands wiring
+throughout); took his file as the base and manually re-applied my
+Episodes-API-upload and Corrections-POST wiring on top, then re-verified
+live against a running `ar_backend` with the actual merged file (not a
+re-implementation) — same "rejected, with a measurable reason" result as
+before, confirming the wiring survived intact.
+
+One thing caught and discarded: his branch still carried the **original,
+now-stale `arxr/` tree** in its history (never deleted after he adopted
+`arvr/`) — merging naively would have silently reintroduced the exact
+duplication this was all meant to resolve. Removed it from the merge.
 
 ### arvr/arxr consolidation (this branch)
 

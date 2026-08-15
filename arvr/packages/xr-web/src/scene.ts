@@ -30,7 +30,7 @@ export const LAYOUT: Record<string, Vec3> = {
   table: [0.4, 0.0, 0.0],
   cube: [0.3, 0.1, 0.78],
   bin: [0.6, -0.7, 0.0],
-  robot: [0.15, -0.7, 0.0], // matches ROBOT_BASE in ar-sim/scene_mjcf.py
+  robot: [0.15, -0.7, 0.0], // matches ROBOT_BASE in arxr-sim/scene_mjcf.py
 };
 
 const PALETTE: Record<string, number> = {
@@ -108,8 +108,14 @@ export async function loadScene(base = FIXTURES_BASE): Promise<LoadedScene> {
   return { manifest, root, objects };
 }
 
-/** Floor grid and lighting. Deliberately plain -- the room is the real thing. */
-export function buildEnvironment(scene: THREE.Scene): void {
+/**
+ * Lighting, and a floor grid for flat/VR modes.
+ *
+ * The grid is returned so passthrough AR can hide it -- in AR the floor is the
+ * real floor, and drawing a synthetic one over it is exactly the kind of thing
+ * that makes an overlay read as "not really there".
+ */
+export function buildEnvironment(scene: THREE.Scene): { grid: THREE.GridHelper } {
   scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x2a2a2a, 1.6));
 
   const key = new THREE.DirectionalLight(0xffffff, 1.9);
@@ -120,6 +126,8 @@ export function buildEnvironment(scene: THREE.Scene): void {
 
   const grid = new THREE.GridHelper(8, 32, 0x3b4252, 0x2a2f3a);
   scene.add(grid);
+
+  return { grid };
 }
 
 /**

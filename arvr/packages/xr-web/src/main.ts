@@ -13,8 +13,10 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import { DesktopMockAdapter, XRControllerAdapter, structToWebxr } from "./adapter";
+import { CameraUnavailable, fitBackground, startCamera, type CameraFeed } from "./camera";
+import { readHand, wristTarget, type HandFrame } from "./hands";
+import { describe as describeSession, detectCapabilities, startBestSession, type SessionKind } from "./xr";
 import type { SpatialAdapter } from "./adapter";
 import { ArticulatedArm, REACH_M, SHOULDER_HEIGHT, reachStatus } from "./arm";
 import type { CorrectionEvent, TwinState, Vec3 } from "./contracts";
@@ -61,11 +63,63 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.xr.enabled = true;
 app.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x14171c);
-buildEnvironment(scene);
+const FLAT_BACKGROUND = new THREE.Color(0x14171c);
+scene.background = FLAT_BACKGROUND;
+const environment = buildEnvironment(scene);
+
+// ------------------------------------------------------------------- XR --
+// AR-first per the locked decision in master plan §0. The button reports what
+// the runtime actually granted rather than promising AR and delivering VR.
+let sessionKind: SessionKind = "flat";
+let handTrackingGranted = false;
+let referenceSpace: XRReferenceSpace | undefined;
+
+const xrButton = document.createElement("button");
+xrButton.id = "xr-entry";
+xrButton.textContent = "CHECKING XR…";
+xrButton.disabled = true;
+document.body.appendChild(xrButton);
+
+void detectCapabilities().then((caps) => {
+  xrButton.disabled = caps.best === "flat";
+  xrButton.textContent =
+    caps.best === "immersive-ar" ? "ENTER PASSTHROUGH AR"
+    : caps.best === "immersive-vr" ? "ENTER VR (NO PASSTHROUGH)"
+    : "NO XR ON THIS DEVICE";
+  if (caps.best !== "immersive-ar") {
+    xrButton.title = caps.notes.join("\n") || "immersive-ar unavailable";
+  }
+});
+
+xrButton.addEventListener("click", () => {
+  void (async () => {
+    try {
+      const started = await startBestSession();
+      sessionKind = started.kind;
+      handTrackingGranted = started.handTracking;
+
+      // In passthrough the background must be transparent, or the app paints
+      // over the real room and the whole point is lost.
+      scene.background = started.kind === "immersive-ar" ? null : FLAT_BACKGROUND;
+      environment.grid.visible = started.kind !== "immersive-ar";
+
+      await renderer.xr.setSession(started.session);
+      referenceSpace = renderer.xr.getReferenceSpace() ?? undefined;
+
+      started.session.addEventListener("end", () => {
+        sessionKind = "flat";
+        handTrackingGranted = false;
+        referenceSpace = undefined;
+        scene.background = FLAT_BACKGROUND;
+        environment.grid.visible = true;
+      });
+    } catch (error) {
+      xrButton.textContent = `XR FAILED: ${String(error).slice(0, 40)}`;
+    }
+  })();
+});
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.01, 100);
 camera.position.set(2.6, 2.4, 3.4);
@@ -253,6 +307,9 @@ function renderControls(): void {
     controlsEl.appendChild(button);
   };
 
+  // Always available: the physical world is not a per-mode concern.
+  add(cameraFeed ? "CAMERA OFF" : "CAMERA ON", () => void toggleCamera());
+
   if (mode === "TEACH") {
     if (recorder.isRecording) {
       add("GRAB", () => {
@@ -272,7 +329,7 @@ function renderControls(): void {
         latestVerdict = undefined;
         verdictPending = true;
         renderControls();
-        uploadEpisode(API_BASE, captured, frames, captured.events, LAYOUT["bin"] ?? [0.6, -0.7, 0.0])
+        uploadEpisode(API_BASE, captured, frames, captured.events, LAYOUT["bin"] ?? [0.6, -0.7, 0.55])
           .then((verdict) => { latestVerdict = verdict; })
           .catch((error: unknown) => {
             latestVerdict = {
@@ -368,9 +425,57 @@ function hideAll(...objects: THREE.Object3D[]): void {
 
 const clock = new THREE.Clock();
 
-renderer.setAnimationLoop(() => {
+// ---------------------------------------------------------------- camera --
+// The physical world as pixels. Untracked -- see camera.ts. Kept separate from
+// the XR passthrough path so the HUD can always say which one is in play.
+let cameraFeed: CameraFeed | undefined;
+let cameraError: string | undefined;
+
+async function toggleCamera(): Promise<void> {
+  if (cameraFeed) {
+    cameraFeed.stop();
+    cameraFeed = undefined;
+    if (sessionKind !== "immersive-ar") scene.background = FLAT_BACKGROUND;
+    environment.grid.visible = sessionKind !== "immersive-ar";
+    renderControls();
+    return;
+  }
+
+  try {
+    cameraError = undefined;
+    cameraFeed = await startCamera();
+    fitBackground(cameraFeed.texture, cameraFeed.aspect, innerWidth / innerHeight);
+    scene.background = cameraFeed.texture;
+    // The real floor is in the video; a synthetic grid over it reads as fake.
+    environment.grid.visible = false;
+  } catch (error) {
+    cameraError = error instanceof CameraUnavailable ? error.message : String(error);
+  }
+  renderControls();
+}
+
+addEventListener("resize", () => {
+  if (cameraFeed) {
+    fitBackground(cameraFeed.texture, cameraFeed.aspect, innerWidth / innerHeight);
+  }
+});
+
+/** Hands seen this frame, when the runtime granted hand input. */
+let liveHands: HandFrame[] = [];
+
+function readHands(frame: XRFrame | null): void {
+  liveHands = [];
+  if (!frame || !referenceSpace || !handTrackingGranted) return;
+  for (const source of frame.session.inputSources) {
+    const hand = readHand(frame, source, referenceSpace);
+    if (hand) liveHands.push(hand);
+  }
+}
+
+renderer.setAnimationLoop((_time, frame) => {
   const dt = Math.min(clock.getDelta(), 0.1);
   orbit.update();
+  readHands(frame ?? null);
   stepHuman(dt);
 
   hideAll(
@@ -446,9 +551,37 @@ renderer.setAnimationLoop(() => {
   renderer.render(scene, camera);
 });
 
+/**
+ * Where the "real world" in view is coming from, stated plainly.
+ *
+ * A webcam backdrop and tracked passthrough look similar in a screenshot and
+ * are not remotely the same claim (§48, §66). The HUD says which one it is.
+ */
+function worldSource(): string {
+  if (sessionKind === "immersive-ar") return "PASSTHROUGH AR — TRACKED";
+  if (cameraError) return `CAMERA UNAVAILABLE — ${cameraError}`;
+  if (cameraFeed) return `WEBCAM BACKDROP — NOT TRACKED (${cameraFeed.label})`;
+  return "NONE — virtual only, no physical environment";
+}
+
 function readout(): string {
   const p = (v: Vec3): string => v.map((n) => n.toFixed(2)).join(", ");
-  const lines = [`MODE       ${mode}`, `input      ${adapter.deviceType}`];
+  const lines = [
+    `MODE       ${mode}`,
+    `session    ${describeSession(sessionKind, handTrackingGranted)}`,
+    `world      ${worldSource()}`,
+    `input      ${adapter.deviceType}`,
+  ];
+
+  for (const hand of liveHands) {
+    const wrist = wristTarget(hand);
+    lines.push(
+      `${hand.handedness.padEnd(10)} ${Object.keys(hand.joints).length} joints` +
+        `  pinch ${hand.pinchApertureM?.toFixed(3) ?? "--"} m` +
+        `  grip ${hand.gripper.toFixed(2)}` +
+        (wrist ? `  wrist ${wrist.position.map((n) => n.toFixed(2)).join(", ")}` : ""),
+    );
+  }
 
   if (mode === "PLACE") {
     const cube = reachStatus(robotBase, [0.3, 0.1, 0.78]);
