@@ -10,16 +10,23 @@ from .asset_provider import AssetProvider
 from .fixture_asset_provider import FixtureAssetProvider, UnknownAssetError
 from .fixture_robot_provider import FixtureRobotProvider, UnknownRobotError
 from .hand_provider import HandProvider
+from .isaac_simulation_provider import IsaacSimulationProvider, IsaacVerifyServerUnavailable
 from .mock_hand_provider import MockHandProvider
 from .mujoco_simulation_provider import MuJoCoSimulationProvider
 from .robot_provider import RobotProvider, get_configured_robot_provider
-from .simulation_provider import SimulationProvider, TaskSpec
+from .simulation_provider import (
+    SimulationProvider,
+    TaskSpec,
+    get_configured_simulation_provider,
+)
 
 __all__ = [
     "AssetProvider",
     "FixtureAssetProvider",
     "FixtureRobotProvider",
     "HandProvider",
+    "IsaacSimulationProvider",
+    "IsaacVerifyServerUnavailable",
     "MockHandProvider",
     "MuJoCoSimulationProvider",
     "RobotProvider",
@@ -28,4 +35,5 @@ __all__ = [
     "UnknownAssetError",
     "UnknownRobotError",
     "get_configured_robot_provider",
+    "get_configured_simulation_provider",
 ]

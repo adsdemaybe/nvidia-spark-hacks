@@ -1047,12 +1047,14 @@ source = { editable = "packages/spatial-providers" }
 dependencies = [
     { name = "ar-contracts" },
     { name = "ar-datapipe" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "ar-contracts", editable = "packages/ar-contracts" },
     { name = "ar-datapipe", editable = "packages/ar-datapipe" },
+    { name = "websockets", specifier = ">=13.0" },
 ]
 
 [[package]]

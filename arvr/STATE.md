@@ -12,15 +12,111 @@
    demonstrates with a tracked hand, STRUCT renders a shadow hand, retargets
    onto a selected robot (the **real** SO-101 as of Round 7, swappable to a
    future CAD-generated robot later via the same `RobotProvider` interface
-   with zero downstream rewrites), verifies in MuJoCo, exports accepted
-   demos as `RobotEpisode` → LeRobot training data. Three interchangeable
-   `HandFrame` sources: `mock`, `openxr`, `webcam` (Round 6).
+   with zero downstream rewrites), verifies in MuJoCo *or* now Isaac Sim
+   (Round 8 — a second, independent, genuinely-different verifier, not a
+   duplicate), exports accepted demos as `RobotEpisode` → LeRobot training
+   data. Three interchangeable `HandFrame` sources: `mock`, `openxr`,
+   `webcam` (Round 6).
 
 The old app was deliberately left running rather than torn out — see Round
-5's "why two apps" note. Combined test count: **140/140 Python, 111/111
-vitest**, both suites green, lint clean. Rounds 5-6 are on
-`feat/arvr-integration`; Round 7 (real SO-101) is on `feat/real-so101-robot`,
-not yet merged in as of this writing.
+5's "why two apps" note. Combined test count: **143/143 Python, 111/111
+vitest**, both suites green, lint clean. Rounds 5-7 are on
+`feat/arvr-integration`; Round 8 (Isaac verification) is on
+`feat/isaac-verifier`, not yet merged in as of this writing.
+
+### Round 8: Isaac Sim verification (`IsaacSimulationProvider`)
+
+Branch `feat/isaac-verifier`, off `feat/arvr-integration` (includes Rounds
+6-7). Spec Milestone 3 (§70/§32-33) — assumed blocked in earlier planning
+(no Spark access from this session), then confirmed *not* blocked: SSH to
+the Spark (`ssh spark`) works, and `nvcr.io/nvidia/isaac-sim:5.1.0` is
+already pulled there from Round 4's work. Live-tested end-to-end over SSH,
+not just unit-tested against a fake server — a real 90-frame trajectory
+from the mock episode went from this dev machine, over an SSH tunnel, into
+a real Isaac Sim process on the Spark, through a real URDF import and real
+PhysX joint control, and back as a real, structured `VerificationResult` —
+not a stub.
+
+**Real platform bug found and fixed, undocumented anywhere**: this image's
+`ENTRYPOINT` (`/isaac-sim/runheadless.sh`) checks `uname -m`; on aarch64
+(the Spark's GB10) it prints "Livestreaming is not supported on aarch64"
+and `exec /bin/bash` — a bare interactive shell, silently ignoring
+whatever `CMD` was passed to `docker run`, no error either way. This means
+Round 4's own documented `run_twin_server.py` recipe (`bash -c '...'`, no
+`--entrypoint`) only ever worked when run *interactively* (`-it`, a human
+retyping commands into the dropped shell) — run non-interactively/scripted,
+it silently no-ops. Fix: `--entrypoint /isaac-sim/python.sh` (or `bash`,
+for a two-step recipe), bypassing `runheadless.sh` entirely. Documented in
+`packages/isaac-bridge/README.md`, both recipes updated (the twin-server
+fix is inferred from the same confirmed root cause, not independently
+re-tested this round — out of scope, pre-existing Round 4 code).
+
+**What's real:**
+
+- `packages/isaac-bridge/run_verify_server.py` (new) — a persistent,
+  batch request/response WebSocket server (not a push-stream like
+  `run_twin_server.py`) that imports the real SO-101 URDF ONCE at startup
+  (confirmed empirically: `isaacsim.core.prims.SingleArticulation`'s
+  `dof_names` order — `['shoulder_pan','shoulder_lift','elbow_flex',
+  'wrist_flex','wrist_roll','gripper']` — matches
+  `ar_datapipe.retarget.IkSolver`'s Pinocchio order exactly, same robot,
+  same URDF, no name-order surprises found), then answers many requests
+  against that one persistent articulation: drives joints via
+  `set_joint_positions`, steps real PhysX, reads back the real
+  `gripper_frame_link` prim's world pose (not the parent link — a fixed-joint
+  child, confirmed present as a distinct prim with
+  `merge_fixed_joints=False`), computes real tracking error, evaluates
+  joint limits (from `robot_ir.json`, already loaded from the same repo
+  checkout) and the task predicate.
+- `packages/spatial-providers/src/spatial_providers/isaac_simulation_provider.py`
+  (new) — `IsaacSimulationProvider`, a thin WS client implementing
+  `SimulationProvider`. Zero Isaac/Kit dependency (unlike MuJoCo's provider,
+  needs no platform gating at all — `websockets` is pure Python). Config:
+  `STRUCT_SIMULATION_PROVIDER=isaac` / `ISAAC_VERIFY_WS_URL`, matching the
+  `STRUCT_ROBOT_PROVIDER` pattern exactly. Raises
+  `IsaacVerifyServerUnavailable` (a clear error, not a hang) when the
+  server isn't reachable — confirmed live against port 1 (nothing
+  listening).
+
+**Real bug found and fixed while building the request wire format**:
+`mujoco_simulation_provider.py`'s pre-existing pattern of deriving
+`joint_names` from `robot_ir.json`'s raw array order (fixed in Round 7 for
+MuJoCo itself) needed the exact same fix applied here — reused
+`ar_datapipe.robot_model.robot_model_from_bundle`'s generic derivation
+rather than re-deriving it a third time.
+
+**A genuine finding, not a bug — left as-is rather than tuned away**: the
+live trajectory's `replay` check narrowly failed (tracking error ~1.0-1.2cm
+against a 1cm tolerance, consistent across both 1 and 3 physics-settle-steps
+per frame — ruled out as a settling-time artifact by testing both). Isaac's
+real PD-drive dynamics (gravity + joint drive gains, never explicitly
+tuned via `ImportConfig.set_default_drive_strength` — using Isaac's own
+import defaults) introduce a small, real discrepancy between commanded and
+achieved joint state that MuJoCo's purely kinematic replay
+(`mj_forward`, no dynamics stepping) can't see by construction. This is
+*exactly* what a second, independent, dynamically-authoritative verifier
+is supposed to catch — loosening the tolerance to force a pass would defeat
+the point. `task_predicate` still passed (Isaac's physics settled close
+enough to the actual goal). Tuning drive stiffness is the natural next
+lever if closer MuJoCo agreement is wanted; not done this round.
+
+**What's honestly NOT checked**: collision (`collision_valid` stays `None`
+— an explicit "not evaluated" per `VerificationChecks`' own contract, never
+a false "passed"). Isaac's contact-reporting API
+(`PhysxContactReportAPI` per-body + a `RigidContactView`/`ContactSensor`)
+needs meaningfully more setup than MuJoCo's `data.ncon`; real, separate
+scope. MuJoCo's own collision check (Round 7) already exists and works —
+this isn't a regression, just not yet replicated against a second engine.
+
+`STRUCT_SIMULATION_PROVIDER` (default `"mujoco"`, `"isaac"` the new option)
+now selects between them at `ar_backend`'s actual
+`/spatial/episodes/{id}/finish` route via a new
+`get_configured_simulation_provider()`, mirroring
+`get_configured_robot_provider()`'s exact pattern (spatial_providers
+`__init__.py`). **The `isaac` path through the real backend route itself
+hasn't been live-tested** (only the standalone client script was, over
+SSH) — the wiring mirrors an already-proven pattern closely enough that
+this is a reasonable next verification step, not a completed one.
 
 ### Round 7: Real SO-101 robot (kinematics, gripper, position-only IK)
 
