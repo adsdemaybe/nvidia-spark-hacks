@@ -21,9 +21,10 @@
 
 The old app was deliberately left running rather than torn out — see Round
 5's "why two apps" note. Combined test count: **151/151 Python, 111/111
-vitest**, both suites green, lint clean. Rounds 5-8 are on
-`feat/arvr-integration`; Round 9 (object interaction) is on
-`feat/object-interaction`, not yet merged in as of this writing.
+vitest**, both suites green, lint clean. Rounds 5-9 are all merged into
+`feat/arvr-integration` (Round 9 via `feat/object-interaction`); that
+branch itself is 2 commits ahead of `origin/feat/arvr-integration` as of
+this writing, not yet pushed.
 
 ### Round 9: Object interaction — cube→bin, drawer pull
 
