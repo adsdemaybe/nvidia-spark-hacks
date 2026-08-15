@@ -40,7 +40,8 @@ Fully local, nothing leaves the machine — Laguna S 2.1 NVFP4 served by vLLM on
 Spark. No API key; the base URL defaults to http://localhost:8000/v1 and is overridden
 with --base-url or LAGUNA_BASE_URL:
 
-  --model laguna                             GPU tier: vLLM on :8100, ~117GB of the GB10
+  --model qwen3                              GPU tier: Qwen3.8-27B on vLLM :8100, 32k ctx
+  --model laguna                             retired: Laguna S 2.1, needed ~117GB
   --model qwen                               CPU tier: llama.cpp on :8200, zero GPU —
                                              use this while Isaac Sim / training owns the GPU
   --model laguna:some-other-served-name      a different model on the same endpoint
@@ -63,6 +64,7 @@ Options:
   --model-<role> <id>    override one role
   --model-kwargs <json>  provider-specific extras, e.g. '{"temperature":0.2}'
   --base-url <url>       base URL for the laguna/local providers
+  --think                let a reasoning model think (Qwen3): better prose, ~2.3x slower
   --out <dir>            output directory, default runs/<timestamp>
   --operating-point <f>  JSON operating point to analyse against, instead of asking
                          the modelling agent for one
@@ -80,6 +82,7 @@ const { values } = parseArgs({
     model: { type: "string", default: "google-genai:gemini-3.7-flash" },
     "model-kwargs": { type: "string" },
     "base-url": { type: "string" },
+    think: { type: "boolean", default: false },
     "model-parts": { type: "string" },
     "model-designer": { type: "string" },
     "model-modeler": { type: "string" },
@@ -110,11 +113,14 @@ const seedCode = values.seed ? await fs.readFile(values.seed, "utf8") : undefine
 
 const kwargs = values["model-kwargs"] ? JSON.parse(values["model-kwargs"]) : undefined
 const baseUrl = values["base-url"]
-const fallback: ModelSpec = { id: values.model!, kwargs, baseUrl }
+// Reasoning is off by default for local reasoning models (see LOCAL_ENDPOINTS);
+// --think overrides that default.
+const extraBody = values.think ? { chat_template_kwargs: { enable_thinking: true } } : undefined
+const fallback: ModelSpec = { id: values.model!, kwargs, baseUrl, extraBody }
 const overrides: Partial<Record<RoleName, ModelSpec>> = {}
 for (const role of ROLES) {
   const id = (values as unknown as Record<string, string | undefined>)[`model-${role}`]
-  if (id) overrides[role] = { id, kwargs, baseUrl }
+  if (id) overrides[role] = { id, kwargs, baseUrl, extraBody }
 }
 
 const fixedOperatingPoint: OperatingPoint | undefined = values["operating-point"]

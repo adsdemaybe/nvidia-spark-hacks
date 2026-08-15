@@ -160,9 +160,36 @@ error rather than a silent drop.
 
 | Shorthand | Serves | GPU | Use when |
 |---|---|---|---|
-| `--model qwen` | llama.cpp, Qwen2.5-Coder-3B, `:8200` | **none** | the GPU is needed for Isaac Sim, gsplat or training |
-| `--model laguna` | vLLM, Laguna S 2.1 NVFP4, `:8100` | ~117 GB | best review quality |
+| `--model qwen3` | vLLM, **Qwen3.8-27B**, `:8100`, 32k ctx | ~53 GB | the default GPU tier |
+| `--model qwen` | llama.cpp, Qwen2.5-Coder-3B, `:8200` | **none** | the GPU is busy with Isaac Sim, gsplat or training |
+| `--model laguna` | vLLM, Laguna S 2.1 NVFP4, `:8100` | ~117 GB | retired — see below |
 | `--model stub` | in-process fixture | none | exercising the graph offline |
+
+**Laguna was retired for memory, not quality.** Its NVFP4 checkpoint is 93 GB and vLLM
+held 97–117 GB of the GB10's 121 GB pool, leaving nothing for Isaac Sim or a fine-tune;
+lowering `--gpu-memory-utilization` frees almost nothing because the weights are the
+floor. Qwen3.8-27B runs in ~53 GB at 0.75 utilisation **and doubles the context to 32k**,
+which is what makes a designer turn fit — that turn was measured at 14.3k tokens against
+Laguna's 16k ceiling and truncated mid-file.
+
+### Reasoning is off by default
+
+Qwen3 is a reasoning model, and two things follow that cost real time:
+
+- Its chat template opens `<think>` implicitly, so **the trace arrives inside `content`
+  with only a closing tag** — and the trace itself often contains a ```tsx fence. A
+  naive "first fenced block" extractor picks up code from the model's own deliberation.
+  `extractCode` strips everything up to the first `</think>`, which handles it;
+  verified against real output.
+- It is expensive. Same question, measured: **207 completion tokens in 59 s with
+  reasoning, 98 in 26 s without** — 2.3x. Across seven agent calls per iteration that is
+  the difference between minutes and tens of minutes.
+
+So `chat_template_kwargs.enable_thinking` defaults to `false` for the local reasoning
+endpoints, and `--think` puts it back. The justification is the same one the model
+comparison established: the deterministic ladder owns correctness, a weaker reviewer
+degrades the advice and cannot change a verdict, so iteration speed is worth more than
+marginally better prose.
 
 Any LangChain provider also works (`google-genai:…`, `anthropic:…`, `openai:…`).
 

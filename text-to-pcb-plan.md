@@ -587,6 +587,26 @@ never as edits to a vendored tree, so upstream stays merge-able.
 ## 8. Laguna as the local agent runtime
 The master plan names Laguna S 2.1 NVFP4 as the project's model; this section is the
 PCB-side contract for it. **Everything the agents do runs on the Spark.**
+> **PIVOT, 2026-08-15 (later the same day): Qwen3.8-27B replaces Laguna as the GPU tier.**
+> Two measured reasons, neither about answer quality. **Memory:** Laguna's checkpoint is
+> 93 GB and vLLM held 97–117 GB of the 121 GB unified pool, so nothing else — Isaac Sim,
+> gsplat, a fine-tune — could run at all, and lowering `--gpu-memory-utilization` frees
+> almost nothing because the weights are the floor. Qwen3 runs in **~53 GB at 0.75
+> utilisation**. **Context:** 32k against Laguna's 16k, which matters because §8.8 measured
+> a designer turn at 14.3k tokens and watched it truncate mid-file.
+>
+> Qwen3 brings its own wrinkle: it is a reasoning model whose template opens `<think>`
+> implicitly, so the trace arrives *inside* `content` with only a closing tag, and the
+> trace frequently contains a ```tsx fence of its own. A first-fenced-block extractor
+> would lift code out of the model's deliberation. `extractCode`'s
+> strip-to-first-`</think>` handles it — verified against real output rather than assumed.
+> Reasoning also costs 2.3x wall-clock (207 tokens/59 s against 98/26 s on the same
+> question), so it is **off by default** and `--think` restores it.
+>
+> Everything below about Laguna stands as the record of what was measured before the
+> pivot. The provider layer is unchanged: this was a config change, which is the point of
+> having built it model-agnostic.
+>
 > **Status, 2026-08-15: WORKING, against the real model.** vLLM is serving
 > `poolside/Laguna-S-2.1-NVFP4` on the Spark (port **8100**, served name
 > `laguna-nvfp4`, 16k context, ~97 GB of the GB10's memory, ~35 min to load under

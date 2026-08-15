@@ -34,6 +34,8 @@ export interface ModelSpec {
   kwargs?: Record<string, unknown>
   /** Base URL for a locally-served OpenAI-compatible endpoint (`laguna`, `local`). */
   baseUrl?: string
+  /** Extra request-body fields, merged over the endpoint's own defaults. */
+  extraBody?: Record<string, unknown>
 }
 
 /**
@@ -89,6 +91,21 @@ interface LocalEndpoint {
   envKey: string[]
   envVision: string
   vision: boolean
+  /**
+   * Extra fields merged into the request body, for server switches the OpenAI schema
+   * has no place for.
+   *
+   * Qwen3 needs this. It is a reasoning model whose chat template opens `<think>`
+   * implicitly, so the trace arrives inside `content` with only a closing tag — and it
+   * is expensive. Measured on this box, same question: 207 completion tokens in 59 s
+   * with reasoning, 98 tokens in 26 s without. Across seven agent calls per iteration
+   * that is the difference between minutes and tens of minutes.
+   *
+   * Off by default because the deterministic ladder owns correctness — a weaker
+   * reviewer degrades the advice and cannot change a verdict (plan §8.7) — so iteration
+   * speed is worth more than marginally better prose. `--think` puts it back.
+   */
+  extraBody?: Record<string, unknown>
 }
 
 const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
@@ -104,6 +121,24 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     envKey: ["LAGUNA_API_KEY", "LLM_API_KEY"],
     envVision: "LAGUNA_VISION",
     vision: false,
+  },
+  // The GPU tier as of 2026-08-15: Qwen3.8-27B replaced Laguna S 2.1.
+  //
+  // The pivot was about memory, not quality. Laguna's NVFP4 checkpoint is 93 GB and vLLM
+  // held 97-117 GB of the GB10's 121 GB pool, which left nothing for Isaac Sim, gsplat or
+  // a fine-tune — and lowering gpu-memory-utilization frees almost nothing because the
+  // weights are the floor. This one runs at 0.75 utilisation in ~53 GB, at a 32k context
+  // rather than 16k, which is the difference between a designer turn fitting and being
+  // truncated mid-file (plan §8.8 measured that turn at 14.3k tokens).
+  qwen3: {
+    envBaseUrl: ["QWEN3_BASE_URL", "LLM_BASE_URL"],
+    defaultBaseUrl: "http://localhost:8100/v1",
+    defaultModel: "qwen3.8-27b",
+    envModel: ["QWEN3_MODEL"],
+    envKey: ["QWEN3_API_KEY", "LLM_API_KEY"],
+    envVision: "QWEN3_VISION",
+    vision: false,
+    extraBody: { chat_template_kwargs: { enable_thinking: false } },
   },
   // The CPU tier. llama.cpp on the Spark's ARM cores, holding **zero GPU memory** — so
   // the design loop keeps running while Isaac Sim, gsplat or a fine-tune owns the GB10.
@@ -198,10 +233,14 @@ export async function resolveModel(spec: ModelSpec): Promise<ChatLike> {
     const visionEnv = process.env[endpoint.envVision]
     const vision = visionEnv === undefined ? endpoint.vision : visionEnv === "1" || visionEnv === "true"
 
+    // spec.extraBody wins over the endpoint default, so --think can re-enable reasoning
+    // without editing this table.
+    const extraBody = { ...(endpoint.extraBody ?? {}), ...(spec.extraBody ?? {}) }
     const model = await initChatModel(modelName, {
       modelProvider: "openai",
       apiKey,
       configuration: { baseURL },
+      ...(Object.keys(extraBody).length ? { modelKwargs: extraBody } : {}),
       ...spec.kwargs,
     })
     CAPABILITIES.set(model as object, { id: `${provider}:${modelName} @ ${baseURL}`, vision })
