@@ -10,17 +10,121 @@
 2. **The Shadow Robot Spatial Demonstration Pipeline** (Round 5, new) — the
    project's actual current direction per a new master spec. A human
    demonstrates with a tracked hand, STRUCT renders a shadow hand, retargets
-   onto a selected robot (fixture SO-101 today, swappable to the real
-   CAD-generated robot later via a `RobotProvider` interface with zero
-   downstream rewrites), verifies in MuJoCo, exports accepted demos as
-   `RobotEpisode` → LeRobot training data. Now has three interchangeable
-   `HandFrame` sources: `mock`, `openxr`, and (Round 6, new) `webcam`.
+   onto a selected robot (the **real** SO-101 as of Round 7, swappable to a
+   future CAD-generated robot later via the same `RobotProvider` interface
+   with zero downstream rewrites), verifies in MuJoCo, exports accepted
+   demos as `RobotEpisode` → LeRobot training data. Three interchangeable
+   `HandFrame` sources: `mock`, `openxr`, `webcam` (Round 6).
 
 The old app was deliberately left running rather than torn out — see Round
-5's "why two apps" note. Combined test count: **140/140 Python, 109/109
-vitest**, both suites green, lint clean, both on `feat/arvr-integration`
-(webcam work below is currently on `feat/webcam-hand-provider`, not yet
-merged in).
+5's "why two apps" note. Combined test count: **140/140 Python, 111/111
+vitest**, both suites green, lint clean. Rounds 5-6 are on
+`feat/arvr-integration`; Round 7 (real SO-101) is on `feat/real-so101-robot`,
+not yet merged in as of this writing.
+
+### Round 7: Real SO-101 robot (kinematics, gripper, position-only IK)
+
+Branch `feat/real-so101-robot`, off `feat/arvr-integration` (includes Round
+6). Live testing of the webcam path surfaced that the fixture "SO-101" was
+never the real robot — `fixtures/robot/test_arm.urdf` was a made-up
+placeholder with no gripper. The user wanted the actual, professional
+SO-101 (confirmed via AskUserQuestion over a full GR00T-style humanoid,
+which would need a whole-body retargeting redesign — declined, out of
+scope). SSH to the Spark (`ssh spark`) was also confirmed working, with
+`nvcr.io/nvidia/isaac-sim:5.1.0` already pulled there — Isaac verification
+(Round 8, next) was previously assumed blocked and isn't.
+
+**What's real:** `fixtures/robot/so101_real/` vendors
+`TheRobotStudio/SO-ARM100`'s real URDF + 13 STL meshes verbatim
+(Apache-2.0, commit `7629d2a`, see that directory's `NOTICE.md`) —
+`tools/make_real_so101_bundle.py` parses it directly via `ElementTree`
+(not hand-transcribed — the real joint origins have non-trivial rotations,
+retyping ~20 long floats by hand was exactly the kind of transcription
+risk worth avoiding) and regenerates
+`fixtures/spatial-training/robots/so101/` from it: real joint origins/axes/
+limits, a real `gripper` joint (revolute, drives an actual moving jaw —
+the placeholder had none), and `visual_meshes.json` (new, additive —
+per-link real mesh list `shadowRobot.ts` loads via `STLLoader` at
+runtime, best-effort; a marker-sphere skeleton renders immediately and
+always, so the robot is visibly correct even before, or if, real mesh
+loading fails).
+
+**Real bugs found and fixed, not just "make tests green":**
+
+1. **The real SO-101 is 5-DOF arm + 1-DOF gripper, not 6-DOF.** Full 6-DOF
+   pose IK (arbitrary position + arbitrary orientation) is only reachable
+   on a lower-dimensional manifold, not everywhere — confirmed directly: a
+   position that converged from one exact FK-derived pose *failed* to
+   converge again after rounding it to 4 decimal places (under half a
+   centimeter of drift was enough to leave the reachable manifold
+   entirely). Fixed with a genuine `position_only` mode in `IkSolver.solve`
+   (truncates the pose error/Jacobian to the first 3 — position — rows;
+   confirmed directly against Pinocchio that linear components come
+   first, not assumed), wired through `ArmRetargeter`'s callers keyed off
+   `RobotCapabilityProfile.arm_dof < 6` — generic, not SO-101-specific.
+2. **MuJoCo's URDF compiler welds away a body connected only by a fixed
+   joint** — the real gripper's dummy tool frame (`gripper_frame_link`,
+   past the jaw) produces zero MuJoCo bodies, only Pinocchio preserves it
+   as a distinct frame. `RobotModel` gained an optional
+   `mujoco_ee_body`/`mujoco_ee_offset_m` fallback (`robot_model_from_bundle`,
+   new, derives it generically from `robot_ir.json` rather than
+   hardcoding "gripper_link" in three call sites) so MuJoCo tracking
+   targets the *exact* same point Pinocchio's IK does, composed back onto
+   a real body's world pose.
+3. **A latent joint-order bug, only exposed by the real robot**:
+   `mujoco_simulation_provider.py` derived `joint_names` from
+   `robot_ir.json`'s own array order, but `RobotTrajectoryFrame.q` is
+   populated in `ArmRetargeter`/Pinocchio's kinematic order — these only
+   coincidentally matched for the old hand-authored placeholder (written
+   base-to-tip on purpose). The real `robot_ir.json`, parsed straight from
+   the vendored URDF, preserves the URDF's own tip-to-base file order
+   instead, so MuJoCo silently replayed the wrong q value under the wrong
+   joint name. Fixed by reading the order from the same `IkSolver` instance
+   `ArmRetargeter` used, not a second, independently-derived list.
+4. **Collision checking's "ncon > 0 = collision" rule assumed the
+   placeholder's simple primitive shapes never touch.** The real SO-101's
+   own vendored collision meshes (adjacent motor housings, mounting
+   plates) touch by design at rest — confirmed directly, a real non-zero
+   contact count in the neutral pose alone, and raw contact *count* isn't
+   reliable either (the same resting pair registers as 4 or 9 contacts
+   depending on mesh-triangle alignment at a given joint angle, confirmed
+   by inspecting `dist` directly — same handful of penetration depths
+   repeated, not new/deeper ones). Fixed by baselining max penetration
+   *depth* against the neutral pose instead of a hardcoded zero or a raw
+   count, with a small margin for mesh noise.
+5. **`_derive_capability_profile` counted every non-fixed joint as
+   `arm_dof`** — correct when the only non-fixed joints were arm joints,
+   wrong the moment a real gripper joint existed too. Fixed to read
+   `actuator.json`'s own arm/gripper split instead of re-deriving it from
+   `robot_ir.joints`.
+
+**Gripper now flows end-to-end for real**, not just visually: `ArmRetargeter`
+writes the pinch-derived gripper command into `q`'s gripper index directly
+(the gripper joint is a side-branch off the EE frame's own kinematic chain
+— zero Jacobian column against it, so IK never touches that index; explicit
+overwrite after each solve is required, not optional) — meaning the SAME
+`q` vector drives the live shadow robot's jaw (`ShadowRobot.setJoints`,
+no separate field/contract needed, `q` is just 6 elements now) *and*
+replays a real, moving jaw in MuJoCo verification. `RobotShadowState` did
+**not** need a new field — a plan-time assumption that turned out
+unnecessary once this was traced through.
+
+**Scene geometry recentered on real, IK-verified positions** (not
+guessed): `ROBOT_BASE_STRUCT`/`ASSET_WORLD_POSITION`/`DEFAULT_GOAL_M`
+(`spatialTeachMain.ts`), `BUTTON_WORLD_M`/`APPROACH_START_M`/`RETRACT_END_M`
+(`tools/make_mock_hand_episode.py`), `DEFAULT_CONTROL_VOLUME`
+(`webcamHand.ts`), and every test's own hardcoded goal — all were tuned
+against the placeholder's ~1m reach; the real SO-101 is a small desktop
+arm, maybe 30-40cm. Every new position is the literal FK output of a real,
+within-joint-limits configuration (verified directly against
+`ar_datapipe.retarget.IkSolver`), not eyeballed.
+
+**Not yet done:** live browser verification with a real camera/session —
+same limitation as Round 6, this agent has no way to open a browser here.
+`npx vitest run`/`npm run typecheck`/`npm run build`/`uv run pytest`/
+`ruff check` all pass (140/140 Python, 111/111 vitest), but nobody has
+watched the real mesh assembly actually render, or the jaw actually open/
+close live, in an actual browser tab yet.
 
 ### Round 6: Webcam hand tracking provider (browser-side MediaPipe)
 

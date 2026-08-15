@@ -1,13 +1,13 @@
 {
   "schema_version": "1.0",
-  "robot_id": "fixture_so101",
+  "robot_id": "so101",
   "source": "fixture",
   "robot_ir": "robot_ir.json",
   "urdf": "robot.urdf",
-  "visual_glb": "../../../ar-xr/robot.glb",
+  "visual_glb": "visual_meshes.json",
   "usd": null,
   "base_link": "base_link",
   "end_effectors": [
-    "end_effector"
+    "gripper_frame_link"
   ]
 }

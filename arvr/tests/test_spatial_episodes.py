@@ -41,11 +41,11 @@ def _hand_frame_payloads() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_list_robots_includes_the_fixture_so101(client):
+def test_list_robots_includes_so101(client):
     resp = client.get("/robots")
     assert resp.status_code == 200
     robot_ids = [r["robot_id"] for r in resp.json()]
-    assert "fixture_so101" in robot_ids
+    assert "so101" in robot_ids
 
 
 def test_get_known_robot_returns_manifest(client):
@@ -98,9 +98,9 @@ def test_full_lifecycle_accepts(client):
         f"/spatial/episodes/{episode_id}/finish",
         json={
             "asset_world_pose": {
-                "position_m": [0.4, 0.0, 0.53], "orientation_xyzw": [0, 0, 0, 1],
+                "position_m": [0.35, -0.05, 0.14], "orientation_xyzw": [0, 0, 0, 1],
             },
-            "goal_position_m": [0.2, -0.15, 0.7],
+            "goal_position_m": [0.37, 0.07, 0.2],
             "goal_tolerance_m": 0.1,
         },
     )
@@ -126,7 +126,7 @@ def test_finish_reports_rejection_reason_when_goal_is_wrong(client):
         f"/spatial/episodes/{episode_id}/finish",
         json={
             "asset_world_pose": {
-                "position_m": [0.4, 0.0, 0.53], "orientation_xyzw": [0, 0, 0, 1],
+                "position_m": [0.35, -0.05, 0.14], "orientation_xyzw": [0, 0, 0, 1],
             },
             "goal_position_m": [10.0, 10.0, 10.0],
             "goal_tolerance_m": 0.01,
@@ -147,9 +147,9 @@ def test_finish_before_upload_is_rejected_with_409(client):
         f"/spatial/episodes/{episode_id}/finish",
         json={
             "asset_world_pose": {
-                "position_m": [0.4, 0.0, 0.53], "orientation_xyzw": [0, 0, 0, 1],
+                "position_m": [0.35, -0.05, 0.14], "orientation_xyzw": [0, 0, 0, 1],
             },
-            "goal_position_m": [0.2, -0.15, 0.7],
+            "goal_position_m": [0.37, 0.07, 0.2],
         },
     )
     assert resp.status_code == 409
@@ -195,9 +195,9 @@ def test_raw_hand_frames_intact_after_finish(tmp_path):
         f"/spatial/episodes/{episode_id}/finish",
         json={
             "asset_world_pose": {
-                "position_m": [0.4, 0.0, 0.53], "orientation_xyzw": [0, 0, 0, 1],
+                "position_m": [0.35, -0.05, 0.14], "orientation_xyzw": [0, 0, 0, 1],
             },
-            "goal_position_m": [0.2, -0.15, 0.7],
+            "goal_position_m": [0.37, 0.07, 0.2],
             "goal_tolerance_m": 0.1,
         },
     )

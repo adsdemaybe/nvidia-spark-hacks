@@ -1,12 +1,11 @@
 {
   "schema_version": "1.0",
   "joints": [
-    "shoulder_pan",
+    "wrist_roll",
+    "wrist_flex",
+    "elbow_flex",
     "shoulder_lift",
-    "elbow",
-    "wrist1",
-    "wrist2",
-    "wrist3"
+    "shoulder_pan"
   ],
-  "gripper": null
+  "gripper": "gripper"
 }

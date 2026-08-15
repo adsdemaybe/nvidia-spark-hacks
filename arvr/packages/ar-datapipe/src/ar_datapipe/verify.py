@@ -50,13 +50,27 @@ class MujocoReplay:
             )
         self.model = mujoco.MjModel.from_xml_path(str(robot.urdf_path))
         self.data = mujoco.MjData(self.model)
+        self.ee_offset_m = np.zeros(3)
         self.ee_body_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_BODY, robot.end_effector_frame
         )
+        if self.ee_body_id < 0 and robot.mujoco_ee_body is not None:
+            # See RobotModel.mujoco_ee_body's docstring: the real end
+            # effector frame was welded away by MuJoCo's URDF compiler
+            # (a fixed-joint dummy link) -- fall back to the nearest real
+            # body and compose the known fixed offset back on in
+            # replay_pose, so tracking targets the exact same point
+            # Pinocchio's IK does.
+            self.ee_body_id = mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_BODY, robot.mujoco_ee_body
+            )
+            if robot.mujoco_ee_offset_m is not None:
+                self.ee_offset_m = np.array(robot.mujoco_ee_offset_m)
         if self.ee_body_id < 0:
             raise ValueError(
                 f"MuJoCo model compiled from {robot.urdf_path} has no body named "
                 f"{robot.end_effector_frame!r}"
+                + (f" or fallback {robot.mujoco_ee_body!r}" if robot.mujoco_ee_body else "")
             )
 
     def _set_joint(self, name: str, value: float) -> None:
@@ -86,7 +100,12 @@ class MujocoReplay:
             self._set_joint(name, value)
 
         mujoco.mj_forward(self.model, self.data)
-        achieved = tuple(float(c) for c in self.data.xpos[self.ee_body_id])
+        body_pos = self.data.xpos[self.ee_body_id]
+        if np.any(self.ee_offset_m):
+            body_rot = self.data.xmat[self.ee_body_id].reshape(3, 3)
+            achieved = tuple(float(c) for c in body_pos + body_rot @ self.ee_offset_m)
+        else:
+            achieved = tuple(float(c) for c in body_pos)
         error = float(
             np.linalg.norm(np.array(achieved) - np.array(commanded_position_m))
         )

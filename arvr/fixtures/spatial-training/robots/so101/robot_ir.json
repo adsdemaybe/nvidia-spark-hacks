@@ -1,37 +1,143 @@
 {
   "schema_version": "1.0",
-  "robot_id": "fixture_so101",
+  "robot_id": "so101",
   "base_link": "base_link",
-  "end_effector_frame": "end_effector",
+  "end_effector_frame": "gripper_frame_link",
   "links": [
     "base_link",
     "shoulder_link",
     "upper_arm_link",
-    "forearm_link",
-    "wrist1_link",
-    "wrist2_link",
-    "wrist3_link",
-    "end_effector"
+    "lower_arm_link",
+    "wrist_link",
+    "gripper_link",
+    "gripper_frame_link",
+    "moving_jaw_so101_v1_link"
   ],
   "joints": [
     {
-      "name": "shoulder_pan",
-      "type": "revolute",
-      "parent_link": "base_link",
-      "child_link": "shoulder_link",
+      "name": "gripper_frame_joint",
+      "type": "fixed",
+      "parent_link": "gripper_link",
+      "child_link": "gripper_frame_link",
       "origin_position_m": [
+        -0.0079,
+        -0.000218121,
+        -0.0981274
+      ],
+      "origin_orientation_xyzw": [
+        0.0,
+        0.9999999999991198,
+        0.0,
+        1.3267948966775328e-06
+      ],
+      "axis": [
         0.0,
         0.0,
-        0.1
+        0.0
+      ],
+      "lower_limit": null,
+      "upper_limit": null,
+      "velocity_limit": null
+    },
+    {
+      "name": "gripper",
+      "type": "revolute",
+      "parent_link": "gripper_link",
+      "child_link": "moving_jaw_so101_v1_link",
+      "origin_position_m": [
+        0.0202,
+        0.0188,
+        -0.0234
+      ],
+      "origin_orientation_xyzw": [
+        0.7071080798594733,
+        -1.8536205040112397e-08,
+        1.8536272126587696e-08,
+        0.7071054825112361
       ],
       "axis": [
         0.0,
         0.0,
         1.0
       ],
-      "lower_limit": -3.14159,
-      "upper_limit": 3.14159,
-      "velocity_limit": 12.0
+      "lower_limit": -0.174533,
+      "upper_limit": 1.74533,
+      "velocity_limit": 10.0
+    },
+    {
+      "name": "wrist_roll",
+      "type": "revolute",
+      "parent_link": "wrist_link",
+      "child_link": "gripper_link",
+      "origin_position_m": [
+        5.55112e-17,
+        -0.0611,
+        0.0181
+      ],
+      "origin_orientation_xyzw": [
+        -0.017208133464804664,
+        0.7068986593349474,
+        0.7068960170901372,
+        0.01721007249293119
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower_limit": -2.74385,
+      "upper_limit": 2.84121,
+      "velocity_limit": 10.0
+    },
+    {
+      "name": "wrist_flex",
+      "type": "revolute",
+      "parent_link": "lower_arm_link",
+      "child_link": "wrist_link",
+      "origin_position_m": [
+        -0.1349,
+        0.0052,
+        3.62355e-17
+      ],
+      "origin_orientation_xyzw": [
+        1.7295535595292469e-15,
+        -1.116241234178666e-15,
+        -0.7071080798594735,
+        0.7071054825112363
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower_limit": -1.65806,
+      "upper_limit": 1.65806,
+      "velocity_limit": 10.0
+    },
+    {
+      "name": "elbow_flex",
+      "type": "revolute",
+      "parent_link": "upper_arm_link",
+      "child_link": "lower_arm_link",
+      "origin_position_m": [
+        -0.11257,
+        -0.028,
+        1.73763e-16
+      ],
+      "origin_orientation_xyzw": [
+        -4.3766725580708164e-16,
+        1.8055643788175648e-16,
+        0.7071080798594735,
+        0.7071054825112363
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower_limit": -1.69,
+      "upper_limit": 1.69,
+      "velocity_limit": 10.0
     },
     {
       "name": "shoulder_lift",
@@ -39,109 +145,49 @@
       "parent_link": "shoulder_link",
       "child_link": "upper_arm_link",
       "origin_position_m": [
-        0.0,
-        0.0,
-        0.05
+        -0.0303992,
+        -0.0182778,
+        -0.0542
       ],
-      "axis": [
-        0.0,
-        1.0,
-        0.0
-      ],
-      "lower_limit": -1.9199,
-      "upper_limit": 1.9199,
-      "velocity_limit": 6.0
-    },
-    {
-      "name": "elbow",
-      "type": "revolute",
-      "parent_link": "upper_arm_link",
-      "child_link": "forearm_link",
-      "origin_position_m": [
-        0.4,
-        0.0,
-        0.0
-      ],
-      "axis": [
-        0.0,
-        1.0,
-        0.0
-      ],
-      "lower_limit": -2.7925,
-      "upper_limit": 2.7925,
-      "velocity_limit": 6.0
-    },
-    {
-      "name": "wrist1",
-      "type": "revolute",
-      "parent_link": "forearm_link",
-      "child_link": "wrist1_link",
-      "origin_position_m": [
-        0.4,
-        0.0,
-        0.0
+      "origin_orientation_xyzw": [
+        -0.49999999999662686,
+        -0.49999999999662686,
+        -0.5000018366025516,
+        0.4999981633974483
       ],
       "axis": [
         0.0,
         0.0,
         1.0
       ],
-      "lower_limit": -3.14159,
-      "upper_limit": 3.14159,
-      "velocity_limit": 18.0
+      "lower_limit": -1.74533,
+      "upper_limit": 1.74533,
+      "velocity_limit": 10.0
     },
     {
-      "name": "wrist2",
+      "name": "shoulder_pan",
       "type": "revolute",
-      "parent_link": "wrist1_link",
-      "child_link": "wrist2_link",
+      "parent_link": "base_link",
+      "child_link": "shoulder_link",
       "origin_position_m": [
-        0.1,
-        0.0,
-        0.0
+        0.0388353,
+        -8.97657e-09,
+        0.0624
+      ],
+      "origin_orientation_xyzw": [
+        1.326794896676365e-06,
+        -0.9999999999982396,
+        -1.326794896676365e-06,
+        1.760363785199545e-12
       ],
       "axis": [
         0.0,
-        1.0,
-        0.0
-      ],
-      "lower_limit": -1.9199,
-      "upper_limit": 1.9199,
-      "velocity_limit": 8.0
-    },
-    {
-      "name": "wrist3",
-      "type": "revolute",
-      "parent_link": "wrist2_link",
-      "child_link": "wrist3_link",
-      "origin_position_m": [
         0.0,
-        0.0,
-        0.0
+        1.0
       ],
-      "axis": [
-        1.0,
-        0.0,
-        0.0
-      ],
-      "lower_limit": -3.14159,
-      "upper_limit": 3.14159,
-      "velocity_limit": 15.0
-    },
-    {
-      "name": "wrist3_to_ee",
-      "type": "fixed",
-      "parent_link": "wrist3_link",
-      "child_link": "end_effector",
-      "origin_position_m": [
-        0.08,
-        0.0,
-        0.0
-      ],
-      "axis": null,
-      "lower_limit": null,
-      "upper_limit": null,
-      "velocity_limit": null
+      "lower_limit": -1.91986,
+      "upper_limit": 1.91986,
+      "velocity_limit": 10.0
     }
   ]
 }

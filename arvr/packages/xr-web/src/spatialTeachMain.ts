@@ -39,15 +39,31 @@ const API_BASE = `http://${location.hostname}:8000`;
 // Fixed struct_world placement for Milestone 1's single fixture asset/robot
 // -- no scene manifest / room reconstruction in this milestone (spec
 // section 40-41: fixture scene only).
-const ROBOT_BASE_STRUCT: Vec3 = [0.15, -0.7, 0.0];
-const ASSET_WORLD_POSITION: Vec3 = [0.4, 0.0, 0.53];
+//
+// Recentered for the real SO-101 (Track A) -- it's a small desktop arm,
+// maybe 30-40cm of usable reach, nothing like the earlier placeholder's
+// ~1m chain. These aren't guessed: verified directly against the real
+// IkSolver (uv run python3 against ar_datapipe.retarget.IkSolver), each
+// point is the literal FK output of a real, within-joint-limits
+// configuration, so IK is guaranteed to converge back to it. A 5-DOF arm
+// (this one) also can't reach an arbitrary (position, orientation) pair
+// independently the way a 6-DOF wrist can -- the orientation below is the
+// one that FK actually produced at these positions, not an arbitrary
+// identity quaternion (which was empirically NOT achievable in-limits
+// near this workspace).
+const ROBOT_BASE_STRUCT: Vec3 = [0.0, 0.0, 0.0];
+const ASSET_WORLD_POSITION: Vec3 = [0.35, -0.05, 0.14];
+// The button itself sits normally on the table -- identity orientation.
+// (The wrist/gripper's *target* orientation for reaching it is a separate
+// concern, handled in tools/make_mock_hand_episode.py's NATURAL_EE_ORIENTATION
+// -- not the asset's own world rotation.)
 const ASSET_WORLD_POSE = {
   position_m: ASSET_WORLD_POSITION,
   orientation_xyzw: [0, 0, 0, 1] as [number, number, number, number],
 };
 // tools/make_mock_hand_episode.py's RETRACT_END_M -- where the mock demo's
 // wrist genuinely ends up, so the default goal exercises real accept logic.
-const DEFAULT_GOAL_M: Vec3 = [0.2, -0.15, 0.7];
+const DEFAULT_GOAL_M: Vec3 = [0.37, 0.07, 0.2];
 
 const app = document.getElementById("app")!;
 const selectorsEl = document.getElementById("selectors")!;
@@ -70,9 +86,13 @@ scene.background = new THREE.Color(0x14171c);
 buildEnvironment(scene);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.01, 100);
-camera.position.set(1.6, 1.4, 2.0);
+// Framed for the real SO-101's much smaller scale (Track A) -- the old
+// framing (1.6, 1.4, 2.0) was tuned for a ~1m-reach placeholder arm and a
+// 0.53m-tall button; everything now lives within roughly a 0.4m radius of
+// the origin.
+camera.position.set(0.6, 0.5, 0.75);
 const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.target.set(0.3, 0.4, 0.0);
+orbit.target.set(0.2, 0.15, 0.0);
 orbit.enableDamping = true;
 orbit.update();
 
@@ -94,7 +114,7 @@ scene.add(shadowRobot.root);
 // button asset just hangs in empty space at its world height with nothing
 // visually supporting it. A visual-only prop, not a modeled InteractableAsset.
 const stand = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.05, 0.06, ASSET_WORLD_POSITION[2], 16),
+  new THREE.CylinderGeometry(0.02, 0.025, ASSET_WORLD_POSITION[2], 16),
   new THREE.MeshStandardMaterial({ color: 0x4b5263, roughness: 0.8, metalness: 0.1 }),
 );
 placeAtStruct(stand, [ASSET_WORLD_POSITION[0], ASSET_WORLD_POSITION[1], ASSET_WORLD_POSITION[2] / 2]);

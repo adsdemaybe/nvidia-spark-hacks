@@ -1,56 +1,141 @@
 /**
  * ShadowRobot — Shadow Robot Spatial Demonstration Pipeline spec section 29,
- * Phase 7. Animates the fixture SO-101 arm from q(t) (ArmRetargeter's
- * output, spec section 6). Distinct geometry from arm.ts's ArticulatedArm on
- * purpose: that class encodes ar_sim/scene_mjcf.py's *different* placeholder
- * robot (different link lengths, joint order, AND joint axes — wrist1 is Z
- * here vs. Y there, wrist2 is Y vs. X, wrist3 is X vs. Z). Reusing
- * ArticulatedArm directly would silently drive the wrong joints on the
- * wrong axes. Built from fixtures/spatial-training/robots/so101/robot_ir.json
- * (mirrored exactly against fixtures/robot/test_arm.urdf — see
- * tools/make_robot_bundle.py's ROBOT_IR_JOINTS table, the single source of
- * truth this file's constants are copied from).
+ * Phase 7. Animates the real SO-101 arm (Track A: swapped from an earlier
+ * made-up placeholder to the actual, professional, open-source SO-101 --
+ * github.com/TheRobotStudio/SO-ARM100, Apache-2.0) from q(t) (ArmRetargeter's
+ * output). 6 joints, kinematic order: shoulder_pan, shoulder_lift,
+ * elbow_flex, wrist_flex, wrist_roll, gripper -- 5 arm DOF + a real gripper
+ * joint (the placeholder had none).
+ *
+ * JOINTS below mirrors fixtures/spatial-training/robots/so101/robot_ir.json
+ * exactly -- origins computed from the vendored URDF's <origin rpy=".."/>
+ * by tools/make_real_so101_bundle.py, copied here as literals (same
+ * "single source of truth, hand-copied" precedent the placeholder chain
+ * used). Unlike the placeholder, every joint here has a real rotated
+ * origin (rpy), not just a translation -- so each joint is built as two
+ * nested groups: a static `origin` group (position + origin_orientation_xyzw)
+ * and a `joint` group inside it that setJoints() rotates. Every real joint's
+ * axis is [0,0,1] *after* its origin rotation is applied (confirmed
+ * directly against the URDF), so a plain local Z rotation on the inner
+ * group is correct without needing a generic axis-angle setter.
+ *
+ * Origin position/orientation values are plugged in raw (no structToWebxr
+ * conversion per-joint) -- the whole nested chain is authored in
+ * struct_world's own local convention, and the *root* `frame` group below
+ * is the one and only place the struct(Z-up) -> three.js(Y-up) basis
+ * change happens. Nested local transforms compose correctly under that
+ * root basis change automatically (standard scenegraph property); adding
+ * a second conversion per-joint would double-convert and be wrong, the
+ * same failure mode adapter.ts's own docstring warns about.
+ *
+ * Real STL meshes (vendored alongside the URDF) are loaded asynchronously
+ * and best-effort -- a small sphere at every joint (arm.ts's `knuckle()`)
+ * renders immediately and always, so the robot is visibly correct
+ * (position/rotation-wise) even before, or if, real mesh loading fails.
  */
 
 import * as THREE from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { structToWebxr } from "./adapter";
-import { knuckle, segment } from "./arm";
+import { knuckle } from "./arm";
 import type { Vec3 } from "./contracts";
 
 /** Mirrors ar_datapipe.arm_retargeter.IkStatus. */
 export type IkStatus = "ok" | "failed" | "joint_limit";
 
-// fixtures/spatial-training/robots/so101/robot_ir.json's joint origins
-// (meters, along local +X unless noted). wrist2->wrist3 has zero offset --
-// no segment there, just a knuckle.
-const RISER_M = 0.1; // base_link -> shoulder_pan
-const SHOULDER_LIFT_OFFSET_M = 0.05; // shoulder_pan -> shoulder_lift, along Z
-const UPPER_ARM_M = 0.4; // shoulder_lift -> elbow
-const FOREARM_M = 0.4; // elbow -> wrist1
-const WRIST1_TO_WRIST2_M = 0.1;
-const WRIST3_TO_EE_M = 0.08;
+type Quat = [number, number, number, number];
 
-const BASE_HEIGHT_M = 0.05;
+interface JointSpec {
+  name: string;
+  originPositionM: Vec3;
+  originOrientationXyzw: Quat;
+}
+
+// Kinematic order (base -> tip) -- NOT robot_ir.json's own array order
+// (the vendored URDF's onshape-to-robot export lists joints tip-first).
+// This is the same order ArmRetargeter/IkSolver produce q in (Pinocchio's
+// model.names, confirmed directly: ['shoulder_pan', 'shoulder_lift',
+// 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper']).
+const JOINTS: readonly JointSpec[] = [
+  {
+    name: "shoulder_pan",
+    originPositionM: [0.0388353, -8.97657e-9, 0.0624],
+    originOrientationXyzw: [1.326794896676365e-6, -0.9999999999982396, -1.326794896676365e-6, 1.760363785199545e-12],
+  },
+  {
+    name: "shoulder_lift",
+    originPositionM: [-0.0303992, -0.0182778, -0.0542],
+    originOrientationXyzw: [-0.49999999999662686, -0.49999999999662686, -0.5000018366025516, 0.4999981633974483],
+  },
+  {
+    name: "elbow_flex",
+    originPositionM: [-0.11257, -0.028, 1.73763e-16],
+    originOrientationXyzw: [-4.3766725580708164e-16, 1.8055643788175648e-16, 0.7071080798594735, 0.7071054825112363],
+  },
+  {
+    name: "wrist_flex",
+    originPositionM: [-0.1349, 0.0052, 3.62355e-17],
+    originOrientationXyzw: [1.7295535595292469e-15, -1.116241234178666e-15, -0.7071080798594735, 0.7071054825112363],
+  },
+  {
+    name: "wrist_roll",
+    originPositionM: [5.55112e-17, -0.0611, 0.0181],
+    originOrientationXyzw: [-0.017208133464804664, 0.7068986593349474, 0.7068960170901372, 0.01721007249293119],
+  },
+  {
+    name: "gripper",
+    originPositionM: [0.0202, 0.0188, -0.0234],
+    originOrientationXyzw: [0.7071080798594733, -1.8536205040112397e-8, 1.8536272126587696e-8, 0.7071054825112361],
+  },
+] as const;
+
+// The fixed tool frame (gripper_frame_joint in the URDF) -- past the jaw,
+// this is what ArmRetargeter's IK target actually aims at.
+const GRIPPER_FRAME: JointSpec = {
+  name: "gripper_frame",
+  originPositionM: [-0.0079, -0.000218121, -0.0981274],
+  originOrientationXyzw: [0.0, 0.9999999999991198, 0.0, 1.3267948966775328e-6],
+};
+
+/** Which link's real meshes attach to which joint's local frame -- the
+ * link is the joint's *child* link in the URDF. */
+const LINK_FOR_JOINT: Readonly<Record<string, string>> = {
+  shoulder_pan: "shoulder_link",
+  shoulder_lift: "upper_arm_link",
+  elbow_flex: "lower_arm_link",
+  wrist_flex: "wrist_link",
+  wrist_roll: "gripper_link",
+  gripper: "moving_jaw_so101_v1_link",
+};
+const BASE_LINK = "base_link";
+
+const MESH_BASE_URL = "/spatial-training/robots/so101/meshes/";
+const VISUAL_MESHES_URL = "/spatial-training/robots/so101/visual_meshes.json";
 
 const METAL = 0xb8c0cc;
 const TOOL_TINT = 0x61afef;
 
+interface VisualMeshEntry {
+  mesh: string;
+  origin_position_m: Vec3;
+  origin_orientation_xyzw: Quat;
+}
+interface VisualMeshesManifest {
+  links: Record<string, VisualMeshEntry[]>;
+}
+
 export class ShadowRobot {
   readonly root = new THREE.Group();
 
-  private readonly shoulderPan = new THREE.Group();
-  private readonly shoulderLift = new THREE.Group();
-  private readonly elbow = new THREE.Group();
-  private readonly wrist1 = new THREE.Group();
-  private readonly wrist2 = new THREE.Group();
-  private readonly wrist3 = new THREE.Group();
+  private readonly jointGroups: THREE.Group[] = [];
+  private readonly linkGroups = new Map<string, THREE.Group>();
   private readonly tool = new THREE.Object3D();
   private readonly toolMesh: THREE.Mesh;
   private readonly ikMaterials: THREE.MeshStandardMaterial[] = [];
 
   constructor() {
-    // Same struct_world -> three.js Y-up basis change as arm.ts, so every
-    // joint axis below reads exactly as it does in robot_ir.json.
+    // Same struct_world -> three.js Y-up basis change as arm.ts, applied
+    // exactly once, at the root -- see module docstring.
     const frame = new THREE.Group();
     frame.quaternion.setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(
@@ -61,56 +146,84 @@ export class ShadowRobot {
     );
     this.root.add(frame);
 
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.1, 0.1, BASE_HEIGHT_M, 24),
-      new THREE.MeshStandardMaterial({ color: METAL, roughness: 0.5, metalness: 0.3 }),
-    );
-    base.geometry.rotateX(Math.PI / 2);
-    base.geometry.translate(0, 0, BASE_HEIGHT_M / 2);
-    frame.add(base);
+    const baseGroup = new THREE.Group();
+    frame.add(baseGroup);
+    baseGroup.add(knuckle(0.02));
+    this.linkGroups.set(BASE_LINK, baseGroup);
 
-    // shoulder_pan, axis Z, at (0,0,0.1) from base_link
-    this.shoulderPan.position.set(0, 0, RISER_M);
-    frame.add(this.shoulderPan);
-    const riser = segment(RISER_M, 0.045, METAL);
-    riser.rotation.y = -Math.PI / 2; // local +X -> +Z, matches arm.ts's "column" trick
-    frame.add(riser); // fixed structure, does not rotate with shoulder_pan
+    let parent: THREE.Group = baseGroup;
+    // gripper_frame_joint's parent in the URDF is gripper_link (wrist_roll's
+    // child), a *sibling* of the gripper joint's own moving-jaw branch --
+    // not the gripper joint itself. Track it separately so the tool frame
+    // doesn't swing with the jaw when it opens/closes.
+    let gripperLinkGroup: THREE.Group = baseGroup;
+    for (const joint of JOINTS) {
+      const origin = new THREE.Group();
+      origin.position.set(...joint.originPositionM);
+      origin.quaternion.set(...joint.originOrientationXyzw);
+      parent.add(origin);
 
-    // shoulder_lift, axis Y, at (0,0,0.05) from shoulder_pan
-    this.shoulderLift.position.set(0, 0, SHOULDER_LIFT_OFFSET_M);
-    this.shoulderPan.add(this.shoulderLift);
-    const shoulderRiser = segment(SHOULDER_LIFT_OFFSET_M, 0.04, METAL);
-    shoulderRiser.rotation.y = -Math.PI / 2;
-    this.shoulderPan.add(shoulderRiser, knuckle(0.05));
+      const jointGroup = new THREE.Group();
+      origin.add(jointGroup);
+      jointGroup.add(knuckle(joint.name === "gripper" ? 0.008 : 0.015));
+      this.jointGroups.push(jointGroup);
+      this.linkGroups.set(LINK_FOR_JOINT[joint.name]!, jointGroup);
 
-    // elbow, axis Y, at (0.4,0,0) from shoulder_lift
-    this.elbow.position.set(UPPER_ARM_M, 0, 0);
-    this.shoulderLift.add(this.elbow);
-    this.shoulderLift.add(segment(UPPER_ARM_M, 0.04, METAL), knuckle(0.05));
+      if (joint.name === "wrist_roll") gripperLinkGroup = jointGroup;
+      parent = jointGroup;
+    }
 
-    // wrist1, axis Z (not Y -- see module docstring), at (0.4,0,0) from elbow
-    this.wrist1.position.set(FOREARM_M, 0, 0);
-    this.elbow.add(this.wrist1);
-    this.elbow.add(segment(FOREARM_M, 0.035, METAL), knuckle(0.045));
-
-    // wrist2, axis Y (not X), at (0.1,0,0) from wrist1
-    this.wrist2.position.set(WRIST1_TO_WRIST2_M, 0, 0);
-    this.wrist1.add(this.wrist2);
-    this.wrist1.add(segment(WRIST1_TO_WRIST2_M, 0.03, METAL), knuckle(0.035));
-
-    // wrist3, axis X (not Z), at (0,0,0) from wrist2 -- zero offset, no segment.
-    this.wrist2.add(this.wrist3);
-    this.wrist2.add(knuckle(0.03));
+    const gripperFrameOrigin = new THREE.Group();
+    gripperFrameOrigin.position.set(...GRIPPER_FRAME.originPositionM);
+    gripperFrameOrigin.quaternion.set(...GRIPPER_FRAME.originOrientationXyzw);
+    gripperLinkGroup.add(gripperFrameOrigin);
 
     this.toolMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.035, 0.035),
+      new THREE.SphereGeometry(0.01, 12, 8),
       new THREE.MeshStandardMaterial({ color: TOOL_TINT, emissive: TOOL_TINT, emissiveIntensity: 0.3 }),
     );
-    this.toolMesh.position.set(WRIST3_TO_EE_M / 2, 0, 0);
-    this.wrist3.add(segment(WRIST3_TO_EE_M, 0.025, METAL), this.toolMesh, this.tool);
-    this.tool.position.set(WRIST3_TO_EE_M, 0, 0);
-
+    gripperFrameOrigin.add(this.toolMesh, this.tool);
     this.ikMaterials = [this.toolMesh.material as THREE.MeshStandardMaterial];
+
+    // Fire-and-forget: the marker skeleton above is already a complete,
+    // kinematically-correct robot on its own. Real meshes only ever add
+    // to it, and never block or fail construction.
+    void this.loadRealMeshes();
+  }
+
+  private async loadRealMeshes(): Promise<void> {
+    // No DOM/page origin outside a real browser (e.g. under vitest's node
+    // environment) -- a relative fetch URL has nothing to resolve against
+    // there. The marker skeleton is already complete on its own; skip
+    // straight to it rather than let every unit test print a fetch error.
+    if (typeof location === "undefined") return;
+
+    let manifest: VisualMeshesManifest;
+    try {
+      manifest = (await fetch(VISUAL_MESHES_URL).then((r) => r.json())) as VisualMeshesManifest;
+    } catch (error) {
+      console.warn("ShadowRobot: visual_meshes.json unavailable, using marker-only skeleton:", error);
+      return;
+    }
+
+    const loader = new STLLoader();
+    const material = new THREE.MeshStandardMaterial({ color: METAL, roughness: 0.5, metalness: 0.3 });
+    for (const [linkName, entries] of Object.entries(manifest.links)) {
+      const group = this.linkGroups.get(linkName);
+      if (!group) continue;
+      for (const entry of entries) {
+        try {
+          const geometry = await loader.loadAsync(MESH_BASE_URL + entry.mesh);
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(...entry.origin_position_m);
+          mesh.quaternion.set(...entry.origin_orientation_xyzw);
+          mesh.castShadow = true;
+          group.add(mesh);
+        } catch (error) {
+          console.warn(`ShadowRobot: failed to load mesh ${entry.mesh} for link ${linkName}:`, error);
+        }
+      }
+    }
   }
 
   /** Place the whole robot's base at a position given in struct_world. */
@@ -119,14 +232,12 @@ export class ShadowRobot {
     this.root.position.set(x, y, z);
   }
 
-  /** Drive the six revolute joints, in robot_ir.json's order. */
+  /** Drive all 6 joints, robot_ir.json's kinematic order (shoulder_pan,
+   * shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper). */
   setJoints(q: readonly number[]): void {
-    this.shoulderPan.rotation.z = q[0] ?? 0;
-    this.shoulderLift.rotation.y = q[1] ?? 0;
-    this.elbow.rotation.y = q[2] ?? 0;
-    this.wrist1.rotation.z = q[3] ?? 0;
-    this.wrist2.rotation.y = q[4] ?? 0;
-    this.wrist3.rotation.x = q[5] ?? 0;
+    for (let i = 0; i < this.jointGroups.length; i += 1) {
+      this.jointGroups[i]!.rotation.z = q[i] ?? 0;
+    }
   }
 
   /** Spec section 29: "the robot ghost must clearly display impossible
