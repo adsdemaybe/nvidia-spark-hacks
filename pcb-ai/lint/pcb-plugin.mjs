@@ -296,19 +296,26 @@ const unitStrings = {
  * Catching it at lint puts a correct instruction in front of both agents before compile
  * ever runs, which is the only place in the chain that outranks the upstream docs.
  */
+const PIN_LABEL_ELEMENTS = new Set(["pinheader", "jumper", "chip", "connector"])
+
 const pinheaderPinLabels = {
   meta: {
     type: "problem",
     docs: { description: "pinheader/jumper pinLabels must be keyed by pin number" },
     messages: {
       array:
-        '<{{el}} {{name}}> passes pinLabels as an array. That is what the tscircuit docs show and the compiler rejects it — pin keys are 1-based, so index 0 is invalid. Use an object keyed by pin number: pinLabels={{ 1: "3.3V", 2: "GND" }}. Omitting pinLabels also compiles.',
+        '<{{el}} {{name}}> passes pinLabels as an array. That is the form the tscircuit docs show and the compiler rejects it — pin keys are 1-based, so index 0 is invalid, and the whole component fails to create. Use an object keyed by pin number: pinLabels={{ 1: "3.3V", 2: "GND" }}. Omitting pinLabels also compiles.',
     },
   },
   create: (ctx) => ({
     JSXOpeningElement(node) {
       const el = getJsxName(node)
-      if (el !== "pinheader" && el !== "jumper") return
+      // Every element that takes pinLabels, not just pinheader. `chip` was checked
+      // separately and fails identically -- array form 3 errors and 0 parts, object form
+      // clean -- and chip.mdx documents the array form too. So this is not one page being
+      // out of date, it is the documented shape being wrong across the elements that use
+      // the prop, which is a much better reason for the rule to exist.
+      if (!PIN_LABEL_ELEMENTS.has(el)) return
       const attr = getAttr(node, "pinLabels")
       if (!attr) return
       const expr = attr.value && attr.value.type === "JSXExpressionContainer"
