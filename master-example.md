@@ -37,7 +37,7 @@ Every step of that is visible in one browser page while it happens.
 
 ### Stage 1 — intent → two parallel design problems
 
-The prompt goes to the Studio UI (`ui/studio.py`, port 8610). A planner splits it into the
+The prompt goes to the console (`ui/app.py`, port 8600). A planner splits it into the
 two design problems that have to agree:
 
 | | asks |
@@ -217,8 +217,7 @@ Everything above is visible in the browser while it runs.
 
 | port | surface | what it shows |
 |---|---|---|
-| **8610** | **Studio** | the prompt box; per-iteration cards showing what the gates measured, what the reviewers want fixed, what the model changed, and whether it helped |
-| 8600 | Console | PCB, CAD and joint viewers in one page |
+| **8600** | **Console** | the whole pipeline in one page — prompt, per-iteration cards showing what the gates measured and whether a fix helped, an overview of every board grouped by robot, the viewers, and service status |
 | 8500 | PCB viewer | schematic, layout, DRC, per-board gate status |
 | 3246 | CAD viewer | STEP/STL/3MF — the hand, the bays, the print plate |
 | 8081 | Joint viewer | one slider per joint; drag it and the link moves |
