@@ -7,7 +7,9 @@
   "scripts": {
     "design": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
-    "stub": "tsx src/cli.ts --model stub"
+    "stub": "tsx src/cli.ts --model stub",
+    "cad:check": "tsx src/cad/integration-check.ts",
+    "cad:serve": "../cad-generation/engine/.venv/bin/python -m cad_api.service"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.0",
@@ -21,9 +23,13 @@
     "@tscircuit/eval": "^0.0.1196",
     "circuit-json-to-bom-csv": "^0.0.15",
     "circuit-json-to-gerber": "^0.0.94",
+    "circuit-json-to-gltf": "^0.0.119",
+    "circuit-json-to-kicad": "^0.0.173",
+    "circuit-json-to-spice": "^0.0.45",
     "circuit-to-svg": "^0.0.403",
     "dsn-converter": "^0.0.91",
     "langchain": "^1.5.8",
+    "three": "^0.185.1",
     "tscircuit": "^0.0.2324",
     "zod": "^3.25.76"
   },
@@ -34,5 +40,8 @@
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.67.0"
+  },
+  "overrides": {
+    "sharp": "^0.34.4"
   }
 }

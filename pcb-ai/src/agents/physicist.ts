@@ -6,7 +6,7 @@
  * mean for this board, spot the pattern in the fields that a table of maxima misses,
  * and challenge the operating point when the numbers imply it is wrong.
  */
-import { askStructured, contentOf, type ChatLike } from "../model.ts"
+import { askStructured, contentOf, supportsVision, type ChatLike } from "../model.ts"
 import { describePhysics, type PhysicsReport } from "../physics/index.ts"
 import { ReviewSchema, type Review } from "../schemas.ts"
 
@@ -58,6 +58,9 @@ export async function reviewPhysics(args: {
       "The computed fields follow. Dark is low, bright is high; the scale is on the right.",
     ],
     physics.images,
+    // The heatmaps illustrate the report; they do not add to it. A text-only model
+    // loses the picture but keeps every number the picture was drawn from.
+    { vision: supportsVision(model) },
   )
   return askStructured<Review>(model, ReviewSchema, "review", SYSTEM, content)
 }

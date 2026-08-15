@@ -25,6 +25,9 @@ import { build, describeBuild, isLowSignal } from "./build.ts"
 import type { BuildResult } from "./types.ts"
 import { lintHdl, describeLint } from "./lint.ts"
 import { runPhysics, describePhysics, physicsBlockers } from "./physics/index.ts"
+import { runSpice, describeSpice, type Claim, type SpiceReport } from "./spice/index.ts"
+import { runDfm, describeDfm, dfmBlockers, type DfmReport } from "./dfm/index.ts"
+import { DEFAULT_PROFILE, describeProfile, type FabProfile } from "./dfm/profile.ts"
 import type { PhysicsReport } from "./physics/index.ts"
 import { exportFabrication } from "./fab.ts"
 import { designFromSpec, reviseDesign } from "./agents/designer.ts"
@@ -49,6 +52,10 @@ export interface IterationRecord {
   max_ir_drop_mv?: number
   drc_errors?: number
   hard_failures?: number
+  spice_claims_passing?: string
+  spice_model_coverage_pct?: number
+  dfm_errors?: number
+  dfm_warnings?: number
   findings: Record<string, number>
   work_order: number
   pass: boolean
@@ -66,6 +73,8 @@ const State = Annotation.Root({
   build: Annotation<BuildResult | undefined>({ reducer: (a, b) => b ?? a }),
   operatingPoint: Annotation<OperatingPoint | undefined>({ reducer: (a, b) => b ?? a }),
   physics: Annotation<PhysicsReport | undefined>({ reducer: (_, b) => b }),
+  spice: Annotation<SpiceReport | undefined>({ reducer: (_, b) => b }),
+  dfm: Annotation<DfmReport | undefined>({ reducer: (_, b) => b }),
   /** Merged, not replaced: the three review nodes write concurrently. */
   reviews: Annotation<Record<string, Review>>({
     reducer: (a, b) => ({ ...a, ...b }),
@@ -84,12 +93,16 @@ export interface GraphDeps {
   models: ModelRoster
   /** Analyse against this instead of asking the modelling agent for one. */
   fixedOperatingPoint?: OperatingPoint
+  /** L7 claims to assert against this board (§3.4). No claims = no electrical verification. */
+  claims?: Claim[]
+  /** L8 fab limits. Defaults to a conservative generic profile, never to "anything goes". */
+  fabProfile?: FabProfile
 }
 
 const iterDir = (s: GraphState) => path.join(s.outDir, `iter-${s.iteration}`)
 
 export function buildGraph(deps: GraphDeps) {
-  const { models, fixedOperatingPoint } = deps
+  const { models, fixedOperatingPoint, claims = [], fabProfile = DEFAULT_PROFILE } = deps
 
   // ── nodes ────────────────────────────────────────────────────────────────────
 
@@ -222,7 +235,40 @@ export function buildGraph(deps: GraphDeps) {
         `${report.geometry.filter((v) => v.severity === "error").length} DRC errors, ` +
         `${hard.length} hard failure(s)`,
     )
-    return { physics: report }
+    // L7 rides in this node rather than its own. Both stages consume exactly
+    // `build` + `operatingPoint`, both are deterministic, and neither can start before
+    // the other's inputs exist — a separate node would buy a superstep and no
+    // concurrency. The reports stay separate; only the scheduling is shared.
+    const spice = await runSpice({
+      build: state.build!,
+      operatingPoint: state.operatingPoint!,
+      claims,
+      dir,
+    })
+    await fs.writeFile(path.join(dir, "spice.txt"), describeSpice(spice))
+    if (!spice.available) {
+      console.log("  spice     SKIPPED — ngspice not installed (tools/vendor-ngspice.sh)")
+    } else {
+      const substantive = spice.claims.filter((c) => !c.tautological)
+      console.log(
+        `  spice     ${spice.claims.filter((c) => c.pass).length}/${spice.claims.length} claim(s) pass ` +
+          `(${substantive.length} able to fail), ${spice.coveragePercent.toFixed(0)}% model coverage, ` +
+          `${spice.hardFailures.length} hard failure(s)`,
+      )
+    }
+
+    // L8 — fab limits. Same node again, same reason: it needs only the compiled
+    // geometry, which has existed since L1.
+    const dfm = runDfm(state.build!.circuitJson, fabProfile)
+    await fs.writeFile(
+      path.join(dir, "dfm.txt"),
+      `${describeProfile(fabProfile)}\n\n${describeDfm(dfm)}`,
+    )
+    console.log(
+      `  dfm       ${dfm.errors} error(s), ${dfm.warnings} warning(s) vs "${fabProfile.name}"`,
+    )
+
+    return { physics: report, spice, dfm }
   }
 
   /** The three reviews below run concurrently; each writes its own key. */
@@ -270,6 +316,8 @@ export function buildGraph(deps: GraphDeps) {
       spec: state.spec,
       build: state.build!,
       physics: state.physics,
+      spice: state.spice,
+      dfm: state.dfm,
       reviews: state.reviews,
     })
     verdict.work_order.sort(
@@ -405,7 +453,20 @@ function record(
     peak_temperature_c: state.physics?.thermal?.peak_c,
     max_ir_drop_mv: state.physics?.rails.reduce((m, r) => Math.max(m, r.max_drop_mv), 0),
     drc_errors: state.physics?.geometry.filter((v) => v.severity === "error").length,
-    hard_failures: state.physics ? physicsBlockers(state.physics).length : undefined,
+    // Every deterministic gate, not just L6. Counting only physics here made the
+    // summary read `hard_failures: 0` on a board the chief had just blocked over three
+    // L8 violations — a run record that disagrees with its own verdict is worse than no
+    // record at all.
+    hard_failures:
+      (state.physics ? physicsBlockers(state.physics).length : 0) +
+      (state.spice?.hardFailures.length ?? 0) +
+      (state.dfm ? dfmBlockers(state.dfm).length : 0),
+    spice_claims_passing: state.spice
+      ? `${state.spice.claims.filter((c) => c.pass).length}/${state.spice.claims.length}`
+      : undefined,
+    spice_model_coverage_pct: state.spice ? Math.round(state.spice.coveragePercent) : undefined,
+    dfm_errors: state.dfm?.errors,
+    dfm_warnings: state.dfm?.warnings,
     findings: Object.fromEntries(
       Object.entries(reviews).map(([k, v]) => [k, v.findings.length]),
     ),

@@ -1,0 +1,116 @@
+Topology: Linear LDO regulator with passive protection. A USB-C receptacle feeds a reverse-polarity FET plus a load-switch/inrush controller, then a 3.3V LDO supplies the LEDs and the power indicator. LEDs are directly driven from the 3.3V rail through individual current-limiting resistors. No microcontroller, no switching, no PD — just the simplest reliable path from 5V USB-C to 3.3V LEDs.
+  A 555 or microcontroller would add unnecessary complexity, cost, and quiescent current for a fixed-function LED driver. A switching regulator would violate the LDO requirement and add EMI/noise. A discrete multivibrator is irrelevant here. The LDO approach is the cheapest, most available, and most predictable solution: one regulator, a few passives, and standard jellybean parts. Reverse-polarity is handled by a P-channel MOSFET in series with VBUS (no diode drop), and inrush is limited by a small series resistor plus the LDO’s enable pin capacitor for soft-start.
+  Rejected: 555 timer — no timing function needed, adds cost and complexity; Microcontroller (e.g. ATtiny) — overkill for fixed LED drive, adds firmware, cost, and quiescent current; Switching regulator (buck) — violates LDO requirement, adds EMI and component count; Schottky diode for reverse polarity — introduces ~0.3V drop and power dissipation, worse than a FET; Direct 5V LED drive — violates 3.3V regulation requirement
+
+Rails:
+  VBUS_5V  5V — USB-C input after reverse-polarity and inrush protection, feeds LDO input
+  VREG_3V3  3.3V — LDO output, powers all three indicator LEDs, power LED, and test point
+
+Parts (19):
+  J1  USB-C receptacle, 16-pin, PCB mount  USB2.0 Type-C Receptacle  [USB_C_Receptacle]
+      role: Input connector, 5V bus power only
+      specs: 24-pin variant with A6/A7/B6/B7 grounded for sink detection; only VBUS (A4/B9) and GND (A1/B12) used
+      why: Standard USB-C receptacle, widely available, 2-layer compatible
+  Q1  P-channel MOSFET  BSS84A  [sot23]
+      role: Reverse-polarity protection switch
+      specs: Vgs_max=50V, Rds_on<5Ω@VGS=4.5V, Vgs_th=-0.8 to -2.0V
+      why: Jellybean part, 20+ year production, ideal for USB-C reverse polarity protection with minimal voltage drop
+  R1  Resistor  10k  [0603]
+      role: Gate pull-down for Q1, ensures off state when no VBUS
+      specs: 1/10W, 1%, 50V
+      why: Standard pull-down, ensures Q1 stays off during no-input or reverse condition
+  R2  Resistor  10  [0603]
+      role: Inrush current limiting resistor on VBUS
+      specs: 2W, 1%, 50V
+      why: Limits inrush to <500mA at 5V step, protects LDO and connector; 2W for safety margin
+  C1  Capacitor  10µF  [1206]
+      role: Input bulk capacitance for LDO
+      specs: X7R, 10V, 1206
+      why: Standard ceramic bulk cap, low ESR, stable with LDO
+  C2  Capacitor  100nF  [0603]
+      role: LDO input bypass
+      specs: X7R, 10V, 0603
+      why: High-frequency bypass, standard jellybean
+  C3  Capacitor  10µF  [1206]
+      role: LDO output bulk capacitance
+      specs: X7R, 6.3V, 1206
+      why: Required by LDO datasheet for stability, low ESR
+  C4  Capacitor  100nF  [0603]
+      role: LDO output bypass
+      specs: X7R, 6.3V, 0603
+      why: High-frequency output bypass
+  U1  LDO regulator  MIC5205-3.3BM5  [sot223]
+      role: 3.3V, 150mA LDO
+      specs: Input 2.5–16V, Output 3.3V ±2%, Iq<5µA, SOT-223
+      why: Jellybean LDO, 20+ year production, meets 300mA requirement with margin, SOT-223 footprint as specified
+  D1  LED  Red, 2V fwd  [0805]
+      role: Power indicator on 3.3V rail
+      specs: If=20mA max, Vf=2.0V@5mA
+      why: Standard 0805 LED, visible on top layer
+  R3  Resistor  200  [0603]
+      role: Current-limiting resistor for power LED D1
+      specs: 1/10W, 1%, 50V
+      why: Sized for ~5mA at 3.3V with 2V LED drop
+  D2  LED  Red, 2V fwd  [0805]
+      role: Indicator LED 1
+      specs: If=20mA max, Vf=2.0V@5mA
+      why: Standard 0805 LED, visible on top layer
+  R4  Resistor  200  [0603]
+      role: Current-limiting resistor for D2
+      specs: 1/10W, 1%, 50V
+      why: Sized for ~5mA at 3.3V with 2V LED drop
+  D3  LED  Red, 2V fwd  [0805]
+      role: Indicator LED 2
+      specs: If=20mA max, Vf=2.0V@5mA
+      why: Standard 0805 LED, visible on top layer
+  R5  Resistor  200  [0603]
+      role: Current-limiting resistor for D3
+      specs: 1/10W, 1%, 50V
+      why: Sized for ~5mA at 3.3V with 2V LED drop
+  D4  LED  Red, 2V fwd  [0805]
+      role: Indicator LED 3
+      specs: If=20mA max, Vf=2.0V@5mA
+      why: Standard 0805 LED, visible on top layer
+  R6  Resistor  200  [0603]
+      role: Current-limiting resistor for D4
+      specs: 1/10W, 1%, 50V
+      why: Sized for ~5mA at 3.3V with 2V LED drop
+  J2  Header, 4-pin, 2.54mm pitch  4-pin 2.54mm male header  [pinrow4]
+      role: Indicator LED output connector (3 signals + GND)
+      specs: 2.54mm pitch, through-hole, 1.0mm pin diameter
+      why: Standard 2.54mm header, compatible with target board
+  J3  Header, 2-pin, 2.54mm pitch  2-pin 2.54mm male header  [pinrow2]
+      role: Test point pair for 3.3V and GND
+      specs: 2.54mm pitch, through-hole
+      why: Standard test point header, easy to probe
+
+Calculations:
+  LED current-limiting resistor: R = (V_supply - V_led) / I_led = (3.3V - 2.0V) / 0.005A = 260Ω → use 200Ω (nearest standard 5% value, gives ~6.5mA, within safe range for 0805 LED and 0603 resistor)
+  Inrush resistor power: P = I²R = (0.5A)² × 10Ω = 2.5W → use 2W resistor (conservative, short-duration pulse, 2W rating sufficient for brief inrush)
+  LDO output current: 3 LEDs × 6.5mA + 1 power LED × 6.5mA = ~26mA total load, well within MIC5205’s 150mA rating
+  LDO power dissipation: Pd = (Vin - Vout) × Iout = (5V - 3.3V) × 0.026A = 0.046W → negligible, no heatsink needed
+  Reverse-polarity FET: BSS84A with 10kΩ gate pull-down ensures off state when VBUS absent; when VBUS present, Q1 conducts with Rds_on < 5Ω, drop < 250mV at 500mA
+
+Layout constraints:
+  USB-C connector J1 must be at one short edge (e.g., bottom edge) of the 30×20mm board
+  4-pin header J2 must be at the opposite short edge (top edge)
+  2-pin test point header J3 must be accessible on top layer, near VREG_3V3 rail
+  All four indicator LEDs (D1–D4) and their resistors (R3–R6) must be in a linear row along one long edge (e.g., right edge) for visibility when board is installed
+  All components on top layer only — no bottom-side parts
+  Silkscreen designators on every part — ensure adequate clearance and readability
+  Decoupling capacitors C2 and C4 must be placed within 2mm of LDO pins U1
+  Bulk capacitors C1 and C3 must be placed adjacent to U1 input/output pins
+  Q1 (reverse-polarity FET) must be placed between J1 (VBUS) and U1 (LDO input), with minimal trace length
+  R2 (inrush resistor) must be in series between Q1 drain and U1 input
+  Board outline: 30mm × 20mm, 2-layer FR4, 0.8mm thickness preferred for rigidity
+
+Risks:
+  USB-C connector footprint may not be in standard library — verify J1 footprint matches available USB-C receptacle (e.g., Molex 217128-0001 or equivalent) before layout
+  BSS84A in SOT-23 is hand-solderable but small — ensure adequate silkscreen and pad design for prototyping
+  200Ω resistors give 6.5mA instead of 5mA — acceptable but verify LED brightness is not too dim; if needed, 220Ω gives ~5.5mA
+  Inrush resistor R2 at 10Ω and 2W is large for 0603 — consider 1206 or 1210 footprint if thermal concerns arise; 2W in 0603 is possible but marginal
+  MIC5205-3.3BM5 in SOT-223 requires careful thermal pad layout — ensure copper pour on tab for heat dissipation even though power is low
+  Tolerance stack-up: 3.3V LDO ±2% + LED Vf variation ±0.2V + resistor 1% → LED current could vary ±15% — acceptable for indicator use
+  USB-C receptacle pinout must be verified — only VBUS (A4/B9) and GND (A1/B12) are used; ensure no data pins are connected or left floating in a way that causes issues
+  If downstream board pulls LED lines low, ensure LDO can sink current — MIC5205 can sink/supply, so OK
+  Board size 30×20mm is tight with USB-C connector (~8mm depth) + 4-pin header (~10mm) + 4 LEDs + passives — verify component placement fits with 1mm minimum trace/space

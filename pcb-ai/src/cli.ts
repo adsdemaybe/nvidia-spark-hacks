@@ -7,6 +7,7 @@ import { runDesign } from "./graph.ts"
 import {
   askStructured,
   buildRoster,
+  capabilitiesOf,
   resolveModel,
   ROLES,
   type ModelSpec,
@@ -14,6 +15,8 @@ import {
 } from "./model.ts"
 import { encodePng } from "./physics/png.ts"
 import type { OperatingPoint } from "./schemas.ts"
+import type { Claim } from "./spice/index.ts"
+import { loadKicadProProfile, DEFAULT_PROFILE } from "./dfm/profile.ts"
 
 const USAGE = `
 pcb-ai — design a PCB from a written spec, analyse the physics, and refine it in a loop.
@@ -33,9 +36,19 @@ is Gemini, which reads GEMINI_API_KEY or GOOGLE_API_KEY:
   --model ollama:llama3.2
   --model stub                               offline fixture, no provider, no key
 
-The reviewing roles are handed rendered images, so their model must be multimodal.
-Every Gemini model is. Per-role overrides let you put a strong model on the design work
-and a cheap one on the reading:
+Fully local, nothing leaves the machine — Laguna S 2.1 NVFP4 served by vLLM on the
+Spark. No API key; the base URL defaults to http://localhost:8000/v1 and is overridden
+with --base-url or LAGUNA_BASE_URL:
+
+  --model laguna                             the local endpoint, model name "laguna"
+  --model laguna:some-other-served-name      a different model on the same endpoint
+  --model local:my-model --base-url http://spark:8001/v1
+
+The reviewing roles are handed rendered images. Models that can see get them; models
+that cannot — Laguna is a coding model with no vision — are given a measured geometry
+digest computed from the same Circuit JSON instead, and are told the views were
+withheld. Per-role overrides let you put a strong model on the design work and a cheap
+one on the reading:
 
   --model-designer google-genai:gemini-3.1-pro-preview \\
   --model-spec google-genai:gemini-3.5-flash-lite
@@ -47,9 +60,12 @@ Options:
   --model <id>           provider:model for every role, default google-genai:gemini-3.7-flash
   --model-<role> <id>    override one role
   --model-kwargs <json>  provider-specific extras, e.g. '{"temperature":0.2}'
+  --base-url <url>       base URL for the laguna/local providers
   --out <dir>            output directory, default runs/<timestamp>
   --operating-point <f>  JSON operating point to analyse against, instead of asking
                          the modelling agent for one
+  --claims <f>           JSON array of L7 electrical claims to assert with ngspice
+  --fab-profile <f>      .kicad_pro whose design rules become the L8 fab limits
   --check                verify each configured model answers, then exit
 `.trim()
 
@@ -61,6 +77,7 @@ const { values } = parseArgs({
     iterations: { type: "string", default: "3" },
     model: { type: "string", default: "google-genai:gemini-3.7-flash" },
     "model-kwargs": { type: "string" },
+    "base-url": { type: "string" },
     "model-parts": { type: "string" },
     "model-designer": { type: "string" },
     "model-modeler": { type: "string" },
@@ -70,6 +87,8 @@ const { values } = parseArgs({
     "model-chief": { type: "string" },
     out: { type: "string" },
     "operating-point": { type: "string" },
+    claims: { type: "string" },
+    "fab-profile": { type: "string" },
     check: { type: "boolean", default: false },
     help: { type: "boolean", default: false },
   },
@@ -88,16 +107,25 @@ const spec = values.spec
 const seedCode = values.seed ? await fs.readFile(values.seed, "utf8") : undefined
 
 const kwargs = values["model-kwargs"] ? JSON.parse(values["model-kwargs"]) : undefined
-const fallback: ModelSpec = { id: values.model!, kwargs }
+const baseUrl = values["base-url"]
+const fallback: ModelSpec = { id: values.model!, kwargs, baseUrl }
 const overrides: Partial<Record<RoleName, ModelSpec>> = {}
 for (const role of ROLES) {
   const id = (values as unknown as Record<string, string | undefined>)[`model-${role}`]
-  if (id) overrides[role] = { id, kwargs }
+  if (id) overrides[role] = { id, kwargs, baseUrl }
 }
 
 const fixedOperatingPoint: OperatingPoint | undefined = values["operating-point"]
   ? JSON.parse(await fs.readFile(values["operating-point"], "utf8"))
   : undefined
+
+const claims: Claim[] = values.claims
+  ? JSON.parse(await fs.readFile(values.claims, "utf8"))
+  : []
+
+const fabProfile = values["fab-profile"]
+  ? await loadKicadProProfile(values["fab-profile"])
+  : DEFAULT_PROFILE
 
 /**
  * Preflight: one call per distinct model, exercising the three things the pipeline
@@ -126,17 +154,35 @@ if (values.check) {
     process.stdout.write(`check     ${id} … `)
     try {
       const model = await resolveModel(spec)
-      const answer = await askStructured<{ ok: boolean; colour: string }>(
-        model,
-        Probe,
-        "probe",
-        "You are a preflight check. Answer from the image.",
-        [
-          { type: "text", text: "What colour is this image?" },
-          { type: "image", mimeType: "image/png", data: swatch },
-        ],
-      )
-      console.log(`ok (structured output + vision: saw "${answer.colour}")`)
+      const caps = capabilitiesOf(model)
+
+      // A text-only model is not a broken model. Probing it for vision would fail the
+      // preflight for a configuration that is deliberately supported, so each model is
+      // checked against what it claims it can do — and the claim is printed, so a
+      // silently-text-only endpoint cannot masquerade as multimodal.
+      if (!caps.vision) {
+        const answer = await askStructured<{ ok: boolean; colour: string }>(
+          model,
+          Probe,
+          "probe",
+          "You are a preflight check. Answer in the requested schema.",
+          "Reply with ok=true and colour=\"red\".",
+        )
+        if (!answer.ok) throw new Error("model returned ok=false from the schema probe")
+        console.log(`ok (structured output; text-only, reviewers get the geometry digest)`)
+      } else {
+        const answer = await askStructured<{ ok: boolean; colour: string }>(
+          model,
+          Probe,
+          "probe",
+          "You are a preflight check. Answer from the image.",
+          [
+            { type: "text", text: "What colour is this image?" },
+            { type: "image", mimeType: "image/png", data: swatch },
+          ],
+        )
+        console.log(`ok (structured output + vision: saw "${answer.colour}")`)
+      }
     } catch (err) {
       failed = true
       console.log(`FAILED\n            ${(err as Error).message.split("\n")[0]}`)
@@ -162,4 +208,6 @@ await runDesign({
   outDir,
   models,
   fixedOperatingPoint,
+  claims,
+  fabProfile,
 })

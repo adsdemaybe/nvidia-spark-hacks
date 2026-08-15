@@ -9,6 +9,8 @@
 import { askStructured, type ChatLike } from "../model.ts"
 import { describeBuild } from "../build.ts"
 import { describePhysics, physicsBlockers, type PhysicsReport } from "../physics/index.ts"
+import { describeSpice, type SpiceReport } from "../spice/index.ts"
+import { describeDfm, dfmBlockers, type DfmReport } from "../dfm/index.ts"
 import { VerdictSchema, type Review, type Verdict } from "../schemas.ts"
 import type { BuildResult } from "../types.ts"
 
@@ -42,9 +44,11 @@ export async function decide(args: {
   spec: string
   build: BuildResult
   physics?: PhysicsReport
+  spice?: SpiceReport
+  dfm?: DfmReport
   reviews: Record<string, Review>
 }): Promise<Verdict> {
-  const { model, spec, build, physics, reviews } = args
+  const { model, spec, build, physics, spice, dfm, reviews } = args
 
   const reviewText = Object.entries(reviews)
     .map(([name, r]) => {
@@ -58,7 +62,13 @@ export async function decide(args: {
     })
     .join("\n\n")
 
-  const blockers = physics ? physicsBlockers(physics) : []
+  // L6 and L7 blockers are the same kind of thing — a deterministic tool measured a
+  // failure — so they enter the chief's evidence and its override through one list.
+  const blockers = [
+    ...(physics ? physicsBlockers(physics) : []),
+    ...(spice?.hardFailures ?? []),
+    ...(dfm ? dfmBlockers(dfm) : []),
+  ]
 
   const verdict = await askStructured<Verdict>(
     model,
@@ -69,6 +79,8 @@ export async function decide(args: {
       `<specification>\n${spec}\n</specification>`,
       `<netlist>\n${describeBuild(build)}\n</netlist>`,
       physics ? `<physics>\n${describePhysics(physics)}\n</physics>` : "",
+      spice?.available ? `<circuit_simulation>\n${describeSpice(spice)}\n</circuit_simulation>` : "",
+      dfm ? `<manufacturability>\n${describeDfm(dfm)}\n</manufacturability>` : "",
       blockers.length
         ? `<hard_failures source="rule checker and solvers, not opinions">\n${blockers
             .map((b) => `  - ${b}`)

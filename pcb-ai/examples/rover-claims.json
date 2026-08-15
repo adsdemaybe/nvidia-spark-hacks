@@ -1,0 +1,30 @@
+[
+  {
+    "kind": "dc_rail",
+    "target": "V3V3",
+    "expected": 3.3,
+    "tolerance": 0.05,
+    "why": "The STM32, the IMU and both motor drivers' logic sides run from this rail; below 3.1 V the MCU browns out mid-drive."
+  },
+  {
+    "kind": "dc_rail",
+    "target": "VBAT",
+    "expected": 7.4,
+    "tolerance": 0.05,
+    "why": "Both DRV8833s take motor current straight off this rail; a sagging VBAT is torque the rover does not have."
+  },
+  {
+    "kind": "node_voltage",
+    "target": "NRST",
+    "expected": 3.3,
+    "tolerance": 0.1,
+    "why": "R1 is the STM32's reset pull-up. If it is tied to the wrong net or missing, NRST floats and the MCU resets at random — the single most common cause of a rover that drives for ten seconds and stops."
+  },
+  {
+    "kind": "current",
+    "target": "R2",
+    "expected": 0.0015,
+    "tolerance": 0.0008,
+    "why": "R2 limits the power LED. A wrong decade here is either an invisible LED or one drawing 15 mA off the logic rail the MCU is trying to run from."
+  }
+]

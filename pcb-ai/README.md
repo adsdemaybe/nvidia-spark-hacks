@@ -80,8 +80,26 @@ provider works and so does the offline stub.
 --model openai:gpt-5
 --model bedrock:anthropic.claude-opus-5
 --model ollama:llama3.2
+--model laguna                               # local vLLM on the Spark, no key
 --model stub                                 # offline fixture, no provider, no key
 ```
+
+### Fully local — Laguna on the Spark
+
+`--model laguna` targets an OpenAI-compatible endpoint served locally (vLLM running
+`poolside/Laguna-S-2.1-NVFP4`; see `../setup/serve_laguna.sh`). No API key: the base URL
+defaults to `http://localhost:8000/v1` and is overridden with `--base-url` or
+`LAGUNA_BASE_URL`. `--model local:<name>` does the same for any other local server.
+
+Laguna is a coding model with **no vision**, and that is declared rather than discovered:
+each resolved model carries a `vision` capability, and when it is false the reviewing
+agents are handed a **measured geometry digest** (`src/layout-digest.ts`) computed from
+the same Circuit JSON the views are drawn from — placements, courtyard overlaps, edge
+clearances, connector access, routing detours, silkscreen — and are told which views were
+withheld. Dropping the images silently would leave a reviewer inventing findings about a
+picture it never saw. `--check` probes each model against what it claims it can do, so a
+text-only endpoint passes preflight instead of failing a vision test it was never going
+to take.
 
 21 providers resolve through `initChatModel`: openai, anthropic, azure_openai, cohere,
 google, google-vertexai, google-genai, ollama, mistralai, groq, bedrock, deepseek, xai,
@@ -192,8 +210,47 @@ solved — an unroutable rail is a finding, not a number.
 Steady state only: no transients, no inrush, no switching. Natural convection with a
 fixed coefficient: no forced air, no enclosure, no radiation. Two dimensions: the stack
 is lumped into one plane, so via stitching and layer-to-layer spreading are
-approximations. No SPICE, no AC analysis, no signal integrity, no EMC. It is a
-first-order model and every report says so.
+approximations. No AC analysis, no signal integrity, no EMC. It is a first-order model
+and every report says so. Circuit simulation is a separate stage — see below.
+
+## Circuit simulation (L7)
+
+The solvers above answer *"does the copper survive this current"*. They cannot answer
+*"is this current what the circuit intends"* — a regulator wired backwards routes and
+fabricates exactly as well as one wired correctly. So the pipeline runs **ngspice** on a
+deck built from the Circuit JSON and the operating point, and asserts claims against it.
+
+```bash
+./tools/vendor-ngspice.sh    # installs ngspice into .tools/ without root, and self-tests it
+npx tsx src/cli.ts --seed examples/rover.tsx --model stub \
+  --operating-point examples/rover-op.json --claims examples/rover-claims.json
+
+npx tsx tools/spice-check.ts examples/rover.tsx examples/rover-op.json examples/rover-claims.json
+```
+
+A claim is `{kind, target, expected, tolerance, why}` where kind is `dc_rail`,
+`node_voltage`, `current` (a window) or `current_max` (a ceiling). The gate is
+two-directional: **every claim must pass, and every rail must be covered by a claim** —
+otherwise an agent silences the stage by asserting nothing.
+
+Three things the deck does that a generic converter does not, and they are the reason
+this is hand-built rather than `circuit-json-to-spice` alone (that converter emits 24
+lines for the rover: every passive, not one of the five ICs, and no source at all):
+
+- **ICs become behavioural stubs** — a current sink of exactly what the operating point
+  says that pin draws. A part with no model is *labelled*, never dropped. The rover
+  reports **75% coverage: 21 modelled, 6 stubbed, 9 not represented**, and coverage is a
+  number the regression suite can watch.
+- **Floating nodes get a 1 GΩ path to ground** (`.options rshunt=1e9`). In DC a capacitor
+  is an open circuit, so the crystal node — one cap to ground, crystal skipped, MCU pin
+  unmodelled — makes the matrix singular and takes the whole simulation down with it.
+- **Claims that cannot fail are flagged.** A `dc_rail` claim on a net the deck drives with
+  an ideal source reads exactly its source voltage by arithmetic. Those are marked
+  `[TAUTOLOGY]` and the report counts how many claims can actually fail.
+
+Verified in both directions on the rover: good board **L7 PASS** (`NRST = 3.3000 V`,
+`R2 = 1.3 mA`); with a planted 100 kΩ where R2's 1 kΩ belongs, **L7 FAIL**
+(`R2 = 0.0000 A`) and the chief's `PASS` is overridden to `REVISE`.
 
 ## Agents
 
@@ -210,10 +267,66 @@ The three reviews are independent and concurrent — they are meant to disagree.
 chief resolves the disagreement into an ordered work order and is the only node that
 can accept the board.
 
+## Manufacturability (L8) and handoff files
+
+The board is checked against a real fab's rules, and those rules are read out of a real
+KiCad project rather than typed into a table:
+
+```bash
+npx tsx src/cli.ts --seed examples/rover.tsx --model stub \
+  --operating-point examples/rover-op.json --fab-profile flight_controller.kicad_pro
+npx tsx tools/dfm-check.ts runs/<dir>/iter-0/circuit.json flight_controller.kicad_pro
+```
+
+`src/dfm/profile.ts` reads `design_settings.rules` and the net classes straight from a
+`.kicad_pro`, taking the stricter of the two wherever they overlap. Checked at L8: track
+width, via diameter, drill, **annular ring**, hole-to-hole, copper-to-edge, silkscreen
+legibility. Severities come from the project's own `rule_severities` — errors gate,
+warnings report.
+
+What it found on its first run, against a 4-layer flight controller profile: **every
+board in this repo fails the same way** — 75 vias at 0.300 mm pad on a 0.200 mm drill,
+a 0.050 mm annular ring against a 0.100 mm minimum. The default via stack is not
+manufacturable, and nothing had checked before.
+
+Alongside the Gerbers, every run can emit files other tools open:
+
+- **A KiCad 9 project** — `.kicad_pro` + `.kicad_sch` + `.kicad_pcb`, 36 footprints and
+  960 track segments for the rover. `kicad-cli` will not install on this aarch64 box
+  without root, so the second-opinion DRC cannot run here — emitting the project anyway
+  means a human, or any machine that has KiCad, can still run it.
+- **A GLB** of the board with its parts placed, for CAD and for the viewer.
+
+## Viewing a run
+
+```bash
+npx tsx tools/make-viewer.ts runs/<dir>
+```
+
+One self-contained HTML file: schematic, PCB and assembly renders, an orbitable 3D
+board, the thermal and IR-drop fields, every gate report, and a status strip up top
+showing which gates passed. three.js is bundled inline and the GLB is base64 — no
+network, no dev server, ~4.3 MB.
+
+## Benchmarking
+
+```bash
+npx tsx tools/bench.ts --boards rover,rover-packed,blinker --lanes path-a \
+  --fab-profile flight_controller.kicad_pro
+```
+
+Writes `runs/bench/scorecard.md` and `.json`. It also scores **netlist similarity**
+against a reference board — Jaccard and F1 over net connection-sets, compared
+structurally by pin endpoints so autogenerated net names do not matter. That metric came
+from Microsoft SchGen, and it earned its place immediately: `rover-packed` vs `rover`
+scores **1.000** while cutting area 4960 → 3312 mm² and vias 75 → 60. The packer moved
+everything and changed no connection, which is exactly the claim a placement tool has to
+prove.
+
 ## Setup
 
 ```bash
-npm install
+npm install --legacy-peer-deps    # sharp cannot build on aarch64 without libvips-dev
 export GEMINI_API_KEY=...           # or GOOGLE_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY
 ```
 

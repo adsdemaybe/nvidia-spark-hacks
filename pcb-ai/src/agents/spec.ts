@@ -4,8 +4,9 @@
  * Kept separate from the layout and physics reviews because a board can be beautifully
  * laid out, thermally comfortable, and the wrong product.
  */
-import { askStructured, contentOf, type ChatLike } from "../model.ts"
+import { askStructured, contentOf, supportsVision, type ChatLike } from "../model.ts"
 import { describeBuild } from "../build.ts"
+import { describeLayout } from "../layout-digest.ts"
 import { ReviewSchema, type Review } from "../schemas.ts"
 import type { BuildResult } from "../types.ts"
 
@@ -44,6 +45,7 @@ export async function reviewSpec(args: {
       "The rendered views follow.",
     ],
     build.images,
+    { vision: supportsVision(model), digest: describeLayout(build) },
   )
   return askStructured<Review>(model, ReviewSchema, "review", SYSTEM, content)
 }
