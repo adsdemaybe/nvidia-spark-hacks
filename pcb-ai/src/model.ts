@@ -253,6 +253,15 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     maxTokens: 4000,
   },
   "coder-next": {
+    // `repetition_penalty` is not a tuning nicety here — it is what stops structured
+    // output degenerating. Three full pipeline runs died with OUTPUT_PARSING_FAILURE, and
+    // the payload showed why: inside a JSON string field the model emitted `\t\t\t\n`
+    // thousands of times, ran out of token budget mid-string and produced JSON that ends
+    // in the middle of a value ("Expected ',' or '}' at position 1997"). The schema was
+    // fine and the model was fine; it had fallen into a whitespace loop and could not get
+    // out. 1.05 is mild — enough to break a degenerate repeat, small enough not to
+    // discourage the legitimately repetitive text of a netlist or a props table.
+    extraBody: { repetition_penalty: 1.05 },
     envBaseUrl: ["CODER_NEXT_BASE_URL", "LLM_BASE_URL"],
     defaultBaseUrl: "http://localhost:8100/v1",
     defaultModel: "qwen3-coder-next",
@@ -520,6 +529,30 @@ export async function askText(
  * `name` is what the stub keys its canned responses off, and what providers that
  * implement structured output through function calling use as the tool name.
  */
+/**
+ * Rules appended to every structured-output system prompt.
+ *
+ * Both come from runs that died, not from caution:
+ *
+ * 1. **The inch mark.** A reviewer wrote `a standard 0.1" header` inside a JSON string
+ *    field. The `"` closes the string, the rest of the sentence becomes garbage tokens,
+ *    and the run dies with `OUTPUT_PARSING_FAILURE` after the model had already done all
+ *    the work — the findings in that payload were excellent and entirely lost. A local
+ *    model is not reliably escaping quotes it emits mid-sentence, so the cheapest fix is
+ *    to give it a unit it never needs to quote.
+ *
+ * 2. **Degenerate repeats.** The same stage previously emitted `\t\t\t\n` thousands of
+ *    times inside a string until it ran out of budget mid-value. `repetition_penalty`
+ *    handles most of it at the sampler; saying so as well costs nine words.
+ */
+const STRUCTURED_OUTPUT_RULES = `
+
+Output rules, which override any formatting habit:
+- Never write a double-quote character inside a field value. Use millimetres, not inch
+  marks: write "2.54mm pitch", never "0.1\" pitch". A stray quote truncates the JSON and
+  the whole review is discarded.
+- Do not pad or repeat whitespace inside a value.`
+
 export async function askStructured<T>(
   model: ChatLike,
   schema: z.ZodType<T>,
@@ -529,7 +562,7 @@ export async function askStructured<T>(
 ): Promise<T> {
   return model
     .withStructuredOutput<T>(schema, { name })
-    .invoke(toMessages(system, content))
+    .invoke(toMessages(system + STRUCTURED_OUTPUT_RULES, content))
 }
 
 const MIME_BY_EXT: Record<string, string> = {
