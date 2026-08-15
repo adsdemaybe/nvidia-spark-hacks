@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "joints": [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow",
+    "wrist1",
+    "wrist2",
+    "wrist3"
+  ],
+  "gripper": null
+}
