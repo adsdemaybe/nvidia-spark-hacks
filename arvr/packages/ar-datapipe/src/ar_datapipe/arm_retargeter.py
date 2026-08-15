@@ -26,6 +26,8 @@ from .retarget import IkSolver
 PINCH_CLOSED_M = 0.015
 PINCH_OPEN_M = 0.08
 
+GRIPPER_JOINT_NAME = "gripper"
+
 IkStatus = Literal["ok", "failed", "joint_limit"]
 
 
@@ -61,8 +63,19 @@ class ArmRetargeter:
     free -- see retarget.py) and previous timestamp for a real dq estimate,
     not just q - q_prev."""
 
-    def __init__(self, solver: IkSolver) -> None:
+    def __init__(self, solver: IkSolver, *, position_only: bool = False) -> None:
         self.solver = solver
+        # A robot with fewer than 6 arm DOF (e.g. the real SO-101, 5-DOF)
+        # can't generally reach an arbitrary (position, orientation) pair
+        # independently -- position and orientation are only jointly
+        # reachable on a lower-dimensional manifold, so full 6-DOF pose IK
+        # routinely fails to converge even when the position alone is
+        # trivially reachable (see retarget.py's IkSolver.solve docstring).
+        # Callers should set this from
+        # RobotCapabilityProfile.arm_dof < 6 -- ArmRetargeter itself has no
+        # opinion about *which* robot, only whether the solver was told to
+        # relax orientation.
+        self.position_only = position_only
         self._q_prev: np.ndarray | None = None
         self._prev_timestamp_ns: int | None = None
         self._last_target: tuple[PositionM, OrientationXYZW] | None = None
@@ -94,8 +107,25 @@ class ArmRetargeter:
 
         result = self.solver.solve(
             wrist.position_m, wrist.orientation_xyzw, q_init=self._q_prev,
+            position_only=self.position_only,
         )
         q = np.array(result.joint_positions)
+
+        # Drive a real gripper joint from the pinch command, not from IK.
+        # The gripper joint is a side-branch off the end-effector frame's
+        # own kinematic chain (its child link isn't an ancestor of the EE
+        # frame), so its Jacobian column against the EE frame is exactly
+        # zero -- IK never touches it, meaning q[gripper] would otherwise
+        # just sit forever at whatever pin.neutral()/q_init happened to
+        # start it at. Convention, not fully generic: this bundle's
+        # gripper joint is literally named "gripper" (robot_ir.json and
+        # actuator.json agree); a future robot with a differently-named
+        # gripper joint would need this threaded through more generally.
+        if GRIPPER_JOINT_NAME in result.joint_names:
+            gripper_idx = result.joint_names.index(GRIPPER_JOINT_NAME)
+            lower = self.solver.lower_limits[gripper_idx]
+            upper = self.solver.upper_limits[gripper_idx]
+            q[gripper_idx] = lower + (upper - lower) * gripper
 
         dq = np.zeros_like(q)
         if self._q_prev is not None and self._prev_timestamp_ns is not None:

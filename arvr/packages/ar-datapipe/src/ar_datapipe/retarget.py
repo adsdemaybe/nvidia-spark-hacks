@@ -94,7 +94,27 @@ class IkSolver:
         position_m: PositionM,
         orientation_xyzw: OrientationXYZW,
         q_init: np.ndarray | None = None,
+        position_only: bool = False,
     ) -> RetargetResult:
+        """`position_only` solves for end-effector position alone, ignoring
+        orientation error entirely (first 3 rows of the 6D pose
+        error/Jacobian -- log6's first 3 components are linear, last 3
+        angular, confirmed against Pinocchio directly, not assumed).
+
+        Needed for any robot with fewer than 6 arm DOF: position AND an
+        arbitrary target orientation are only *jointly* reachable on a
+        lower-dimensional manifold of the full 6D pose space, not
+        independently — a full 6-DOF pose solve routinely fails to
+        converge for such an arm even when the position alone is trivially
+        reachable (found on the real SO-101, a 5-DOF arm: a target that
+        converged from one exact FK-derived pose failed to converge again
+        after rounding it to 4 decimal places — the position moved by
+        under half a centimeter, but that was enough to leave the
+        reachable (position, orientation) manifold entirely). A 6-DOF arm
+        is unaffected either way — see the module-level position_only
+        selection in ArmRetargeter's callers, keyed off
+        RobotCapabilityProfile.arm_dof.
+        """
         if not all(math.isfinite(c) for c in position_m):
             raise ValueError("position_m must be finite")
         if not all(math.isfinite(c) for c in orientation_xyzw):
@@ -106,21 +126,24 @@ class IkSolver:
         # refinement below — "stay near where you started" — not the
         # target *pose*, which `target` already is.
         q_reg = q.copy()
+        task_dim = 3 if position_only else 6
 
         err_norm = float("inf")
         for _ in range(MAX_ITERS):
             pin.forwardKinematics(self.model, self.data, q)
             pin.updateFramePlacement(self.model, self.data, self.frame_id)
             current = self.data.oMf[self.frame_id]
-            err = pin.log6(current.inverse() * target)
-            err_norm = float(np.linalg.norm(err.vector))
+            err_full = pin.log6(current.inverse() * target)
+            err_vec = err_full.vector[:task_dim]
+            err_norm = float(np.linalg.norm(err_vec))
             if err_norm < POSE_ERR_TOL:
                 break
-            jac = pin.computeFrameJacobian(
+            jac_full = pin.computeFrameJacobian(
                 self.model, self.data, q, self.frame_id, pin.ReferenceFrame.LOCAL
             )
-            jjt = jac @ jac.T + DAMPING * np.eye(6)
-            v = jac.T @ np.linalg.solve(jjt, err.vector)
+            jac = jac_full[:task_dim, :]
+            jjt = jac @ jac.T + DAMPING * np.eye(task_dim)
+            v = jac.T @ np.linalg.solve(jjt, err_vec)
             step = v * DT
             # Without this clamp, a large initial error can produce a huge
             # first step that overshoots past the target and spirals through
@@ -156,11 +179,12 @@ class IkSolver:
                 pin.forwardKinematics(self.model, self.data, q)
                 pin.updateFramePlacement(self.model, self.data, self.frame_id)
                 current = self.data.oMf[self.frame_id]
-                jac = pin.computeFrameJacobian(
+                jac_full = pin.computeFrameJacobian(
                     self.model, self.data, q, self.frame_id, pin.ReferenceFrame.LOCAL
                 )
-                jjt = jac @ jac.T + DAMPING * np.eye(6)
-                jac_pinv = jac.T @ np.linalg.solve(jjt, np.eye(6))
+                jac = jac_full[:task_dim, :]
+                jjt = jac @ jac.T + DAMPING * np.eye(task_dim)
+                jac_pinv = jac.T @ np.linalg.solve(jjt, np.eye(task_dim))
                 nullspace_proj = np.eye(self.model.nv) - jac_pinv @ jac
                 pull = nullspace_proj @ (q_reg - q)
                 pull_norm = float(np.linalg.norm(pull))
@@ -175,7 +199,7 @@ class IkSolver:
                 candidate_err = pin.log6(
                     self.data.oMf[self.frame_id].inverse() * target
                 )
-                candidate_err_norm = float(np.linalg.norm(candidate_err.vector))
+                candidate_err_norm = float(np.linalg.norm(candidate_err.vector[:task_dim]))
                 if candidate_err_norm >= POSE_ERR_TOL:
                     # This pull direction would leave the target pose —
                     # not a true nullspace direction at this q. Stop rather

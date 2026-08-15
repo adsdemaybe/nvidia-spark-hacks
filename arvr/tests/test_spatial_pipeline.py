@@ -25,8 +25,10 @@ from spatial_providers import (  # noqa: E402
 
 # tools/make_mock_hand_episode.py's RETRACT_END_M -- the mock episode's
 # wrist genuinely ends up here, so a task goal set to this point exercises
-# real accept logic instead of a goal chosen to always pass.
-RETRACT_END_TASK = TaskSpec(goal_position_m=(0.2, -0.15, 0.7), tolerance_m=0.1)
+# real accept logic instead of a goal chosen to always pass. Recentered for
+# the real SO-101 (Track A) -- see that script's own comment for how this
+# point was verified reachable.
+RETRACT_END_TASK = TaskSpec(goal_position_m=(0.37, 0.07, 0.2), tolerance_m=0.1)
 
 
 def _human_episode() -> HumanEpisode:

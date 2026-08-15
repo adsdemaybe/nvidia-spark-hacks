@@ -36,9 +36,8 @@ from .arm_retargeter import ArmRetargeter
 from .export import export_robot_episode
 from .interaction_ir import derive_interaction_ir
 from .retarget import IkSolver
-from .robot_model import RobotModel
+from .robot_model import robot_model_from_bundle
 
-ROBOT_TYPE = "fixture_so101"
 RETARGETER_VERSION = "arm_retargeter@1"
 TASK_VERSION = "1"
 
@@ -75,11 +74,10 @@ def run_spatial_episode(
     # STATE.md, not silently skipped.
     derive_interaction_ir(human_episode, asset_bundle, asset_world_pose)
 
-    model = RobotModel(
-        urdf_path=robot_bundle.urdf_path,
-        end_effector_frame=robot_bundle.manifest.end_effectors[0],
+    model = robot_model_from_bundle(robot_bundle)
+    retargeter = ArmRetargeter(
+        IkSolver(model), position_only=robot_bundle.capability_profile.arm_dof < 6,
     )
-    retargeter = ArmRetargeter(IkSolver(model))
 
     frames: list[RobotTrajectoryFrame] = []
     for hand in human_episode.hand_frames:
@@ -154,7 +152,7 @@ def run_spatial_episode(
             dataset_dir,
             episode_index=0,
             task=human_episode.metadata.task_id,
-            robot_type=ROBOT_TYPE,
+            robot_type=robot_bundle.manifest.robot_id,
             fps=fps,
             timestamps_s=timestamps_s,
             actions=[f.q for f in frames],

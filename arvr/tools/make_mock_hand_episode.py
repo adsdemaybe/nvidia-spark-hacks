@@ -38,10 +38,22 @@ N_FRAMES = 90
 # This mock episode doesn't model a real asset placement -- it just aims
 # the wrist at a plausible struct_world point above where a button could
 # plausibly sit, for schema/pipeline exercise purposes.
-BUTTON_WORLD_M = (0.4, 0.0, 0.55)
-APPROACH_START_M = (0.2, -0.15, 0.7)
+#
+# Recentered for the real SO-101 (Track A) -- verified directly against
+# ar_datapipe.retarget.IkSolver: every point below (and NATURAL_EE_ORIENTATION)
+# is the literal FK output of a real, within-joint-limits configuration on
+# the real robot, matching spatialTeachMain.ts's ASSET_WORLD_POSITION/
+# DEFAULT_GOAL_M exactly (same scene, same numbers, so the mock episode and
+# the live webcam path exercise the same reachable geometry).
+BUTTON_WORLD_M = (0.35, -0.05, 0.14)
+APPROACH_START_M = (0.37, 0.07, 0.2)
 APPROACH_ABOVE_M = 0.06  # wrist hovers this far above the press point
-RETRACT_END_M = (0.2, -0.15, 0.7)
+RETRACT_END_M = (0.37, 0.07, 0.2)
+# The real SO-101 is a 5-DOF arm -- position and orientation aren't
+# independently reachable the way a 6-DOF wrist allows. Identity was
+# empirically NOT achievable in-limits near this workspace; this is the
+# orientation FK actually produces at a valid, in-limits configuration.
+NATURAL_EE_ORIENTATION = (0.0172, 0.7069, 0.0172, 0.7069)
 
 PINCH_OPEN_M = 0.08
 PINCH_CLOSED_M = 0.015
@@ -127,7 +139,7 @@ def make_frame(frame_index: int) -> dict:
     aperture = _pinch_aperture(frame_index)
 
     joints: dict[str, dict] = {
-        "wrist": {"position_m": list(wrist), "orientation_xyzw": list(IDENTITY_QUAT)},
+        "wrist": {"position_m": list(wrist), "orientation_xyzw": list(NATURAL_EE_ORIENTATION)},
         "thumb-tip": {
             "position_m": [wrist[0] - aperture / 2, wrist[1], wrist[2] - 0.02],
             "orientation_xyzw": list(IDENTITY_QUAT),

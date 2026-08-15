@@ -140,15 +140,19 @@ export interface ControlVolumeBounds {
 /** Recentered on this fixture scene's actual reachable geometry -- see
  * module docstring's axis note. Not the spec's literal example numbers.
  *
- * First live test (real camera, real user) found the original yMax=-0.05
- * fell short of the button (struct Y=0.0) entirely -- the arm could only
- * ever bend back toward the robot base (Y=-0.7), never forward far enough
- * to reach the button, regardless of hand motion. Widened to comfortably
- * cross past the button on all three axes. */
+ * Retuned again for the real SO-101 (Track A) -- it's a small desktop arm
+ * with maybe 30-40cm of usable reach, nothing like the placeholder arm the
+ * first live-tested bounds were sized for (robot base was at struct
+ * Y=-0.7 then; the robot now sits at the origin). Bounds below are
+ * centered on the same real, IK-verified points spatialTeachMain.ts's
+ * ASSET_WORLD_POSITION/DEFAULT_GOAL_M use (button ~(0.35,-0.05,0.14),
+ * retract goal ~(0.37,0.07,0.2)), with margin on every axis so hand motion
+ * can reach past both. Still needs a live camera to confirm feel -- see
+ * module docstring's "measure rather than assume." */
 export const DEFAULT_CONTROL_VOLUME: ControlVolumeBounds = {
-  xMin: 0.0, xMax: 0.5,
-  yMin: -0.6, yMax: 0.15,
-  zMin: 0.35, zMax: 0.85,
+  xMin: 0.2, xMax: 0.42,
+  yMin: -0.15, yMax: 0.15,
+  zMin: 0.08, zMax: 0.28,
 };
 
 // relative_mediapipe depth strategy (spec's default): the wrist's raw,

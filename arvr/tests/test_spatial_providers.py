@@ -19,7 +19,10 @@ from spatial_providers import (
 
 def test_fixture_robot_provider_loads_default_bundle():
     bundle = FixtureRobotProvider().get_robot_bundle()
-    assert bundle.manifest.robot_id == "fixture_so101"
+    # "so101" is the real robot now (Track A: swapped from a made-up
+    # placeholder to the actual open-source SO-101,
+    # github.com/TheRobotStudio/SO-ARM100), not "fixture_so101".
+    assert bundle.manifest.robot_id == "so101"
     assert bundle.manifest.source == "fixture"
     assert bundle.urdf_path.exists()
     assert bundle.visual_glb_path.exists()
@@ -42,9 +45,13 @@ def test_robot_ir_end_effector_frame_matches_urdf():
     assert frame_id < model.nframes
 
 
-def test_capability_profile_arm_dof_is_six():
+def test_capability_profile_arm_dof_is_five_plus_a_real_gripper():
+    # The real SO-101 is a 5-DOF arm + a separate 1-DOF gripper joint (the
+    # placeholder it replaced was 6-DOF with no gripper at all).
     bundle = FixtureRobotProvider().get_robot_bundle()
-    assert bundle.capability_profile.arm_dof == 6
+    assert bundle.capability_profile.arm_dof == 5
+    assert bundle.capability_profile.end_effector == "parallel_gripper"
+    assert bundle.capability_profile.finger_count == 2
     assert bundle.capability_profile.workspace_radius_m > 0
 
 

@@ -56,21 +56,27 @@ _solver_lock = threading.Lock()
 # ar_datapipe.IkSolver, typed loosely so this module doesn't need a
 # top-level ar_datapipe import (which would need Linux at import time).
 _shared_solver: object | None = None
+# Whether the cached solver's robot has fewer than 6 arm DOF -- a real
+# gripper-equipped arm like the SO-101 can't generally reach an arbitrary
+# (position, orientation) pair independently, so ArmRetargeter needs to
+# know to relax orientation (see arm_retargeter.py / retarget.py's
+# position_only). Cached alongside the solver since both come from the
+# same RobotBundle lookup.
+_shared_position_only: bool = False
 
 
 def _get_shared_solver(robot_id: str):
-    global _shared_solver
-    from ar_datapipe import IkSolver, RobotModel
+    global _shared_solver, _shared_position_only
+    from ar_datapipe import IkSolver
+    from ar_datapipe.robot_model import robot_model_from_bundle
     from spatial_providers import FixtureRobotProvider
 
     with _solver_lock:
         if _shared_solver is None:
             bundle = FixtureRobotProvider().get_robot_bundle(robot_id)
-            model = RobotModel(
-                urdf_path=bundle.urdf_path,
-                end_effector_frame=bundle.manifest.end_effectors[0],
-            )
+            model = robot_model_from_bundle(bundle)
             _shared_solver = IkSolver(model)
+            _shared_position_only = bundle.capability_profile.arm_dof < 6
         return _shared_solver
 
 
@@ -97,7 +103,8 @@ def build_router(store: LiveSessionStore) -> APIRouter:
             return
 
         await websocket.accept()
-        retargeter = ArmRetargeter(_get_shared_solver(state.robot_id))
+        solver = _get_shared_solver(state.robot_id)
+        retargeter = ArmRetargeter(solver, position_only=_shared_position_only)
         try:
             while True:
                 raw = await websocket.receive_text()

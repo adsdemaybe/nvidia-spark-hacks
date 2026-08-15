@@ -25,6 +25,13 @@ def client():
     return TestClient(app)
 
 
+# y/z/orientation are held at a real, IK-verified-reachable point on the
+# real SO-101 (a 5-DOF arm -- position and orientation aren't independently
+# reachable, see arm_retargeter.py's position_only); x varies per call site.
+# Matches spatialTeachMain.ts's DEFAULT_GOAL_M / tools/make_mock_hand_episode.py.
+_NATURAL_EE_ORIENTATION = (0.0172, 0.7069, 0.0172, 0.7069)
+
+
 def _hand_payload(x: float, t_ns: int) -> dict:
     return {
         "schema_version": "1.0",
@@ -33,8 +40,8 @@ def _hand_payload(x: float, t_ns: int) -> dict:
         "hand": "right",
         "joints": {
             "wrist": {
-                "position_m": [x, 0.0, 0.6],
-                "orientation_xyzw": [0.0, 0.0, 0.0, 1.0],
+                "position_m": [x, 0.07, 0.2],
+                "orientation_xyzw": list(_NATURAL_EE_ORIENTATION),
             },
         },
     }
@@ -55,7 +62,7 @@ def test_unknown_session_closes_the_socket(client):
 def test_live_stream_returns_robot_shadow_state(client):
     session_id = client.post("/spatial/live").json()["session_id"]
     with client.websocket_connect(f"/spatial/live/{session_id}") as ws:
-        ws.send_text(json.dumps(_hand_payload(0.5, 0)))
+        ws.send_text(json.dumps(_hand_payload(0.37, 0)))
         raw = ws.receive_text()
     state = json.loads(raw)
     assert state["robot_id"] == "so101"
@@ -69,9 +76,9 @@ def test_live_stream_warm_starts_across_messages(client):
     shadow robot would visibly jump for no reason during a smooth demo."""
     session_id = client.post("/spatial/live").json()["session_id"]
     with client.websocket_connect(f"/spatial/live/{session_id}") as ws:
-        ws.send_text(json.dumps(_hand_payload(0.5, 0)))
+        ws.send_text(json.dumps(_hand_payload(0.37, 0)))
         first = json.loads(ws.receive_text())
-        ws.send_text(json.dumps(_hand_payload(0.51, 33_000_000)))
+        ws.send_text(json.dumps(_hand_payload(0.38, 33_000_000)))
         second = json.loads(ws.receive_text())
 
     delta = max(

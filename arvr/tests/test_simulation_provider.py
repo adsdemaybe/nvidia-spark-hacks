@@ -14,7 +14,8 @@ from ar_contracts import (  # noqa: E402
     RobotTrajectoryFrame,
     RobotTrajectoryMetadata,
 )
-from ar_datapipe import ArmRetargeter, IkSolver, RobotModel  # noqa: E402
+from ar_datapipe import ArmRetargeter, IkSolver  # noqa: E402
+from ar_datapipe.robot_model import robot_model_from_bundle  # noqa: E402
 from spatial_providers import (  # noqa: E402
     FixtureAssetProvider,
     FixtureRobotProvider,
@@ -29,10 +30,10 @@ def _robot_bundle():
 
 
 def _build_trajectory(bundle, hand_frames) -> RobotTrajectory:
-    model = RobotModel(
-        urdf_path=bundle.urdf_path, end_effector_frame=bundle.manifest.end_effectors[0],
-    )
-    retargeter = ArmRetargeter(IkSolver(model))
+    model = robot_model_from_bundle(bundle)
+    # The real SO-101 is 5-DOF -- see arm_retargeter.py's position_only.
+    position_only = bundle.capability_profile.arm_dof < 6
+    retargeter = ArmRetargeter(IkSolver(model), position_only=position_only)
     frames = []
     for hand in hand_frames:
         result = retargeter.step(hand, timestamp_ns=hand.timestamp_ns)
