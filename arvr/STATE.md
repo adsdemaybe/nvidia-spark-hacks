@@ -11,6 +11,48 @@ verifies reachability instead of just storing the event. Branches
 merged into `feat/arvr-integration`. 78/78 Python tests green on Linux
 (WSL x86_64), 52/52 vitest tests + typecheck clean for the TS client.
 
+### Round 4: Isaac Sim actually runs on the Spark, and now publishes real state
+
+Spark memory pressure cleared (`laguna-vllm` idle, GPU 5-10%, 106GB free) —
+user gave the go-ahead to launch Isaac Sim, confined to `ar-vr/sky/`.
+
+- **Isaac Sim 5.1.0 boots headless on this hardware**, cheaply: ~17-23s to
+  "Simulation App Startup Complete", 5-10% GPU, no meaningful memory impact.
+  Confirmed 3 times across debugging. All cache/log/artifact paths for this
+  live under `ar-vr/sky/artifacts/isaac-sim-cache/` and
+  `ar-vr/sky/logs/isaac-sim/` — never touching `andrew/` or the shared
+  system paths.
+- **`packages/isaac-bridge/run_twin_server.py`** (new, filled in the
+  previously-empty package) — publishes real Isaac PhysX state as
+  `ar_contracts.TwinState` over a WebSocket, the exact wire shape
+  `tools/mock_twin_server.py` already established (spec section 25: "the
+  renderer must not care which provider produced the state"). Runs inside
+  Isaac's own bundled Python (`/isaac-sim/python.sh`), outside the uv
+  workspace on purpose — Isaac ships its own Kit runtime, incompatible with
+  a normal venv.
+- **Live-verified with a real client, not just a boot check**: connected
+  `websockets` from the `arvr` uv venv to the running bridge and pulled real
+  `TwinState` frames. The cube settled at `z=0.04` — exactly half its
+  `0.08` scale, i.e. genuinely resting on the ground plane under contact
+  resolution, not a synthetic sine wave (`mock_twin_server.py`'s stand-in
+  moves on `0.3 + 0.05*sin(...)`; this cube's numbers don't match that
+  shape at all, confirming the state is really PhysX-sourced).
+- **What's still a placeholder, on purpose**: `TwinState.robot.joint_positions`
+  is a fixed idle array — no articulated robot is in the scene yet. Wiring
+  one in (via Isaac's URDF importer, likely the same placeholder arm
+  `ar_datapipe`/`ar_sim` already use) and folding this into `ar_backend`'s
+  `/twin/{scene_id}` route instead of a standalone process are the two
+  natural next increments — see `packages/isaac-bridge/README.md`.
+- Three real bugs found only by actually running it: (1) `--entrypoint bash`
+  is required — the image's default entrypoint silently swallows an
+  appended command instead of executing it; (2) `isaacsim.core.api`'s
+  object wrappers (`DynamicCuboid` etc.) require numpy arrays for
+  `position`/`scale`/`color`, not plain lists — `PreviewSurface.__init__`
+  calls `.tolist()` on `color` directly; (3) plain `print()` output was
+  getting lost entirely on clean runs — Isaac's process teardown exits
+  before Python's default stdout buffering flushes, fixed with
+  `sys.stdout.reconfigure(line_buffering=True)` + `PYTHONUNBUFFERED=1`.
+
 ### Round 3: closed the remaining "weak areas" — Follow, CALIBRATE, Corrections verify
 
 Per user instruction to keep building out the gaps flagged in the earlier
@@ -192,9 +234,11 @@ inspection — see "Judgment calls" below (#10-12).
   Corrections (40) all on one port. Follow (39) not wired yet —
   `FollowSession` exists and is tested, adding the route is the natural
   next increment.
-- Per user instruction: **MuJoCo instead of Isaac Sim** for all local
-  verification/simulation (Isaac Sim is downloaded on the Spark but
-  deliberately not run — GPU memory budget).
+- MuJoCo remains the default for all local verification/simulation
+  (`ar_datapipe`'s replay checks, `ar_sim`'s live twin) — cheap, no GPU
+  contention risk. Isaac Sim now also runs (Round 4, below) and publishes
+  real state via `packages/isaac-bridge/`, but as a standalone process, not
+  yet folded into this default path.
 
 ## Judgment calls made without spec guidance (flag for review)
 
@@ -258,14 +302,16 @@ inspection — see "Judgment calls" below (#10-12).
 
 ## Blocked / not started
 
-- **Isaac Sim 5.1.0 downloaded, not run** — deliberate, per instruction, to
-  keep GPU memory free. Sections 14B-G (Isaac bridge, live Follow/Teach-
-  replay against the *authoritative* twin) stay blocked until that
-  changes; nothing else is blocked by it.
-- `packages/isaac-bridge/`, `apps/ios/` — still empty. Isaac bridge is
-  Sky/SSH-only. The iOS phone app is Andrew's and out of this
-  consolidation's scope (xr-web is the browser stand-in, not a
-  replacement for the primary phone demo device).
+- **Isaac Sim now runs and publishes real state** (Round 4, above) — no
+  longer blocked. What's left before it's the *authoritative* twin (spec
+  sections 14B-G): an articulated robot in the scene (placeholder
+  `joint_positions` today), a reset/loop so the demo runs indefinitely, and
+  folding `packages/isaac-bridge/` into `ar_backend`'s `/twin/{scene_id}`
+  route instead of it being a standalone process a client has to point at
+  directly. None of this blocks anything else in the repo.
+- `apps/ios/` — still empty, Andrew's, out of this consolidation's scope
+  (xr-web is the browser stand-in, not a replacement for the primary phone
+  demo device).
 - LeRobot export not round-tripped through the actual `lerobot` package.
 - `ar_sim`'s replay/twin is kinematic-plus-dynamics for a *scripted*
   waypoint routine, not yet driven by a real retargeted TEACH episode —
@@ -299,16 +345,16 @@ untouched throughout, per spec sections 10/87.
 
 ## Next
 
-1. Validate this round's work (`follow.py`, `corrections.py`, `alignment.ts`,
-   `followSession.ts`, `main.ts` changes) on the real Spark (worktree), then
-   merge into `feat/arvr-integration` and push.
-2. Wire `ar_datapipe`'s accepted-episode output into `ar_sim`'s director
+1. Wire an articulated robot into `packages/isaac-bridge/run_twin_server.py`'s
+   scene (likely via Isaac's URDF importer, targeting the same placeholder
+   arm `ar_datapipe`/`ar_sim` already use) so `TwinState.robot.joint_positions`
+   is real instead of a fixed idle array.
+2. Fold `isaac-bridge` into `ar_backend`'s `/twin/{scene_id}` route the same
+   way `ar_sim` already was, instead of a client having to point `TWIN_WS`
+   at a standalone process directly — Isaac's ~17-23s startup latency behind
+   a request path is the main design question to resolve first.
+3. Wire `ar_datapipe`'s accepted-episode output into `ar_sim`'s director
    so REPLAY drives a real retargeted demonstration, not a fixed routine.
-3. Do NOT run the Isaac Sim container until the Spark has memory/GPU
-   headroom (`laguna-vllm` was at 114.6GB/128GB, GPU 96%, as of this
-   check) or the user explicitly revisits it. Sections 14B-G (Isaac
-   bridge, live Follow/Teach-replay against the *authoritative* twin)
-   stay blocked until then; nothing else in this repo is blocked by it.
-4. Real robot URDF, whenever F3/hardware has one — two placeholders
-   (`ar_datapipe`'s and `ar_sim`'s) both need swapping and probably
-   unifying at that point.
+4. Real robot URDF, whenever F3/hardware has one — two (soon three, with
+   Isaac) placeholders all need swapping and probably unifying at that
+   point.
