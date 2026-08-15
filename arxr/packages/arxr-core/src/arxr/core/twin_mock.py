@@ -64,8 +64,11 @@ class MockTwinSource:
 
         # The cube rides along with the arm once it has been grasped; the bin
         # never moves. Enough structure for a client to show something real.
+        # Resting height is the table top (0.75) plus half the cube (0.03), so
+        # the cube sits ON the table rather than inside it -- see the fixture
+        # layout in tools/make_fixtures.py.
         carried = 0.30 <= phase < 0.95
-        cube_z = 0.70 + (0.25 * swing if carried else 0.0)
+        cube_z = 0.78 + (0.25 * swing if carried else 0.0)
 
         status = "idle"
         for start, name in TASK_PHASES:
@@ -78,7 +81,9 @@ class MockTwinSource:
             robot=RobotState(id="robot_01", joint_positions=joints),
             objects=[
                 ObjectState(id="cube_01", position_m=(0.3, 0.1, cube_z)),
-                ObjectState(id="bin_01", position_m=(0.6, -0.2, 0.0)),
+                # Beside the table, not inside its footprint (the table spans
+                # y in [-0.4, 0.4]). Keep in step with LAYOUT in xr-web/scene.ts.
+                ObjectState(id="bin_01", position_m=(0.6, -0.7, 0.0)),
             ],
             task=TaskState(id=TASK_ID, status=status),
         )

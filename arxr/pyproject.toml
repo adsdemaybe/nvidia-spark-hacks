@@ -9,6 +9,9 @@ dependencies = [
 
 [tool.uv.workspace]
 members = ["packages/*"]
+# xr-web is the TypeScript/WebXR client (STRUCT_2.md 28). It lives under
+# packages/ where the spec puts it, but it is not a Python workspace member.
+exclude = ["packages/xr-web"]
 
 [tool.uv.sources]
 arxr-core = { workspace = true }

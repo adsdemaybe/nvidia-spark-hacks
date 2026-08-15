@@ -132,8 +132,8 @@ def _demonstration_pose(
     start = np.array([0.10, 0.00, 0.90])
     grasp = np.array([0.30, 0.10, 0.78])
     lifted = np.array([0.30, 0.10, 1.00])
-    over_bin = np.array([0.60, -0.20, 1.00])
-    release = np.array([0.60, -0.20, 0.35])
+    over_bin = np.array([0.60, -0.70, 1.00])
+    release = np.array([0.60, -0.70, 0.35])
 
     if t < 0.25:
         p = start + (grasp - start) * (t / 0.25)
