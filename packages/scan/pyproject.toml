@@ -1,0 +1,32 @@
+[project]
+name = "scan"
+version = "0.1.0"
+description = "capture -> reconstruct -> segment -> assetize"
+requires-python = ">=3.11"
+dependencies = [
+    "r2s-core",
+    "opencv-python-headless>=4.9",
+    "imageio-ffmpeg>=0.5",
+    "trimesh>=4.4",
+    "scipy>=1.13",
+    "plyfile>=1.0",
+    "pillow>=10.3",
+]
+
+[project.optional-dependencies]
+# Split so the Mac never pulls CUDA wheels and the Spark image stays thin.
+sfm = ["pycolmap>=3.10"]          # no aarch64 Linux wheel -- source build or CLI fallback
+splat = ["torch>=2.3"]            # gsplat/3dgrut are installed out-of-band per-platform
+seg = ["transformers>=4.44", "torch>=2.3"]
+hulls = ["coacd>=1.0.11"]         # aarch64 wheels confirmed
+usd = ["usd-core>=24.5"]
+
+[project.scripts]
+scan = "scan.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scan"]

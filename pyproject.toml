@@ -1,0 +1,57 @@
+[project]
+name = "realsim"
+version = "0.1.0"
+description = "One phone video -> N validated digital-cousin simulation scenes"
+requires-python = ">=3.11"
+dependencies = [
+    "r2s-core",
+    "scan",
+    "envgen",
+    "r2s-cli",
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+r2s-core = { workspace = true }
+scan = { workspace = true }
+envgen = { workspace = true }
+r2s-cli = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "mujoco>=3.2",
+    "usd-core>=24.5",
+    "opencv-python-headless>=4.9",
+    "imageio-ffmpeg>=0.5",
+    "trimesh>=4.4",
+    "shapely>=2.0",
+    "scipy>=1.13",
+    "plyfile>=1.0",
+    "pillow>=10.3",
+    "coacd>=1.0.11",
+    "rtree>=1.2",
+    "pytest-cov>=5.0",
+    "syrupy>=4.6",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 96
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "cuda: requires a CUDA GPU (deselected by default on the Mac)",
+    "isaac: requires Isaac Sim (deselected by default)",
+    "slow: long-running",
+]
+addopts = "-m 'not cuda and not isaac' --strict-markers"
+
+# dev extras that make the physics gate real on the dev machine too

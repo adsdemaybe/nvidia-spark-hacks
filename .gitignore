@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.venv/
+.r2s/
+.buildcache/
+spark/state/preflight.latest.json
+fixtures/samples/
+work/
