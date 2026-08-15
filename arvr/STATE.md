@@ -2,14 +2,172 @@
 
 ## Where the build is
 
-**The full loop is wired and live-tested end-to-end**: xr-web client →
-Episodes API → ar_datapipe (retarget/verify/export) → verdict, plus a
-physics-driven live Twin stream, a live Follow session, manual Twin
-Alignment (spec section 49), and a Corrections endpoint that actually
-verifies reachability instead of just storing the event. Branches
-`feat/ar-contracts`, `feat/ar-datapipe`, `feat/ar-backend`, `feat/ar-web-port`
-merged into `feat/arvr-integration`. 78/78 Python tests green on Linux
-(WSL x86_64), 52/52 vitest tests + typecheck clean for the TS client.
+**Two things now live in this repo, deliberately not merged into one:**
+
+1. **The mode-based AR app** (`main.ts`, PLACE/TEACH/REPLAY/FOLLOW/TWIN/
+   CORRECT) — everything Rounds 1-4 below describe. Fully working, fully
+   tested, **completely untouched** by the pivot below.
+2. **The Shadow Robot Spatial Demonstration Pipeline** (Round 5, new) — the
+   project's actual current direction per a new master spec. A human
+   demonstrates with a tracked hand, STRUCT renders a shadow hand, retargets
+   onto a selected robot (fixture SO-101 today, swappable to the real
+   CAD-generated robot later via a `RobotProvider` interface with zero
+   downstream rewrites), verifies in MuJoCo, exports accepted demos as
+   `RobotEpisode` → LeRobot training data.
+
+The old app was deliberately left running rather than torn out — see Round
+5's "why two apps" note. Combined test count: **139/139 Python, 81/81
+vitest**, both suites green, lint clean, both on `feat/arvr-integration`.
+
+### Round 5: Shadow Robot Spatial Demonstration Pipeline — Milestone 1 complete
+
+Per the new spec (`STRUCT_Shadow_Robot_Spatial_Training_Master_Claude.md`,
+not `ar-xr-plan.md` — a genuinely different document; if a future session
+finds spec-section comments citing "STRUCT Shadow Robot..." vs. the old
+"spec section N" convention, that's why): built the full first milestone
+(spec §68) — no CAD, no PCB, no Spark, no room reconstruction, no RL. Seven
+capability branches (`feat/spatial-contracts` → `feat/fixture-robot-provider`
+→ `feat/hand-provider` → `feat/shadow-hand` → `feat/arm-retarget` →
+`feat/shadow-robot` → `feat/spatial-training-integration`), each merged into
+`feat/arvr-integration` only after its own tests passed — same discipline as
+every other round in this file.
+
+**Why two apps, not one rewritten app** (confirmed with the user before
+starting): the new spec's UI (ROBOT/ASSET/HAND selectors, CALIBRATE → START
+DEMO → FINISH, shadow hand + shadow robot shown together) is a fundamentally
+different interaction model from a mode switcher, not a reskin of one. Building
+`spatial-teach.html`/`spatialTeachMain.ts` as a new entry point — reusing
+every lower-level module that already existed (`hands.ts`, `arm.ts`'s mesh
+builders, `camera.ts`, `xr.ts`, `adapter.ts`) — meant zero risk to `main.ts`'s
+already-working, already-tested app. Trimming the old app's now-deprioritized
+scope (FOLLOW especially — spec §5 explicitly cuts it) is future cleanup, not
+part of this milestone.
+
+**What's real vs. reused vs. placeholder, honestly:**
+
+- **New Python packages**: `spatial-providers` (new uv workspace member) —
+  `RobotProvider`/`AssetProvider`/`HandProvider` ABCs + Fixture/Mock
+  implementations, `MuJoCoSimulationProvider`. `ar_contracts` gained 9 new
+  contract modules (`HandFrame`, `RobotBundle`/`RobotIR`, `InteractableAsset`,
+  `HumanEpisode`, `InteractionIR`, `RobotTrajectory`, `RobotEpisode`,
+  `RobotShadowState`, plus `SimulationProvider`/`TaskSpec` — see judgment
+  call below for why those last two live here). `ar_datapipe` gained
+  `arm_retargeter.py`, `interaction_ir.py`, `spatial_pipeline.py` — all
+  parallel to (never calling or modifying) the old `pipeline.py`.
+- **Genuinely reused, not reimplemented**: `IkSolver` (Phase 6's
+  `ArmRetargeter` wraps it unchanged, gets the existing nullspace-refinement
+  singularity handling for free), `MujocoReplay`/`RobotModel` (Phase 10's
+  provider composes them, `verify.py` itself untouched), `episodes.py`'s
+  create→artifact→finish route pattern (Phase 8's `spatial_episodes.py`
+  mirrors it structurally), `follow.py`'s WS session pattern (Phase 7's
+  `spatial_live.py`), `hands.ts`'s full WebXR joint parsing (already did
+  90% of what a `HandFrame`/shadow-hand system needs — the single biggest
+  reuse win in this pivot), `twinProvider.ts`'s Mock-provider shape
+  (`mockHand.ts`).
+- **Real fixture robot**: `fixtures/spatial-training/robots/so101/` — a
+  physical copy of `fixtures/robot/test_arm.urdf` (deliberate, so the old
+  pipeline's `DEFAULT_URDF` stays untouched), `robot_ir.json` hand-authored
+  to mirror it exactly, cross-checked against a live Pinocchio parse in
+  tests (not just eyeballed). Robot GLB is the existing placeholder mesh
+  from `fixtures/ar-xr/` — no dedicated SO-101 geometry exists; the
+  procedural `ShadowRobot` (correct joint axes, verified by test) carries
+  visual fidelity, not the GLB.
+- **Real fixture asset**: `fixtures/spatial-training/assets/button/` — spec
+  §15's literal button example, a small deterministic cylinder mesh (not a
+  repurposed cube, unlike the original plan's suggestion — a dedicated
+  primitive was barely more work and more honest than mislabeling a cube).
+  Cube/bin/drawer deferred, not needed for Milestone 1's demo task.
+- **Real, live-verified pipeline**: created a spatial episode against a
+  real running `ar_backend`, uploaded 90 real mock hand frames, called
+  `/finish`, got `status=accepted` with a real `dataset_id`, confirmed the
+  actual parquet + `provenance.jsonl` + LeRobot meta files landed on disk —
+  not just green unit tests in isolation.
+- **Placeholder, labeled honestly**: `HAND=mock` (`MockHandProvider`,
+  deterministic 90-frame fixture) is what's tested this session end-to-end.
+  `HAND=openxr` wires the same real `xr.ts`/`hands.ts` path already used
+  elsewhere in this client, but **has not been tested against real
+  hardware this session** (no headset attached) — implemented per the same
+  patterns that are tested elsewhere, not blind code, but flag it before
+  trusting it live. CALIBRATE is the same "no real AR anchor system yet"
+  honest stand-in `main.ts`'s TEACH mode already used — not a new claim,
+  just applied to the new entry point too.
+- **The one thing this session could not verify**: the entry point's actual
+  interactive click-through in a real browser (CALIBRATE → START DEMO →
+  watching the shadow hand/robot animate → FINISH). Typecheck, 81/81
+  vitest (including targeted logic tests for the shadow hand/robot,
+  coordinate conversions, and recorder), and a clean production build all
+  pass; the backend it talks to is confirmed working via a real E2E curl
+  run all the way through export. But nobody has actually opened
+  `spatial-teach.html` in a browser and pressed the buttons yet.
+
+**Real bugs found by actually running this, not just writing it:**
+
+1. **Architectural**: Phase 11's orchestrator (`ar_datapipe`) needed
+   `SimulationProvider`/`TaskSpec` to type its interface, but
+   `spatial_providers` already depends on `ar_datapipe` (for the MuJoCo
+   provider) — `ar_datapipe` depending back would be a circular package
+   dependency. Moved both into `ar_contracts` (the one thing both already
+   depend on); `spatial_providers.simulation_provider` re-exports them so
+   already-merged Phase 10 code and its tests keep working unchanged.
+2. **`VerificationResult.dataset_id` vs. `RobotEpisodeMetadata.dataset_id`
+   are not the same thing** — the former is a provisional id the
+   `SimulationProvider` must supply just to satisfy that contract's
+   non-null-on-accept invariant (it only verifies, it doesn't export); the
+   latter is the real LeRobot path, only known after `export_robot_episode`
+   actually runs. `spatial_pipeline.py` originally copied the wrong one;
+   fixed to attach the real path via `model_copy` after export.
+3. **`assets.py`'s single-asset lookup didn't strip the `_01` instance
+   suffix** the way `FixtureAssetProvider` already did (`button_01` → the
+   `button/` directory) — `GET /assets/button_01` would have 404'd against
+   a directory literally named `button`. Caught by writing the test, not
+   by inspection.
+4. **A URDF copy's explanatory comment landed before the XML declaration**
+   — invalid XML, `urdfdom` rejects it outright. Comment moved after the
+   declaration line.
+5. **MuJoCo's collision check was double-replaying every frame** in an
+   early draft (once for tracking error, again for `ncon`) — consolidated
+   to one `replay_pose()` call per frame; it already runs `mj_forward`, so
+   contact state is current right after.
+
+**Known gaps, not silently skipped:**
+
+- `interaction_ir.py`'s object-relative derivation is computed as part of
+  the real pipeline (`spatial_pipeline.py` calls it) but **not yet
+  consumed by retargeting itself** — `ArmRetargeter` still operates
+  directly on each frame's world-space wrist pose. Wiring interaction_ir
+  into retargeting matters once a second robot embodiment needs the same
+  demo compiled differently (spec §12's whole point); not needed for one
+  fixture robot.
+- Collision checking (`MuJoCoSimulationProvider`) is real and empirically
+  confirmed to report zero false-positive contacts across the full mock
+  demo — but no genuine self-collision *positive* test case was
+  constructed (this fixture's cylinder geometry is too simple to easily
+  interpenetrate on purpose). Stated honestly rather than claimed as
+  fully covered.
+- `robot_bundle_hash`/`human_episode_hash`/`asset_bundle_hash` are plain
+  sha256-of-bytes — sufficient for provenance tracking, not a security
+  property.
+- Old app's now-deprioritized scope (FOLLOW, standalone TWIN/CORRECT) is
+  untouched, not trimmed — spec §5/§64 say cut it, this pass didn't.
+
+## Next (Milestone 2+, per the new spec's own recommended order — §69-72: swap one provider, nothing else changes)
+
+1. Open `spatial-teach.html` in a real browser and actually click through
+   CALIBRATE → START DEMO → FINISH — the one thing this round couldn't
+   verify itself.
+2. `HAND=openxr` on real hardware (a Quest or a phone) — swap
+   `MockHandProvider` for the real WebXR path, already wired, untested.
+3. Wire `interaction_ir` into `ArmRetargeter` (see gap above) — needed
+   before a second robot embodiment can meaningfully reuse one HumanEpisode.
+4. `SimulationProvider` swap: Isaac Sim as the authoritative verifier,
+   once `packages/isaac-bridge/` (Round 4) gets a real articulated robot
+   in its scene instead of a placeholder joint array.
+5. `RobotProvider` swap: `GeneratedRobotProvider` once CAD/Robot-IR output
+   exists — `STRUCT_ROBOT_PROVIDER=generated` already raises
+   `NotImplementedError` rather than silently doing nothing, a live
+   switch-point waiting for its other half.
+6. Old-app cleanup per spec §64's cut list, once the new pipeline is the
+   team's actual demo path — not blocking, not started.
 
 ### Round 4: Isaac Sim actually runs on the Spark, and now publishes real state
 
