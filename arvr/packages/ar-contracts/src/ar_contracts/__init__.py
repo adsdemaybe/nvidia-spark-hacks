@@ -4,6 +4,7 @@ See arvr/docs/CONTRACTS.md for the coordinate convention and freeze status.
 """
 
 from .common import (
+    IDENTITY_QUATERNION,
     SCHEMA_VERSION,
     CoordinateFrame,
     DeviceType,
@@ -18,6 +19,7 @@ from .common import (
 )
 from .correction_event import CorrectionEvent, CorrectionReason
 from .follow import compute_follow_target, rotate_vector
+from .follow_session import DEFAULT_FOLLOW_DISTANCE_M, FollowSession, FollowSessionMode
 from .follow_state import FollowMode, FollowState
 from .scene_manifest import SceneManifest, VisualAsset
 from .spatial_episode import EpisodeSource, EventType, SpatialEpisode, SpatialEvent
@@ -26,6 +28,8 @@ from .twin_state import ObjectState, RobotState, TaskState, TaskStatus, TwinStat
 from .verification_result import VerificationChecks, VerificationResult, VerificationStatus
 
 __all__ = [
+    "DEFAULT_FOLLOW_DISTANCE_M",
+    "IDENTITY_QUATERNION",
     "SCHEMA_VERSION",
     "CoordinateFrame",
     "CorrectionEvent",
@@ -34,6 +38,8 @@ __all__ = [
     "EpisodeSource",
     "EventType",
     "FollowMode",
+    "FollowSession",
+    "FollowSessionMode",
     "FollowState",
     "InputType",
     "ObjectState",

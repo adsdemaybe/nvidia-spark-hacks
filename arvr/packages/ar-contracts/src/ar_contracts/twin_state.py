@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import field_validator
 
 from .common import (
+    IDENTITY_QUATERNION,
     SCHEMA_VERSION,
     FrozenModel,
     OrientationXYZW,
@@ -49,7 +50,10 @@ class RobotState(FrozenModel):
 class ObjectState(FrozenModel):
     id: str
     position_m: PositionM
-    orientation_xyzw: OrientationXYZW
+    # Default identity, not required — an object with no meaningful
+    # orientation (e.g. a bin) shouldn't force a producer to invent one.
+    # Reconciled during the arvr/arxr consolidation (see STATE.md).
+    orientation_xyzw: OrientationXYZW = IDENTITY_QUATERNION
 
 
 class TaskState(FrozenModel):

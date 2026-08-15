@@ -7,6 +7,7 @@ dependencies = [
     "ar-contracts",
     "ar-datapipe",
     "ar-backend",
+    "ar-sim",
 ]
 
 [tool.uv.workspace]
@@ -20,6 +21,7 @@ exclude = ["packages/xr-web", "packages/isaac-bridge"]
 ar-contracts = { workspace = true }
 ar-datapipe = { workspace = true }
 ar-backend = { workspace = true }
+ar-sim = { workspace = true }
 
 [tool.uv]
 # This code only ever runs on a dev laptop (win32) or the Spark (linux

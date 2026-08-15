@@ -1,11 +1,12 @@
-"""FastAPI app factory — spec section 36-37 API surface.
+"""FastAPI app factory — spec section 36-40 API surface.
 
     uv run uvicorn ar_backend.app:app --reload --port 8000
 
-Twin/Follow/Correction streaming (sections 38-40) aren't wired in here yet
-— Twin has a standalone equivalent already (tools/mock_twin_server.py);
-folding it into this app is a reasonable next step once a client actually
-needs both REST and the twin stream from the same port.
+Episodes, Scenes, Twin (live physics via ar_sim), and Corrections all on
+one port — a client only needs one base URL. Follow (section 39) isn't
+wired in yet; `ar_contracts.FollowSession` exists and is tested, adding
+the session/WS endpoints is a reasonable next step once a client needs
+them.
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from .corrections import build_router as build_corrections_router
 from .episodes import build_router as build_episodes_router
 from .scenes import build_router as build_scenes_router
-from .store import EpisodeStore
+from .store import CorrectionStore, EpisodeStore
+from .twin import build_router as build_twin_router
 
 ARVR_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_SCENES_DIR = ARVR_ROOT / "fixtures" / "ar-xr"
@@ -28,14 +31,18 @@ def create_app(
     *,
     scenes_dir: Path | None = None,
     dataset_root: Path | None = None,
+    twin_hz: float = 30.0,
 ) -> FastAPI:
     scenes_dir = scenes_dir or DEFAULT_SCENES_DIR
     dataset_root = dataset_root or DEFAULT_DATASET_ROOT
 
     app = FastAPI(title="struct-ar-api", version="0.1.0")
-    store = EpisodeStore()
-    app.include_router(build_episodes_router(store, dataset_root))
+    episode_store = EpisodeStore()
+    correction_store = CorrectionStore()
+    app.include_router(build_episodes_router(episode_store, dataset_root))
     app.include_router(build_scenes_router(scenes_dir))
+    app.include_router(build_twin_router(twin_hz))
+    app.include_router(build_corrections_router(correction_store))
     return app
 
 
