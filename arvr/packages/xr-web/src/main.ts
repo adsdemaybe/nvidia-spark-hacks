@@ -19,10 +19,12 @@ import { readHand, wristTarget, type HandFrame } from "./hands";
 import { describe as describeSession, detectCapabilities, startBestSession, type SessionKind } from "./xr";
 import type { SpatialAdapter } from "./adapter";
 import { ArticulatedArm, REACH_M, SHOULDER_HEIGHT, reachStatus } from "./arm";
-import type { CorrectionEvent, TwinState, Vec3 } from "./contracts";
+import type { CorrectionEvent, CorrectionResponse, CorrectionVerification, TwinState, Vec3 } from "./contracts";
 import { DEFAULT_FOLLOW_DISTANCE_M, SCHEMA_VERSION } from "./contracts";
+import { IDENTITY_ALIGNMENT, applyAlignment, reprojectionErrorM, solveAlignment, type Alignment } from "./alignment";
 import { gripperEvents, loadEpisode, path, poseAt, type LoadedEpisode } from "./episode";
 import { uploadEpisode, type EpisodeVerdict } from "./episodeUpload";
+import { FollowSession } from "./followSession";
 import { EpisodeRecorder } from "./recorder";
 import {
   FIXTURES_BASE,
@@ -202,9 +204,35 @@ let replayPlaying = true;
 let latestVerdict: EpisodeVerdict | undefined;
 let verdictPending = false;
 
+// spec section 17 lists CALIBRATE first among TEACH's required controls.
+// There's no real AR anchor system yet to calibrate against (see §49) — this
+// records that the human explicitly confirmed a starting pose before
+// recording is allowed to start, rather than silently assuming one.
+let calibrated = false;
+
+let followSession: FollowSession | undefined;
+let followSessionState: "stopped" | "following" | "paused" = "stopped";
+let latestFollowTwin: TwinState | undefined;
+
+// ------------------------------------------------------------- alignment --
+// Twin Alignment v0 (spec section 49): deterministic manual anchors, not
+// automatic relocalization. Two known struct_world points; the human taps
+// where each actually is in the room, and that solves T_struct_to_ar.
+const ANCHOR_ROBOT_BASE_STRUCT: Vec3 = LAYOUT["robot"] ?? [0.15, -0.7, 0];
+// Table's near-left corner (TABLE_SIZE 1.20x0.80 in ar_sim/scene_mjcf.py,
+// centered at LAYOUT["table"]) — any fixed, known struct_world point works;
+// a corner is just easy for a human to point at precisely.
+const ANCHOR_TABLE_CORNER_STRUCT: Vec3 = [-0.2, -0.4, 0];
+
+let twinAlignment: Alignment = IDENTITY_ALIGNMENT;
+let anchorReprojectionErrorM: number | undefined;
+let anchorStep: "idle" | "awaiting_robot_base" | "awaiting_table_corner" = "idle";
+let tappedRobotBaseStruct: Vec3 | undefined;
+
 const ORIGINAL_TARGET: Vec3 = [0.45, -0.05, 1.0];
 let correctedTarget: Vec3 = [0.45, -0.05, 1.18];
 let corrections: CorrectionEvent[] = [];
+let lastCorrectionVerification: CorrectionVerification | undefined;
 
 const adapter: SpatialAdapter = navigator.xr ? new XRControllerAdapter() : new DesktopMockAdapter();
 const recorder = new EpisodeRecorder({
@@ -224,6 +252,10 @@ const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let dragging = false;
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (mode === "TWIN" && anchorStep !== "idle") {
+    handleAnchorTap(e);
+    return;
+  }
   if (mode !== "PLACE" && mode !== "CORRECT") return;
   dragging = true;
   orbit.enabled = false;
@@ -260,6 +292,36 @@ function handlePointer(event: PointerEvent): void {
   }
 }
 
+/**
+ * One tap = one anchor (spec section 49). Two taps total: robot base, then
+ * table corner, in that order — after the second, solve and store the
+ * alignment. A tap, not a drag, because an anchor is a single point in
+ * time, not something to adjust live.
+ */
+function handleAnchorTap(event: PointerEvent): void {
+  pointer.set(
+    (event.clientX / innerWidth) * 2 - 1,
+    -(event.clientY / innerHeight) * 2 + 1,
+  );
+  raycaster.setFromCamera(pointer, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(floorPlane, hit)) return;
+  const tappedStruct: Vec3 = [-hit.z, -hit.x, 0];
+
+  if (anchorStep === "awaiting_robot_base") {
+    tappedRobotBaseStruct = tappedStruct;
+    anchorStep = "awaiting_table_corner";
+  } else if (anchorStep === "awaiting_table_corner" && tappedRobotBaseStruct) {
+    const anchorA = { structPosition: ANCHOR_ROBOT_BASE_STRUCT, tappedPosition: tappedRobotBaseStruct };
+    const anchorB = { structPosition: ANCHOR_TABLE_CORNER_STRUCT, tappedPosition: tappedStruct };
+    twinAlignment = solveAlignment(anchorA, anchorB);
+    anchorReprojectionErrorM = reprojectionErrorM(twinAlignment, anchorB);
+    anchorStep = "idle";
+    tappedRobotBaseStruct = undefined;
+  }
+  renderControls();
+}
+
 function recordCorrection(): void {
   const event: CorrectionEvent = {
     schema_version: SCHEMA_VERSION,
@@ -270,12 +332,31 @@ function recordCorrection(): void {
     reason: "collision_avoidance",
   };
   corrections = [...corrections, event];
+  lastCorrectionVerification = undefined;
   console.info("CorrectionEvent captured", event);
   fetch(`${API_BASE}/xr/corrections`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(event),
-  }).catch((error: unknown) => console.warn("failed to post CorrectionEvent:", error));
+  })
+    .then((res) => res.json() as Promise<CorrectionResponse>)
+    .then((body) => {
+      lastCorrectionVerification = body.verification;
+      renderControls();
+    })
+    .catch((error: unknown) => console.warn("failed to post CorrectionEvent:", error));
+}
+
+/** spec section 70 DoD item 5: surface whether the last captured correction
+ * is actually reachable, not just stored. */
+function correctionVerificationLines(verification: CorrectionVerification | undefined): string[] {
+  if (corrections.length === 0) return [];
+  if (!verification) return ["verifying..."];
+  if (!verification.checked) return [`verification unavailable (${verification.reason ?? "unknown"})`];
+  if (verification.reachable) {
+    return [`✓ reachable  (pose error ${(verification.pose_error ?? 0).toFixed(4)})`];
+  }
+  return [`⚠ ${verification.reason ?? "not reachable"}`];
 }
 
 // ---------------------------------------------------------------------- HUD --
@@ -311,7 +392,12 @@ function renderControls(): void {
   add(cameraFeed ? "CAMERA OFF" : "CAMERA ON", () => void toggleCamera());
 
   if (mode === "TEACH") {
-    if (recorder.isRecording) {
+    if (!calibrated) {
+      add("CALIBRATE", () => {
+        calibrated = true;
+        renderControls();
+      }, "rec");
+    } else if (recorder.isRecording) {
       add("GRAB", () => {
         recorder.grab(nowNs());
         placeAtStruct(grabMarker, effectorPosition());
@@ -359,11 +445,38 @@ function renderControls(): void {
       }, "rec");
     }
   } else if (mode === "FOLLOW") {
+    if (followSessionState === "stopped") {
+      add("START FOLLOW", () => void startFollow(), "rec");
+    } else {
+      add(followSessionState === "paused" ? "RESUME" : "PAUSE", () => {
+        followSessionState = followSessionState === "paused" ? "following" : "paused";
+        renderControls();
+      });
+      add("STOP", () => {
+        followSession?.stop();
+        followSession = undefined;
+        followSessionState = "stopped";
+        latestFollowTwin = undefined;
+        renderControls();
+      });
+    }
     add("−0.25 m", () => { followDistance = Math.max(0.25, followDistance - 0.25); });
     add("+0.25 m", () => { followDistance += 0.25; });
   } else if (mode === "TWIN") {
     add("LIVE SERVER", () => void connectTwin("live"));
     add("FIXTURE STREAM", () => void connectTwin("fixture"));
+    if (anchorStep === "idle") {
+      add("SET ANCHORS", () => {
+        anchorStep = "awaiting_robot_base";
+        renderControls();
+      });
+    } else {
+      add(
+        anchorStep === "awaiting_robot_base" ? "TAP ROBOT BASE…" : "TAP TABLE CORNER…",
+        () => {},
+        "rec",
+      );
+    }
   } else if (mode === "REPLAY") {
     add(replayPlaying ? "PAUSE" : "PLAY", () => { replayPlaying = !replayPlaying; renderControls(); });
     add("RESTART", () => { replaySeconds = 0; });
@@ -395,6 +508,31 @@ async function connectTwin(kind: "live" | "fixture"): Promise<void> {
       provenanceEl.setAttribute("data-connected", String(p.connected));
     },
   );
+}
+
+// ------------------------------------------------------------------ follow --
+async function startFollow(): Promise<void> {
+  try {
+    const session = await FollowSession.start(API_BASE);
+    session.connect(
+      (state) => { latestFollowTwin = state; },
+      () => {
+        // Backend-initiated close (e.g. server restart) — reflect it in the
+        // UI rather than silently going stale.
+        if (followSessionState !== "stopped") {
+          followSessionState = "stopped";
+          followSession = undefined;
+          renderControls();
+        }
+      },
+    );
+    followSession = session;
+    followSessionState = "following";
+  } catch (error) {
+    console.warn("failed to start follow session:", error);
+    followSessionState = "stopped";
+  }
+  renderControls();
 }
 
 // -------------------------------------------------------------------- loop --
@@ -506,6 +644,26 @@ renderer.setAnimationLoop((_time, frame) => {
     placeAtStruct(human, humanPosition);
     placeAtStruct(followMarker, target);
     updateLine(followLine, humanPosition, target);
+
+    if (followSessionState === "following") {
+      followSession?.send({
+        schema_version: SCHEMA_VERSION,
+        timestamp_ns: nowNs(),
+        human_pose: { position_m: humanPosition, orientation_xyzw: humanQuat },
+        desired_follow_distance_m: followDistance,
+        follow_target: { position_m: target },
+      });
+    }
+    // The chase stand-in's response (ar_backend/follow.py) — a *different*
+    // robot position from `target` above: that's where it should ideally
+    // be, this is where the (placeholder) navigation actually put it.
+    if (latestFollowTwin) {
+      const base = latestFollowTwin.objects.find((o) => o.id === "robot_base");
+      if (base) {
+        robotBase = base.position_m;
+        arm.placeBase(robotBase);
+      }
+    }
   }
 
   if (mode === "TEACH") {
@@ -543,7 +701,17 @@ renderer.setAnimationLoop((_time, frame) => {
     arm.setJoints(latestTwin.robot.joint_positions);
     for (const object of latestTwin.objects) {
       const mesh = sceneObjects?.get(object.id.replace(/_\d+$/, ""));
-      if (mesh) placeAtStruct(mesh, object.position_m);
+      if (mesh) placeAtStruct(mesh, applyAlignment(twinAlignment, object.position_m));
+    }
+    // The static scene (table/cube/bin GLBs) needs the same alignment as
+    // the live objects, or a calibrated Twin would show the robot's cube
+    // correctly placed relative to a table that's still sitting wherever
+    // the un-aligned model puts it — the two would visibly disagree.
+    if (twinAlignment !== IDENTITY_ALIGNMENT) {
+      for (const [id, mesh] of sceneObjects ?? []) {
+        const structPos = LAYOUT[id];
+        if (structPos) placeAtStruct(mesh, applyAlignment(twinAlignment, structPos));
+      }
     }
   }
 
@@ -600,13 +768,28 @@ function readout(): string {
       { position_m: humanPosition, orientation_xyzw: [0, 0, Math.sin(humanYaw / 2), Math.cos(humanYaw / 2)] },
       followDistance,
     );
+    // Distance from the human to where the robot actually is (once a
+    // session is connected), not to the ideal target — which would always
+    // equal `desired` by construction and say nothing about tracking error.
+    const trackedPos = followSessionState !== "stopped" ? robotBase : target;
     const actual = Math.hypot(
-      humanPosition[0] - target[0], humanPosition[1] - target[1], humanPosition[2] - target[2],
+      humanPosition[0] - trackedPos[0],
+      humanPosition[1] - trackedPos[1],
+      humanPosition[2] - trackedPos[2],
     );
-    lines.push(`human      ${p(humanPosition)}`, `target     ${p(target)}`,
-      `desired    ${followDistance.toFixed(2)} m`, `actual     ${actual.toFixed(2)} m`);
+    lines.push(
+      `human      ${p(humanPosition)}`,
+      `target     ${p(target)}`,
+      `desired    ${followDistance.toFixed(2)} m`,
+      `actual     ${actual.toFixed(2)} m`,
+      `error      ${Math.abs(actual - followDistance).toFixed(2)} m`,
+      `session    ${followSessionState.toUpperCase()}`,
+    );
   }
   if (mode === "TEACH") {
+    if (!calibrated) {
+      lines.push("NOT CALIBRATED — press CALIBRATE to begin");
+    }
     lines.push(
       recorder.isRecording ? "RECORDING  ●" : "idle",
       `frames     ${recorder.frameCount}`,
@@ -653,7 +836,25 @@ function readout(): string {
       `captured   ${corrections.length}`,
       "",
       "drag the ghost, release to capture",
+      "",
+      ...correctionVerificationLines(lastCorrectionVerification),
     );
+  }
+  if (mode === "TWIN") {
+    if (anchorStep === "awaiting_robot_base") {
+      lines.push("", "tap where the ROBOT BASE actually is");
+    } else if (anchorStep === "awaiting_table_corner") {
+      lines.push("", "tap where the TABLE CORNER actually is");
+    } else if (twinAlignment !== IDENTITY_ALIGNMENT) {
+      lines.push(
+        "",
+        "TWIN ALIGNED (spec section 49)",
+        `reprojection error  ${((anchorReprojectionErrorM ?? 0) * 100).toFixed(1)} cm` +
+          ((anchorReprojectionErrorM ?? 0) < 0.05 ? " ✓" : " ⚠ over 5cm target"),
+      );
+    } else {
+      lines.push("", "NOT ALIGNED — press SET ANCHORS (digital twin claim needs this, spec §65-66)");
+    }
   }
   if (latestTwin) {
     lines.push(

@@ -94,6 +94,22 @@ export interface CorrectionEvent {
   reason?: string;
 }
 
+/** Response shape of POST /xr/corrections — spec section 70 DoD item 5
+ * ("correction can be replayed or verified"). Backend reuses ar_datapipe's
+ * IK solver to check whether the corrected target is actually reachable. */
+export interface CorrectionVerification {
+  checked: boolean;
+  reachable?: boolean;
+  within_joint_limits?: boolean;
+  pose_error?: number;
+  reason?: string;
+}
+
+export interface CorrectionResponse {
+  event: CorrectionEvent;
+  verification: CorrectionVerification;
+}
+
 export interface VisualAsset {
   id: string;
   glb: string;

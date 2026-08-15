@@ -2,11 +2,8 @@
 
     uv run uvicorn ar_backend.app:app --reload --port 8000
 
-Episodes, Scenes, Twin (live physics via ar_sim), and Corrections all on
-one port — a client only needs one base URL. Follow (section 39) isn't
-wired in yet; `ar_contracts.FollowSession` exists and is tested, adding
-the session/WS endpoints is a reasonable next step once a client needs
-them.
+Episodes, Scenes, Twin (live physics via ar_sim), Follow, and Corrections
+all on one port — a client only needs one base URL.
 """
 
 from __future__ import annotations
@@ -18,6 +15,8 @@ from fastapi import FastAPI
 
 from .corrections import build_router as build_corrections_router
 from .episodes import build_router as build_episodes_router
+from .follow import FollowSessionStore
+from .follow import build_router as build_follow_router
 from .scenes import build_router as build_scenes_router
 from .store import CorrectionStore, EpisodeStore
 from .twin import build_router as build_twin_router
@@ -39,10 +38,12 @@ def create_app(
     app = FastAPI(title="struct-ar-api", version="0.1.0")
     episode_store = EpisodeStore()
     correction_store = CorrectionStore()
+    follow_store = FollowSessionStore()
     app.include_router(build_episodes_router(episode_store, dataset_root))
     app.include_router(build_scenes_router(scenes_dir))
     app.include_router(build_twin_router(twin_hz))
     app.include_router(build_corrections_router(correction_store))
+    app.include_router(build_follow_router(follow_store))
     return app
 
 

@@ -4,11 +4,62 @@
 
 **The full loop is wired and live-tested end-to-end**: xr-web client →
 Episodes API → ar_datapipe (retarget/verify/export) → verdict, plus a
-physics-driven live Twin stream and a Corrections endpoint. Branches
+physics-driven live Twin stream, a live Follow session, manual Twin
+Alignment (spec section 49), and a Corrections endpoint that actually
+verifies reachability instead of just storing the event. Branches
 `feat/ar-contracts`, `feat/ar-datapipe`, `feat/ar-backend`, `feat/ar-web-port`
-merged into `feat/arvr-integration`. 71/71 Python tests green on Linux
-(WSL x86_64 and the real Spark aarch64), 32 passed + 5 skipped on Windows
-(as designed), 45/45 vitest tests + typecheck clean for the TS client.
+merged into `feat/arvr-integration`. 78/78 Python tests green on Linux
+(WSL x86_64), 52/52 vitest tests + typecheck clean for the TS client.
+
+### Round 3: closed the remaining "weak areas" — Follow, CALIBRATE, Corrections verify
+
+Per user instruction to keep building out the gaps flagged in the earlier
+compliance pass (Follow wiring, twin calibration/anchors, Correct
+replay/verify), while explicitly deferring Isaac Sim: the Spark was found
+under severe memory pressure (`laguna-vllm` using 114.6GB/128GB unified
+memory, swap active, GPU sustained 96%) when checked before launching it —
+user chose to skip Isaac Sim for now rather than contend with the actively
+serving container, and to focus on this round's work instead. Isaac Sim
+(`packages/isaac-bridge/`) stays untouched/deferred; nothing here depended
+on it.
+
+- **`POST /xr/follow` + `WS /xr/follow/{session_id}`** (`ar_backend/follow.py`,
+  new) — spec section 39. A capped-speed (`MAX_CHASE_SPEED_M_S = 0.8`)
+  straight-line chase toward `FollowState.follow_target`, explicitly not a
+  claim about real navigation (spec's honesty requirement, section 85.8) —
+  same "labeled stand-in" pattern as `ar_sim`'s placeholder arm. 5 new
+  backend tests including the STOP-is-immediate gate (section 64: no
+  server-side timer, motion only advances when the client sends a frame).
+  xr-web's `followSession.ts` + `main.ts` FOLLOW controls (`START FOLLOW` /
+  `PAUSE`/`RESUME` / `STOP`) wired to it; readout now shows real distance
+  computed from the actual chased robot position, not the trivially-
+  constant target distance the earlier stand-in used.
+- **Twin Alignment v0** (`xr-web/src/alignment.ts`, new) — spec section 49:
+  deterministic two-anchor manual calibration (translation + single Z-yaw,
+  no scale — struct_world and the render frame are both already metric).
+  `main.ts`'s TWIN mode gets a `SET ANCHORS` flow (tap robot base, then
+  table corner); reprojection error is reported in cm against the spec's
+  <5cm target. TEACH mode now blocks recording with a "NOT CALIBRATED"
+  warning until this has run once, matching spec's insistence that a twin
+  claim needs real calibration behind it. 7 new vitest tests — fixed one
+  early version that used hand-picked, geometrically-inconsistent tapped
+  positions by deriving them from `applyAlignment(knownTransform, ...)`
+  instead.
+- **Corrections verification** (`ar_backend/corrections.py`, rewritten) —
+  spec section 70 DoD item 5: "correction can be replayed or verified," not
+  just stored. Reuses `ar_datapipe.IkSolver` (no second IK path) to check
+  whether `CorrectionEvent.corrected_target` is actually reachable by the
+  placeholder arm. Response shape changed from a bare `CorrectionEvent` to
+  `{event, verification}` — `CorrectionEvent` itself stays frozen and
+  unchanged (rule 85.15); verification is a wrapper, not a bolted-on field.
+  3 new backend tests (reachable, unreachable-and-flagged-with-a-reason,
+  list-returns-stored). `main.ts`'s CORRECT readout now shows the real
+  verification result (`✓ reachable` / `⚠ <reason>` / `verifying...`)
+  instead of fire-and-forgetting the POST.
+- All of the above live-verified against a real running `ar_backend`
+  (`uv run uvicorn ar_backend:create_app --factory`) with real curl
+  payloads matching the client's actual wire format — not just unit tests
+  or a re-implementation.
 
 ### Master spec now actually in the repo
 
@@ -186,6 +237,18 @@ inspection — see "Judgment calls" below (#10-12).
     two to have disagreed; found by actually running the TS client's real
     upload code against the real backend, not by writing a unit test for
     the mismatch (nobody thought to).
+14. **Follow's chased robot position rides on `TwinState.objects`
+    (`ObjectState(id="robot_base", ...)`), not a new field on
+    `TwinState.robot`** — the frozen `RobotState` contract only has
+    `joint_positions`, no base-position field, and adding one would be a
+    contract change for a stand-in chase routine. Objects already carry
+    arbitrary IDs; reusing that channel avoided touching a frozen contract
+    for something this provisional.
+15. **`/xr/corrections` response wraps the event instead of extending it**
+    (`{event, verification}`) — same reasoning as #14: verification is a
+    property of *this check*, not of the correction itself, and
+    `CorrectionEvent` is frozen (rule 85.15). A client that only cares about
+    the stored event can still read `body.event` unchanged.
 
 ## Blocked / not started
 
@@ -204,8 +267,6 @@ inspection — see "Judgment calls" below (#10-12).
   of the fixed pick-place waypoints) is the natural next step to make
   REPLAY show an actual recorded demonstration instead of a stand-in
   routine.
-- Follow session/WS endpoints not wired into `ar_backend` (section 39) —
-  `FollowSession` is ready, this is a small increment.
 
 ## Spark workspace
 
@@ -232,13 +293,16 @@ untouched throughout, per spec sections 10/87.
 
 ## Next
 
-1. Validate `feat/ar-web-port` on the real Spark (worktree), then merge
-   into `feat/arvr-integration`.
+1. Validate this round's work (`follow.py`, `corrections.py`, `alignment.ts`,
+   `followSession.ts`, `main.ts` changes) on the real Spark (worktree), then
+   merge into `feat/arvr-integration` and push.
 2. Wire `ar_datapipe`'s accepted-episode output into `ar_sim`'s director
    so REPLAY drives a real retargeted demonstration, not a fixed routine.
-3. Follow session/WS endpoint in `ar_backend` (section 39).
-4. Do NOT run the Isaac Sim container without a deliberate decision to
-   spend the GPU budget.
-5. Real robot URDF, whenever F3/hardware has one — two placeholders
+3. Do NOT run the Isaac Sim container until the Spark has memory/GPU
+   headroom (`laguna-vllm` was at 114.6GB/128GB, GPU 96%, as of this
+   check) or the user explicitly revisits it. Sections 14B-G (Isaac
+   bridge, live Follow/Teach-replay against the *authoritative* twin)
+   stay blocked until then; nothing else in this repo is blocked by it.
+4. Real robot URDF, whenever F3/hardware has one — two placeholders
    (`ar_datapipe`'s and `ar_sim`'s) both need swapping and probably
    unifying at that point.
