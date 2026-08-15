@@ -10,6 +10,10 @@ dependencies = [
     # rest of this workspace, so `import spatial_providers` stays importable
     # on Windows even though the MuJoCo-backed provider is Linux-only there.
     "ar-datapipe",
+    # IsaacSimulationProvider is a pure WebSocket client -- no Isaac/Kit
+    # runtime dependency, and (unlike MuJoCo) websockets is pure Python, so
+    # this needs no platform gating at all.
+    "websockets>=13.0",
 ]
 
 [build-system]

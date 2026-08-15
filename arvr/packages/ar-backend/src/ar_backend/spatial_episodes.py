@@ -104,8 +104,8 @@ def build_router(store: HumanEpisodeStore, dataset_root: Path) -> APIRouter:
             from spatial_providers import (
                 FixtureAssetProvider,
                 FixtureRobotProvider,
-                MuJoCoSimulationProvider,
                 TaskSpec,
+                get_configured_simulation_provider,
             )
         except ImportError as exc:
             raise HTTPException(
@@ -136,7 +136,7 @@ def build_router(store: HumanEpisodeStore, dataset_root: Path) -> APIRouter:
             req.asset_world_pose,
             task,
             dataset_root=dataset_root,
-            simulation_provider=MuJoCoSimulationProvider(),
+            simulation_provider=get_configured_simulation_provider(),
         )
 
         record.result = result
