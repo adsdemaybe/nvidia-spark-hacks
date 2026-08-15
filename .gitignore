@@ -22,6 +22,7 @@ ar-vr/
 # not, and `__cadgen__` alone is 51 MB.
 **/__cadgen__/
 cad-generation/out/
+/out/
 cad-generation/rover-out*/
 cad-generation/enclosures/
 *.step
