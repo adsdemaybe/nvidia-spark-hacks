@@ -53,6 +53,25 @@ POST /context  same -> a prompt block inside a hard char budget
 GET  /health
 ```
 
+### Who consumes which corpus
+
+The two halves are used differently, and that is a finding rather than an oversight.
+
+**tscircuit → into the prompt.** The PCB agent writes `.tsx` directly, so it needs the
+element API in front of it. `pcb-ai/src/docs-rag.ts` retrieves one chunk pair per
+element the parts plan implies and appends it to the designer turn.
+
+**build123d → at the terminal (`./ask.py`).** The CAD design loop does *not* write
+build123d code. It emits a RobotIR naming hand-written geometry generators (`tube`,
+`plate`, `bracket`, …) and passing them params, so its prompt already contains its whole
+vocabulary and retrieval would be noise in it. The build123d corpus is for **authoring the
+next generator** — a development task against a large API whose reference is docstrings.
+
+```bash
+./ask.py --source build123d fillet an edge with a radius
+./ask.py --source tscircuit pinheader props
+```
+
 pcb-ai calls it from `src/docs-rag.ts`, **best-effort**: if this service is down, slow, or
 has nothing to say, the design step runs exactly as it did before. A board that failed to
 build because a docs service was unreachable would be a worse failure than the one this
