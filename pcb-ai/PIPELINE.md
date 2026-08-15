@@ -72,6 +72,11 @@ Every other stage checks the board is *well-formed*. L7 is the only one that che
 
 Claim kinds: `dc_rail`, `node_voltage`, `current` (window), `current_max` (ceiling).
 
+**All steady-state, and that is the current ceiling.** `.tran` is unimplemented, so L7
+cannot yet see duty cycle, gate-drive delay, inrush, or the stall current that actually
+destroys drivers. Adding it is M1 of `../electromechanical-cosim-plan.md`, which needs
+the same capability to answer whether the board moves the robot at all.
+
 ### L8 — manufacturability
 Fab limits are **read out of a real KiCad project**, not typed into a table:
 `--fab-profile flight_controller.kicad_pro`. Net-class clearance and the global minimum
@@ -336,7 +341,8 @@ each one with its provenance.
 ## Known limits
 
 - **Only `.op` SPICE claims exist.** `ripple`, `frequency`, `edge`, `startup` need
-  `.tran` and are not implemented.
+  `.tran` and are not implemented — and neither is the transient motor model the
+  electromechanical loop needs (`../electromechanical-cosim-plan.md` §4).
 - **L7 coverage is 75%** on the rover. Raising it means real vendor `.lib` files.
 - **The compile fetches `modelcdn.tscircuit.com`** and times out on this box — a network
   dependency in a local-only pipeline, and it dominates run time.

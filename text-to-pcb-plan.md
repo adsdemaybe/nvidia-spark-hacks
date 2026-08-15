@@ -229,10 +229,35 @@ up in a passing run, which is the argument for negative tests in one sentence.
    board — passed the gate. `current` is now a two-sided window and `current_max` is a
    separate kind for genuine ceilings. Generalised: *a bound is only a gate in the
    direction it bounds*, and most electrical claims are wrong in both directions.
-#### 3.4.3 What L7 is not
+#### 3.4.3 Transient — L7 as the co-simulation behaviour engine
+> **`electromechanical-cosim-plan.md` depends on this section.** Everything L7 does today
+> is steady-state, and steady-state cannot answer whether the board *moves the robot*.
+The four unimplemented claim kinds (`ripple`, `frequency`, `edge`, `startup`) and the
+co-simulation loop need the same missing capability: **`.tran`**. Adding it turns L7 from
+a rail checker into the behaviour engine of the electromechanical loop, and adds two
+claims that only exist in the transient world:
+| Claim | Asserts | Why DC cannot see it |
+|---|---|---|
+| `pwm_current(motor, a_avg, a_peak)` | the driver delivers what the motor needs | duty cycle and inductance are time-domain |
+| `stall_current(motor, a_max)` | a stalled motor stays inside the driver and trace rating | **this is the case that destroys hardware** |
+**The motor is the boundary between this plan and the mechanical one**, and it must exist
+in both simulators or the coupling is fiction:
+```
+electrical (here):    V = I·R_m + L_m·dI/dt + Ke·ω
+mechanical (MuJoCo):  τ = Kt·I,  J·dω/dt = τ − τ_load − b·ω
+```
+**ω is an input to the deck**, arriving each control period from MuJoCo over the wire and
+entering as a back-EMF source in series with the winding. `I` is the output, converted to
+torque by `Kt`. Without that feedback the electrical side solves an open-loop problem and
+reports currents that could never flow. Motor constants carry the same
+`CONFIRMED | ASSUMED` provenance as everything else — a rollout resting on assumed
+constants is evidence of a shape, not a number.
+#### 3.4.4 What L7 is not
 Not a replacement for L6. The PCG solvers (thermal, IR drop, current density, IPC-2221)
 answer *"does the copper survive this current"*; ngspice answers *"is this current what
-the circuit intends"*. They consume the same operating point and must agree on it —
+the circuit intends"*; and the co-simulation (`electromechanical-cosim-plan.md`) answers
+*"does that current actually move the joint"*. Three different questions, and passing one
+says nothing about the others. They consume the same operating point and must agree on it —
 disagreement between the modeler agent's operating point, L6's assumed currents, and
 L7's simulated currents is a **pipeline bug** filed under principle 4, exactly like a
 DRC disagreement.
