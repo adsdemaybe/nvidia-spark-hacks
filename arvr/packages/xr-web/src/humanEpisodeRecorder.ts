@@ -12,6 +12,7 @@
  * own docstring); this class is where it belongs.
  */
 
+import type { Alignment } from "./alignment";
 import type { HandFrame } from "./hands";
 import { toWireHandFrame } from "./liveRetargetSession";
 
@@ -88,8 +89,14 @@ export class HumanEpisodeRecorder {
     this.recording = true;
   }
 
-  /** Converts WebXR-space -> struct_world at capture time (see module docstring). */
-  captureHand(frame: HandFrame, timestampNs: number): void {
+  /** Converts WebXR-space -> struct_world at capture time (see module docstring).
+   *
+   * `roomToStruct` is the openxr path's workspace calibration: a headset's
+   * tracking origin is wherever it booted, so without it a recorded episode
+   * would be full of coordinates relative to a point that means nothing to
+   * the robot. Every other provider authors struct_world directly and passes
+   * nothing. */
+  captureHand(frame: HandFrame, timestampNs: number, roomToStruct?: Alignment): void {
     if (!this.recording) return;
     if (this.lastTimestampNs !== undefined && timestampNs < this.lastTimestampNs) {
       throw new Error(
@@ -98,7 +105,9 @@ export class HumanEpisodeRecorder {
       );
     }
     this.lastTimestampNs = timestampNs;
-    this.handFrameBuffer.push(toWireHandFrame(frame, timestampNs, this.options.handProvider));
+    this.handFrameBuffer.push(
+      toWireHandFrame(frame, timestampNs, this.options.handProvider, roomToStruct),
+    );
   }
 
   captureObject(state: ObjectStateCapture): void {

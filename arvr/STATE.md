@@ -19,10 +19,95 @@
    `webcam` (Round 6).
 
 The old app was deliberately left running rather than torn out — see Round
-5's "why two apps" note. Combined test count: **143/143 Python, 111/111
-vitest**, both suites green, lint clean. Rounds 5-7 are on
-`feat/arvr-integration`; Round 8 (Isaac verification) is on
-`feat/isaac-verifier`, not yet merged in as of this writing.
+5's "why two apps" note. Combined test count: **66 passed / 12 skipped
+Python, 165/165 vitest** as of Round 9, both suites green, lint clean.
+Rounds 5-8 are on `feat/arvr-integration`; Round 9 (the headset path) is on
+`feat/openxr-hand-provider`.
+
+### Round 9: `HAND=openxr` becomes a path that can actually run on a headset
+
+Branch `feat/openxr-hand-provider`, off `feat/arvr-integration`. Closes
+Round 5's Next-step #2, which had stood open across three rounds: the
+openxr code existed and was hardened, but had never been run on hardware
+and — reading it carefully — could not have worked if it had been. Four
+things stood between it and a demo, none of them typos:
+
+1. **The hand landed nowhere near the robot.** WebXR's `local-floor` origin
+   is the floor under wherever the headset booted, so a standing human's
+   wrist sits ~1.3m from it. The SO-101 is a desktop arm with ~35cm of
+   reach whose base is at struct_world `[0,0,0]`. Every frame asked the
+   robot to reach three times further than it physically can; the only
+   symptom would have been `ik_status` stuck at a failure, which reads as
+   bad hand tracking rather than as a missing transform. CALIBRATE was an
+   admitted no-op stand-in.
+2. **FINISH was unreachable from inside.** All controls are DOM. An
+   `immersive-vr` session composites only the WebGL layer, and
+   `immersive-ar` shows DOM only when `dom-overlay` is granted — which
+   `xr.ts` never requested. The demo could be started from a headset and
+   not ended from one. `finishDemo` also called `session.end()`, so the
+   only way to see a verdict was to be ejected from XR first.
+3. **Passthrough was painted over.** `scene.background` is an opaque color,
+   so a granted `immersive-ar` session would have shown a grey void where
+   the room should be.
+4. **The session started at the wrong moment** — inside START DEMO, so the
+   human entered XR already recording, uncalibrated, with no way back out.
+
+What landed:
+
+- **`xrCalibration.ts`** — the real two-anchor solve, using `alignment.ts`'s
+  existing tested `solveAlignment` rather than a second copy of the math.
+  The human pinches where the robot's base belongs and where the button
+  belongs; that fixes `T_struct_to_room` (which places the whole workspace
+  in their room) and its inverse `T_room_to_struct` (which every tracked
+  hand frame is mapped through). Deliberately **not** scale-corrected: the
+  two anchors are 38cm apart because that is how far apart the robot's base
+  and button really are, so a human who lays out a workspace the robot does
+  not have gets a measured `anchorErrorM` and a rejection, not a silently
+  stretched demo. The 5cm limit is a gate — `isCalibrated` is false until
+  the number is good — not a note. 21 tests, including a metric-scale
+  property (a 10cm hand move is 10cm in struct_world) and an
+  anchors-round-trip-exactly property.
+- **`invertAlignment` + `yawQuaternion`/`composeQuaternions`** in
+  `alignment.ts`. Both transform directions are live at once, and a joint's
+  orientation has to rotate by the same yaw its position does or the
+  retargeter gets a pose whose halves disagree about which way is forward.
+- **`xrHud.ts`** — an in-scene panel with poke-able buttons, so the flow is
+  drivable from inside the headset whether or not `dom-overlay` is granted.
+  Poking, not pinch-and-ray: the hand is already the input device being
+  demonstrated with, and a fingertip position is the signal hand tracking
+  reports most reliably. `PokeTracker` is edge-triggered with hysteresis
+  (a fingertip resting on an edge would otherwise read as ~72 presses a
+  second) and is plain geometry, so it is tested without a headset or a GPU.
+  Buttons carry real depth for the same reason a bullet needs a thick
+  target: a fingertip crossing a thin plate between two samples is never
+  inside it.
+- **One source of truth for the flow.** `controlSpecs()` describes the
+  controls once; the DOM bar and the in-scene HUD both render from it. The
+  headset and the desktop can no longer drift into offering different
+  actions, which is exactly how FINISH went missing.
+- **`spatialTeachLayout.ts`** — the fixture scene's struct_world constants,
+  extracted because `xrCalibration` needs the same numbers the renderer
+  uses. Two copies of a robot-base position would mean calibrating against
+  one layout and retargeting against another.
+- **`toWireHandFrame` takes an optional `roomToStruct`** rather than the
+  openxr path getting its own conversion. Still one conversion function;
+  `mock`/`webcam` pass nothing and are byte-identical to before. It also
+  now has a real return type (`WireHandFrame`) instead of `object`.
+- **Honest refusal**: `onHandFrame` drops openxr frames entirely while
+  uncalibrated. Recording them would bank coordinates measured from a
+  meaningless origin, and the pipeline would accept them.
+- **The HUD says what is true**: which session kind was granted, whether
+  hand tracking and dom-overlay were granted, the measured anchor error,
+  and live wrist-distance-from-base so a human can see whether they are
+  inside the arm's reach.
+
+**Not verified on hardware.** No headset was attached this session. The
+calibration math, poke semantics, pinch latch, and session-description logic
+are unit-tested (165/165 vitest, typecheck and production build clean), and
+the flat desktop path was re-driven in a real browser to confirm no
+regression. Whether a Quest grants `immersive-ar`, `hand-tracking`, or
+`dom-overlay` is answered by `probe.html` at runtime, not by this code.
+Bring-up checklist is in `packages/xr-web/README.md`.
 
 ### Round 8: Isaac Sim verification (`IsaacSimulationProvider`)
 

@@ -13,6 +13,13 @@
  */
 
 import { webxrToStruct } from "./adapter";
+import {
+  applyAlignment,
+  composeQuaternions,
+  yawQuaternion,
+  type Alignment,
+} from "./alignment";
+import type { Quat, Vec3 } from "./contracts";
 import type { HandFrame } from "./hands";
 import type { IkStatus } from "./shadowRobot";
 
@@ -33,22 +40,55 @@ export type LiveRetargetSessionState = "connecting" | "open" | "closed";
 /** Mirrors ar_contracts.HandFrame.source_device / HumanEpisodeMetadata.hand_provider. */
 export type HandSourceDeviceWire = "openxr" | "phone" | "mock" | "webcam";
 
-/** Defaults to "openxr" only to keep pre-existing call sites (mock's replay
+/** One joint on the wire. Mirrors ar_contracts.HandFrame's joint entry. */
+export interface WireJoint {
+  position_m: Vec3;
+  orientation_xyzw: Quat;
+}
+
+/** Mirrors ar_contracts.HandFrame. Was an anonymous `object` until the
+ * openxr path needed to read a frame back (xrCalibration's tests assert on
+ * the mapped wrist position), which `object` makes impossible. */
+export interface WireHandFrame {
+  schema_version: string;
+  timestamp_ns: number;
+  source_device: HandSourceDeviceWire;
+  hand: "left" | "right";
+  frame: "struct_world";
+  joints: Record<string, WireJoint>;
+}
+
+/**
+ * Defaults to "openxr" only to keep pre-existing call sites (mock's replay
  * loop, before this default existed) working unchanged -- every real caller
  * should now pass its actual provider so an episode's recorded provenance
  * isn't silently mislabeled (this default previously mislabeled mock frames
- * as "openxr" too; see STATE.md). */
+ * as "openxr" too; see STATE.md).
+ *
+ * `roomToStruct` is the openxr path's workspace calibration (xrCalibration.ts).
+ * A tracked hand arrives in coordinates relative to wherever the headset's
+ * tracking origin happens to be; without this it would be treated as though
+ * the room's origin were the robot's base. Omitted for every other provider,
+ * whose frames are already authored in struct_world -- so this stays one
+ * conversion function rather than a second, drifting copy.
+ */
 export function toWireHandFrame(
   hand: HandFrame,
   timestampNs: number,
   sourceDevice: HandSourceDeviceWire = "openxr",
-): object {
-  const joints: Record<string, unknown> = {};
+  roomToStruct?: Alignment,
+): WireHandFrame {
+  const yaw = roomToStruct ? yawQuaternion(roomToStruct.yaw) : undefined;
+  const joints: Record<string, WireJoint> = {};
   for (const [name, joint] of Object.entries(hand.joints)) {
-    joints[name] = {
-      position_m: webxrToStruct.position(joint.position),
-      orientation_xyzw: webxrToStruct.quaternion(joint.orientation),
-    };
+    const position = webxrToStruct.position(joint.position);
+    const orientation = webxrToStruct.quaternion(joint.orientation);
+    joints[name] = roomToStruct
+      ? {
+          position_m: applyAlignment(roomToStruct, position),
+          orientation_xyzw: normalize(composeQuaternions(yaw!, orientation)),
+        }
+      : { position_m: position, orientation_xyzw: orientation };
   }
   return {
     schema_version: "1.0",
@@ -58,6 +98,15 @@ export function toWireHandFrame(
     frame: "struct_world",
     joints,
   };
+}
+
+/** Composing two unit quaternions drifts off the unit sphere by float error
+ * only, so this rescales rather than validating -- a per-frame path is the
+ * wrong place to throw over a 1e-16 norm deviation. */
+function normalize(q: Quat): Quat {
+  const norm = Math.hypot(...q);
+  if (norm === 0) return [0, 0, 0, 1];
+  return [q[0] / norm, q[1] / norm, q[2] / norm, q[3] / norm];
 }
 
 export class LiveRetargetSession {
@@ -96,10 +145,18 @@ export class LiveRetargetSession {
     };
   }
 
-  /** Sends one HandFrame. A no-op while not yet open. */
-  send(hand: HandFrame, timestampNs: number, sourceDevice?: HandSourceDeviceWire): void {
+  /** Sends one HandFrame. A no-op while not yet open. `roomToStruct` is the
+   * openxr path's workspace calibration; see {@link toWireHandFrame}. */
+  send(
+    hand: HandFrame,
+    timestampNs: number,
+    sourceDevice?: HandSourceDeviceWire,
+    roomToStruct?: Alignment,
+  ): void {
     if (this.state !== "open" || !this.socket) return;
-    this.socket.send(JSON.stringify(toWireHandFrame(hand, timestampNs, sourceDevice)));
+    this.socket.send(
+      JSON.stringify(toWireHandFrame(hand, timestampNs, sourceDevice, roomToStruct)),
+    );
   }
 
   stop(): void {

@@ -147,3 +147,71 @@ export function readHand(
 export function wristTarget(hand: HandFrame): JointPose | null {
   return hand.joints["wrist"] ?? null;
 }
+
+/**
+ * Where a pinch "happens": midway between the thumb and index tips.
+ *
+ * Used to place calibration anchors. Neither tip on its own is what a human
+ * means when they pinch at a spot -- they mean the point the two fingers
+ * close on, and being a centimeter off matters when the whole calibration
+ * budget is five.
+ */
+export function pinchPoint(hand: HandFrame): [number, number, number] | null {
+  const thumb = hand.joints["thumb-tip"];
+  const index = hand.joints["index-finger-tip"];
+  if (!thumb || !index) return null;
+  return [
+    (thumb.position[0] + index.position[0]) / 2,
+    (thumb.position[1] + index.position[1]) / 2,
+    (thumb.position[2] + index.position[2]) / 2,
+  ];
+}
+
+/** The index fingertip — what pokes the in-scene HUD (xrHud.ts). */
+export function pokePoint(hand: HandFrame): [number, number, number] | null {
+  return hand.joints["index-finger-tip"]?.position ?? null;
+}
+
+/** Gripper closure at which a pinch counts as made, and the looser value it
+ * must fall back below before another pinch can be made. Two thresholds, not
+ * one: a hand held at exactly the boundary would otherwise emit a stream of
+ * pinches as tracking noise crosses it. */
+export const PINCH_ENGAGE = 0.85;
+export const PINCH_RELEASE = 0.6;
+
+/**
+ * Edge-triggered pinch detection.
+ *
+ * A calibration anchor is placed on the *transition* into a pinch. Reading
+ * the level instead would place an anchor every frame the fingers are
+ * touching, and the last one -- captured as the hand pulls away -- would be
+ * the one that counted.
+ */
+export class PinchLatch {
+  private engaged = false;
+
+  get isEngaged(): boolean {
+    return this.engaged;
+  }
+
+  /** True exactly on the frame the pinch closes. A lost hand releases. */
+  update(hand: HandFrame | null): boolean {
+    if (!hand) {
+      this.engaged = false;
+      return false;
+    }
+    if (this.engaged) {
+      if (hand.gripper < PINCH_RELEASE) this.engaged = false;
+      return false;
+    }
+    if (hand.gripper >= PINCH_ENGAGE) {
+      this.engaged = true;
+      return true;
+    }
+    return false;
+  }
+
+  reset(): void {
+    this.engaged = false;
+  }
+}

@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   HAND_JOINTS,
   PINCH_CLOSED_M,
+  PINCH_ENGAGE,
   PINCH_OPEN_M,
+  PINCH_RELEASE,
+  PinchLatch,
   distance,
   gripperFromAperture,
+  pinchPoint,
+  pokePoint,
   preferredInputSource,
   wristTarget,
   type HandFrame,
@@ -122,5 +127,77 @@ describe("wristTarget", () => {
     };
 
     expect(wristTarget(hand)).toBeNull();
+  });
+});
+
+function pinchHand(gripper: number, joints: Record<string, JointPose> = {}): HandFrame {
+  return { handedness: "right", joints, pinchApertureM: null, gripper };
+}
+
+describe("pinchPoint", () => {
+  it("is the midpoint between the thumb and index tips", () => {
+    const hand = pinchHand(1, {
+      "thumb-tip": joint([0, 1, 0]),
+      "index-finger-tip": joint([0.02, 1.04, -0.1]),
+    });
+
+    expect(pinchPoint(hand)).toEqual([0.01, 1.02, -0.05]);
+  });
+
+  it("returns null when either tip is untracked, rather than guessing", () => {
+    expect(pinchPoint(pinchHand(1, { "thumb-tip": joint([0, 1, 0]) }))).toBeNull();
+    expect(pinchPoint(pinchHand(1, {}))).toBeNull();
+  });
+});
+
+describe("pokePoint", () => {
+  it("is the index fingertip", () => {
+    const hand = pinchHand(0, { "index-finger-tip": joint([0.1, 1.1, -0.2]) });
+    expect(pokePoint(hand)).toEqual([0.1, 1.1, -0.2]);
+  });
+
+  it("returns null when the index tip is untracked", () => {
+    expect(pokePoint(pinchHand(0, {}))).toBeNull();
+  });
+});
+
+describe("PinchLatch", () => {
+  it("fires once on the frame the pinch closes", () => {
+    const latch = new PinchLatch();
+    expect(latch.update(pinchHand(0.2))).toBe(false);
+    expect(latch.update(pinchHand(PINCH_ENGAGE))).toBe(true);
+  });
+
+  it("does not fire again while the pinch is held", () => {
+    const latch = new PinchLatch();
+    latch.update(pinchHand(1));
+    expect(latch.update(pinchHand(1))).toBe(false);
+    expect(latch.update(pinchHand(0.95))).toBe(false);
+  });
+
+  it("stays engaged between the release and engage thresholds", () => {
+    // The hysteresis band is the whole point: a gripper reading that dithers
+    // around one threshold would place a burst of calibration anchors.
+    const latch = new PinchLatch();
+    latch.update(pinchHand(1));
+    latch.update(pinchHand((PINCH_ENGAGE + PINCH_RELEASE) / 2));
+    expect(latch.isEngaged).toBe(true);
+    expect(latch.update(pinchHand(1))).toBe(false);
+  });
+
+  it("re-arms once the hand opens past the release threshold", () => {
+    const latch = new PinchLatch();
+    latch.update(pinchHand(1));
+    latch.update(pinchHand(PINCH_RELEASE - 0.01));
+    expect(latch.isEngaged).toBe(false);
+    expect(latch.update(pinchHand(1))).toBe(true);
+  });
+
+  it("treats a lost hand as a release, not a held pinch", () => {
+    const latch = new PinchLatch();
+    latch.update(pinchHand(1));
+    expect(latch.update(null)).toBe(false);
+    expect(latch.isEngaged).toBe(false);
+    expect(latch.update(pinchHand(1))).toBe(true);
   });
 });

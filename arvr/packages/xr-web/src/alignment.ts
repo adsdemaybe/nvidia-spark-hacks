@@ -19,7 +19,7 @@
  * similarity transform would).
  */
 
-import type { Vec3 } from "./contracts";
+import type { Quat, Vec3 } from "./contracts";
 
 export interface Anchor {
   /** Where this point actually is, in struct_world (the twin's own frame). */
@@ -64,6 +64,54 @@ export function applyAlignment(alignment: Alignment, point: Vec3): Vec3 {
     cos * point[0] - sin * point[1] + alignment.translation[0],
     sin * point[0] + cos * point[1] + alignment.translation[1],
     point[2] + alignment.translation[2],
+  ];
+}
+
+/**
+ * The transform that undoes {@link applyAlignment}.
+ *
+ * `applyAlignment` answers "where in the room does this twin pose belong?".
+ * Its inverse answers the question the openxr hand path actually asks:
+ * "the human's hand is *here* in the room — where is that in struct_world?".
+ * Both directions are needed at once (the scene is placed with one, every
+ * tracked hand frame is mapped with the other), so the inverse is a named,
+ * tested operation rather than an ad-hoc negation at each call site.
+ */
+export function invertAlignment(alignment: Alignment): Alignment {
+  const cos = Math.cos(alignment.yaw);
+  const sin = Math.sin(alignment.yaw);
+  const [tx, ty, tz] = alignment.translation;
+  // R(-yaw) applied to -t: rotating the negated offset back through the
+  // inverse rotation is what makes apply(inv, apply(a, p)) === p.
+  return {
+    yaw: -alignment.yaw,
+    translation: [-(cos * tx + sin * ty), -(-sin * tx + cos * ty), -tz],
+  };
+}
+
+/**
+ * The same yaw, as a quaternion about struct +Z.
+ *
+ * `applyAlignment` rotates positions; a tracked hand joint also carries an
+ * orientation, and rotating the position while leaving the orientation in the
+ * room's frame would hand the retargeter a pose whose two halves disagree
+ * about which way is forward.
+ */
+export function yawQuaternion(angle: number): Quat {
+  const half = angle / 2;
+  const s = Math.sin(half);
+  return [0, 0, s === 0 ? 0 : s, Math.cos(half)];
+}
+
+/** Hamilton product, xyzw order: the rotation `b` followed by `a`. */
+export function composeQuaternions(a: Quat, b: Quat): Quat {
+  const [ax, ay, az, aw] = a;
+  const [bx, by, bz, bw] = b;
+  return [
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
   ];
 }
 

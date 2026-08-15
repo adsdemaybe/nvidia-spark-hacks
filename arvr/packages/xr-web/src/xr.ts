@@ -30,7 +30,11 @@ export interface XrCapabilities {
 }
 
 const AR_REQUIRED = ["local-floor"];
-const AR_OPTIONAL = ["hand-tracking", "hit-test", "anchors", "plane-detection"];
+// `dom-overlay` is what keeps the page's own HTML controls visible inside an
+// AR session. It is AR-only and not universally granted, which is exactly why
+// xrHud.ts draws an in-scene fallback: the flow has to be drivable from inside
+// the headset whether or not this feature shows up.
+const AR_OPTIONAL = ["hand-tracking", "dom-overlay", "hit-test", "anchors", "plane-detection"];
 const VR_REQUIRED = ["local-floor"];
 const VR_OPTIONAL = ["hand-tracking"];
 
@@ -84,6 +88,12 @@ export interface StartedSession {
   kind: Exclude<SessionKind, "flat">;
   /** True when the runtime actually granted hand input. */
   handTracking: boolean;
+  /** True when the page's DOM is composited over the session. */
+  domOverlay: boolean;
+  /** Everything the runtime reported granting, verbatim. Empty when the
+   * runtime does not implement `enabledFeatures` at all -- which is not the
+   * same as "granted nothing", so callers must not read emptiness as denial. */
+  enabledFeatures: string[];
 }
 
 /**
@@ -92,8 +102,12 @@ export interface StartedSession {
  * Optional features are requested optionally on purpose: a runtime that does
  * not know `hand-tracking` must still give us a session rather than rejecting
  * the request outright.
+ *
+ * `domOverlayRoot` is the element to composite over an AR session, when the
+ * runtime supports it. Passing one is a request, never an assumption -- read
+ * the returned `domOverlay` to find out whether it was honored.
  */
-export async function startBestSession(): Promise<StartedSession> {
+export async function startBestSession(domOverlayRoot?: Element): Promise<StartedSession> {
   const xr = navigator.xr;
   if (!xr) throw new Error("WebXR unavailable");
 
@@ -101,15 +115,27 @@ export async function startBestSession(): Promise<StartedSession> {
   if (caps.best === "flat") throw new Error("no immersive session available");
 
   const kind = caps.best;
-  const session = await xr.requestSession(kind, {
+  const init: XRSessionInit = {
     requiredFeatures: kind === "immersive-ar" ? AR_REQUIRED : VR_REQUIRED,
     optionalFeatures: kind === "immersive-ar" ? AR_OPTIONAL : VR_OPTIONAL,
-  });
+  };
+  if (kind === "immersive-ar" && domOverlayRoot) {
+    (init as XRSessionInit & { domOverlay?: { root: Element } }).domOverlay = {
+      root: domOverlayRoot,
+    };
+  }
+  const session = await xr.requestSession(kind, init);
 
-  const granted = (session as XRSession & { enabledFeatures?: string[] }).enabledFeatures;
-  const handTracking = granted?.includes("hand-tracking") ?? false;
+  const enabledFeatures =
+    (session as XRSession & { enabledFeatures?: string[] }).enabledFeatures ?? [];
 
-  return { session, kind, handTracking };
+  return {
+    session,
+    kind,
+    handTracking: enabledFeatures.includes("hand-tracking"),
+    domOverlay: enabledFeatures.includes("dom-overlay"),
+    enabledFeatures: [...enabledFeatures],
+  };
 }
 
 /** One-line summary for the HUD, honest about which world the user is seeing. */
@@ -123,4 +149,17 @@ export function describe(kind: SessionKind, handTracking: boolean): string {
     default:
       return "FLAT DESKTOP — NOT AR";
   }
+}
+
+/**
+ * Whether the renderer should clear to transparent for this session.
+ *
+ * An opaque scene background in `immersive-ar` paints over the passthrough
+ * feed, so the human gets a grey void where their room should be -- the
+ * headset is compositing correctly and the app is hiding the result. The
+ * session kind, not the device, decides: a Quest that falls back to
+ * `immersive-vr` has no camera feed to reveal and does want its background.
+ */
+export function wantsTransparentBackground(kind: SessionKind): boolean {
+  return kind === "immersive-ar";
 }
