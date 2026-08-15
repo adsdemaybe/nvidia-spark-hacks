@@ -1,0 +1,110 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(uv tree:*)",
+      "Bash(make loop)",
+      "Bash(make lint)",
+      "Bash(make test)",
+      "Bash(make run)",
+      "Bash(make run-cold)",
+      "Bash(make gates)",
+      "Bash(make fixture)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)",
+      "Bash(git fetch:*)",
+      "Bash(git switch:*)",
+      "Bash(git add:*)",
+      "Bash(git stash list:*)",
+      "Bash(git worktree list:*)",
+      "Bash(ls:*)",
+
+      "PowerShell(uv run:*)",
+      "PowerShell(uv sync:*)",
+      "PowerShell(uv lock:*)",
+      "PowerShell(uv tree:*)",
+      "PowerShell(git status:*)",
+      "PowerShell(git diff:*)",
+      "PowerShell(git log:*)",
+      "PowerShell(git show:*)",
+      "PowerShell(git branch:*)",
+      "PowerShell(git remote:*)",
+      "PowerShell(git fetch:*)",
+      "PowerShell(git switch:*)",
+      "PowerShell(git add:*)",
+      "PowerShell(git stash list:*)",
+      "PowerShell(git worktree list:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)",
+      "Bash(git worktree remove:*)",
+      "Bash(rm -rf:*)",
+      "Bash(sudo:*)",
+      "Bash(apt-get:*)",
+      "Bash(apt:*)",
+      "Bash(pkill:*)",
+      "Bash(killall:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker kill:*)",
+      "Bash(docker system prune:*)",
+      "Bash(docker volume rm:*)",
+
+      "PowerShell(git push --force:*)",
+      "PowerShell(git push -f:*)",
+      "PowerShell(git push --force-with-lease:*)",
+      "PowerShell(git reset --hard:*)",
+      "PowerShell(git clean:*)",
+      "PowerShell(git worktree remove:*)",
+      "PowerShell(Remove-Item:*)",
+      "PowerShell(rm:*)",
+      "PowerShell(del:*)",
+      "PowerShell(rmdir:*)",
+      "PowerShell(Stop-Process:*)",
+      "PowerShell(sudo:*)",
+      "PowerShell(docker rm:*)",
+      "PowerShell(docker kill:*)",
+      "PowerShell(docker system prune:*)",
+      "PowerShell(docker volume rm:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-shell.mjs\"",
+            "timeout": 15,
+            "statusMessage": "Checking shared-infra guardrails"
+          }
+        ]
+      }
+    ]
+  },
+  "sandbox": {
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "*.github.com",
+        "*.githubusercontent.com",
+        "pypi.org",
+        "*.pypi.org",
+        "files.pythonhosted.org",
+        "astral.sh",
+        "*.astral.sh"
+      ]
+    }
+  }
+}
