@@ -1,0 +1,19 @@
+[project]
+name = "ar-contracts"
+version = "1.0.0"
+description = "Frozen spatial schemas for the STRUCT AR/XR subsystem (SpatialFrame, SpatialEpisode, TwinState, FollowState, CorrectionEvent, SceneManifest, VerificationResult)."
+requires-python = ">=3.11"
+
+# DELIBERATELY MINIMAL — this package is imported by the phone-facing backend,
+# the Isaac bridge, and every test fixture generator. It must never grow a
+# robotics/sim/ML dependency (mirrors realsim's r2s-core rule).
+dependencies = [
+    "pydantic>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ar_contracts"]
