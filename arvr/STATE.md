@@ -60,6 +60,12 @@ on it.
   (`uv run uvicorn ar_backend:create_app --factory`) with real curl
   payloads matching the client's actual wire format — not just unit tests
   or a re-implementation.
+- **Not validated on the real Spark this round** — checked before pushing
+  and it was still at 0 free memory / swap active / GPU 95%, same
+  contention as before. Adding a build/test workload there risked
+  destabilizing whoever's actively using it, so this round shipped on
+  WSL x86_64 validation only. Revisit the aarch64 worktree check
+  (`ar-vr/sky/worktrees/`) once the Spark has headroom.
 
 ### Master spec now actually in the repo
 
