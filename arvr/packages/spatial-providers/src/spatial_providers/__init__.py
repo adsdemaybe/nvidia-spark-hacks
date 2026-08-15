@@ -11,7 +11,9 @@ from .fixture_asset_provider import FixtureAssetProvider, UnknownAssetError
 from .fixture_robot_provider import FixtureRobotProvider, UnknownRobotError
 from .hand_provider import HandProvider
 from .mock_hand_provider import MockHandProvider
+from .mujoco_simulation_provider import MuJoCoSimulationProvider
 from .robot_provider import RobotProvider, get_configured_robot_provider
+from .simulation_provider import SimulationProvider, TaskSpec
 
 __all__ = [
     "AssetProvider",
@@ -19,7 +21,10 @@ __all__ = [
     "FixtureRobotProvider",
     "HandProvider",
     "MockHandProvider",
+    "MuJoCoSimulationProvider",
     "RobotProvider",
+    "SimulationProvider",
+    "TaskSpec",
     "UnknownAssetError",
     "UnknownRobotError",
     "get_configured_robot_provider",
