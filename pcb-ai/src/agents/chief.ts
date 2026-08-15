@@ -7,7 +7,7 @@
  * ordered list of changes, and is the only step allowed to say the board is done.
  */
 import { askStructured, type ChatLike } from "../model.ts"
-import { describeBuild } from "../build.ts"
+import { describeBuild, buildBlockers } from "../build.ts"
 import { describePhysics, physicsBlockers, type PhysicsReport } from "../physics/index.ts"
 import { describeSpice, type SpiceReport } from "../spice/index.ts"
 import { describeDfm, dfmBlockers, type DfmReport } from "../dfm/index.ts"
@@ -71,6 +71,9 @@ export async function decide(args: {
   // L6 and L7 blockers are the same kind of thing — a deterministic tool measured a
   // failure — so they enter the chief's evidence and its override through one list.
   const blockers = [
+    // L1 first: a board that did not route has no geometry, and everything measured
+    // downstream of it describes something that does not exist.
+    ...buildBlockers(build),
     ...(physics ? physicsBlockers(physics) : []),
     ...(spice?.hardFailures ?? []),
     ...(dfm ? dfmBlockers(dfm) : []),

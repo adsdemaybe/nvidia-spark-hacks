@@ -10,6 +10,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { initChatModel } from "langchain/chat_models/universal"
+import { ChatOpenAI } from "@langchain/openai"
 import { HumanMessage, SystemMessage, type BaseMessage } from "@langchain/core/messages"
 import type { z } from "zod"
 import { StubChatModel } from "./models/stub.ts"
@@ -36,6 +37,26 @@ export interface ModelSpec {
   baseUrl?: string
   /** Extra request-body fields, merged over the endpoint's own defaults. */
   extraBody?: Record<string, unknown>
+  /**
+   * Request timeout, milliseconds.
+   *
+   * Hosted providers answer in seconds and the SDK's default is tuned for them. A local
+   * 27B on this box generates at roughly 4 tok/s, so a reviewer reading a 25 kB prompt
+   * and writing a few hundred tokens can legitimately take many minutes — and the
+   * default cut it off mid-review with `TimeoutError: Request timed out`, which reads
+   * like the model failed rather than like the client gave up.
+   *
+   * Generous rather than unbounded: a request that really has hung should still end.
+   */
+  timeoutMs?: number
+  /**
+   * Retries on failure.
+   *
+   * One, not the default two. A retry against a model this slow costs as much as the
+   * original call, so a genuinely stuck request would burn three timeouts before
+   * surfacing — the failure arrives so late it is hard to attribute.
+   */
+  maxRetries?: number
 }
 
 /**
@@ -106,6 +127,26 @@ interface LocalEndpoint {
    * speed is worth more than marginally better prose. `--think` puts it back.
    */
   extraBody?: Record<string, unknown>
+  /**
+   * Request timeout, milliseconds.
+   *
+   * Hosted providers answer in seconds and the SDK's default is tuned for them. A local
+   * 27B on this box generates at roughly 4 tok/s, so a reviewer reading a 25 kB prompt
+   * and writing a few hundred tokens can legitimately take many minutes — and the
+   * default cut it off mid-review with `TimeoutError: Request timed out`, which reads
+   * like the model failed rather than like the client gave up.
+   *
+   * Generous rather than unbounded: a request that really has hung should still end.
+   */
+  timeoutMs?: number
+  /**
+   * Retries on failure.
+   *
+   * One, not the default two. A retry against a model this slow costs as much as the
+   * original call, so a genuinely stuck request would burn three timeouts before
+   * surfacing — the failure arrives so late it is hard to attribute.
+   */
+  maxRetries?: number
 }
 
 const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
@@ -121,6 +162,8 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     envKey: ["LAGUNA_API_KEY", "LLM_API_KEY"],
     envVision: "LAGUNA_VISION",
     vision: false,
+    timeoutMs: 30 * 60_000,
+    maxRetries: 1,
   },
   // The GPU tier as of 2026-08-15: Qwen3.8-27B replaced Laguna S 2.1.
   //
@@ -139,6 +182,8 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     envVision: "QWEN3_VISION",
     vision: false,
     extraBody: { chat_template_kwargs: { enable_thinking: false } },
+    timeoutMs: 30 * 60_000,
+    maxRetries: 1,
   },
   // The CPU tier. llama.cpp on the Spark's ARM cores, holding **zero GPU memory** — so
   // the design loop keeps running while Isaac Sim, gsplat or a fine-tune owns the GB10.
@@ -152,6 +197,8 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     envKey: ["QWEN_API_KEY", "LLM_API_KEY"],
     envVision: "QWEN_VISION",
     vision: false,
+    timeoutMs: 30 * 60_000,
+    maxRetries: 1,
   },
   // Generic escape hatch for any other locally-served OpenAI-compatible model
   // (a second vLLM, llama.cpp, TGI). `--model local:my-model --base-url ...`.
@@ -163,6 +210,8 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     envKey: ["LOCAL_API_KEY", "LLM_API_KEY"],
     envVision: "LOCAL_VISION",
     vision: false,
+    timeoutMs: 30 * 60_000,
+    maxRetries: 1,
   },
 }
 
@@ -236,10 +285,25 @@ export async function resolveModel(spec: ModelSpec): Promise<ChatLike> {
     // spec.extraBody wins over the endpoint default, so --think can re-enable reasoning
     // without editing this table.
     const extraBody = { ...(endpoint.extraBody ?? {}), ...(spec.extraBody ?? {}) }
-    const model = await initChatModel(modelName, {
-      modelProvider: "openai",
+
+    // Constructed directly rather than through `initChatModel`.
+    //
+    // `initChatModel` forwards only the options it recognises, and silently drops the
+    // rest — `timeout`, `maxRetries` and `modelKwargs` all arrived at the provider as
+    // `undefined`. Nothing errored: requests simply kept the SDK defaults, so the
+    // reasoning-off switch never reached the server and every run that claimed to have
+    // it was quietly reasoning anyway, and the long timeout for slow local models was
+    // never applied. A dropped option is the worst kind of misconfiguration because the
+    // code reads as if it took effect.
+    //
+    // Hosted providers still go through `initChatModel` below — twenty-odd of them
+    // resolve through one call and none of them need these knobs.
+    const model = new ChatOpenAI({
+      model: modelName,
       apiKey,
       configuration: { baseURL },
+      ...(endpoint.timeoutMs ? { timeout: endpoint.timeoutMs } : {}),
+      ...(endpoint.maxRetries !== undefined ? { maxRetries: endpoint.maxRetries } : {}),
       ...(Object.keys(extraBody).length ? { modelKwargs: extraBody } : {}),
       ...spec.kwargs,
     })

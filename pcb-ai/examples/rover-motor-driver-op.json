@@ -1,0 +1,43 @@
+{
+  "ambient_c": 25,
+  "rails": [
+    {
+      "net": "VBAT",
+      "voltage_v": 7.4,
+      "source_pin": "J1.pin1",
+      "max_drop_mv": 150
+    },
+    {
+      "net": "V3V3",
+      "voltage_v": 3.3,
+      "source_pin": "J2.pin5",
+      "max_drop_mv": 60
+    }
+  ],
+  "loads": [
+    {
+      "pin": "U1.VM",
+      "net": "VBAT",
+      "current_a": 1.2
+    },
+    {
+      "pin": "R1.pin2",
+      "net": "V3V3",
+      "current_a": 0.0003
+    }
+  ],
+  "dissipation": [
+    {
+      "component": "U1",
+      "power_w": 0.52,
+      "max_temp_c": 150
+    }
+  ],
+  "assumptions": [
+    "two motors per board at 600mA continuous, ASSUMED not stalled",
+    "DRV8833 R_ds(on) 360 mOhm per leg, 720 mOhm per channel \u2014 datasheet typical",
+    "dissipation 2 x I^2 R = 2 x 0.6^2 x 0.72 = 0.52W. An earlier 1.04W double-counted the channels",
+    "3V3 arrives from the controller board over the logic header",
+    "TSSOP-16 with no thermal pad \u2014 the real DRV8833 is a PowerPAD part, and this footprint is not"
+  ]
+}

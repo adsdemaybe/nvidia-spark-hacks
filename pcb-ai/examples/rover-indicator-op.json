@@ -1,0 +1,17 @@
+{
+  "ambient_c": 25,
+  "rails": [
+    { "net": "V3V3", "voltage_v": 3.3, "source_pin": "J1.pin1", "max_drop_mv": 40 }
+  ],
+  "loads": [
+    { "pin": "R1.pin1", "net": "V3V3", "current_a": 0.0013 }
+  ],
+  "dissipation": [
+    { "component": "R1", "power_w": 0.0017, "max_temp_c": 125 }
+  ],
+  "assumptions": [
+    "3V3 arrives from the controller board; this board regulates nothing",
+    "LED forward drop 2.0V ASSUMED for green/red/yellow alike",
+    "only the power LED is counted as continuous load; the two status LEDs are firmware-driven"
+  ]
+}

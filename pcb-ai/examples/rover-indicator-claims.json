@@ -1,0 +1,6 @@
+[
+  { "kind": "dc_rail", "target": "V3V3", "expected": 3.3, "tolerance": 0.05,
+    "why": "If this rail is wrong the indicator lies about the rest of the rover, which is worse than having no indicator." },
+  { "kind": "current", "target": "R1", "expected": 0.0013, "tolerance": 0.0007,
+    "why": "The power LED must be visible indoors without being bright enough to matter to the controller's rail budget." }
+]

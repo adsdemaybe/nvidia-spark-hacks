@@ -1,0 +1,6 @@
+[
+  { "kind": "dc_rail", "target": "VBAT", "expected": 7.4, "tolerance": 0.05,
+    "why": "Every other board hangs off this rail; if it sags under four motors the controller browns out and the rover stops mid-drive." },
+  { "kind": "current", "target": "R2", "expected": 0.0023, "tolerance": 0.0012,
+    "why": "The rail-present LED is the only way to tell a dead board from a dead battery without a meter." }
+]

@@ -218,6 +218,38 @@ export async function build(code: string, dir: string): Promise<BuildResult> {
 }
 
 /** Compact text digest of a build — this is what goes into the reviewer's prompt. */
+/**
+ * Compile errors that must block promotion.
+ *
+ * This existed nowhere, and the gap was visible: a board whose autorouting was skipped —
+ * so *no copper was placed at all* — reached the chief with seven errors in its report
+ * and was accepted, because only L6/L7/L8/L3' fed the hard-failure override. Every stage
+ * after L1 was quietly analysing a netlist with no traces.
+ *
+ * Cascades are collapsed to their root cause. Reporting "12 unconnected ports" when one
+ * unreachable constraint stopped the router sends the designer to add traces that
+ * already exist.
+ */
+export function buildBlockers(b: BuildResult): string[] {
+  if (b.compileError) return [`L1: the HDL did not evaluate — ${b.compileError.split("\n")[0]}`]
+
+  const errors = b.findings.filter((f) => f.severity === "error" && !isLowSignal(f))
+  if (!errors.length) return []
+
+  const routingAborted = errors.find((f) => f.type === "pcb_autorouting_error")
+  if (routingAborted) {
+    const consequences = errors.filter(
+      (f) =>
+        f.type === "pcb_port_not_connected_error" || f.type === "pcb_trace_missing_error",
+    ).length
+    return [
+      `L1: autorouting was skipped, so no copper was placed — ${routingAborted.message}` +
+        (consequences ? ` (${consequences} unconnected-port errors follow from it)` : ""),
+    ]
+  }
+  return errors.slice(0, 5).map((f) => `L1 [${f.type}]: ${f.message}`)
+}
+
 export function describeBuild(b: BuildResult): string {
   if (b.compileError) return `HDL FAILED TO COMPILE:\n${b.compileError}`
 

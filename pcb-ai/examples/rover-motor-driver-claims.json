@@ -1,0 +1,8 @@
+[
+  { "kind": "dc_rail", "target": "VBAT", "expected": 7.4, "tolerance": 0.05,
+    "why": "The bridge output voltage is the supply minus its own drops; a sagging VBAT is torque the wheels do not have." },
+  { "kind": "dc_rail", "target": "V3V3", "expected": 3.3, "tolerance": 0.05,
+    "why": "Logic thresholds on the DRV8833 inputs are referenced to this; below 3.1V the bridge may not see a valid high." },
+  { "kind": "current_max", "target": "R1", "expected": 0.0005, "tolerance": 0.0002,
+    "why": "The nSLEEP pull-up should draw almost nothing; more means it is fighting a driven pin." }
+]

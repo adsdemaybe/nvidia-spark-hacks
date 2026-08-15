@@ -21,7 +21,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { StateGraph, Annotation, START, END, MemorySaver } from "@langchain/langgraph"
 
-import { build, describeBuild, isLowSignal } from "./build.ts"
+import { build, describeBuild, isLowSignal, buildBlockers } from "./build.ts"
 import type { BuildResult } from "./types.ts"
 import { lintHdl, describeLint } from "./lint.ts"
 import { runPhysics, describePhysics, physicsBlockers } from "./physics/index.ts"
@@ -489,7 +489,8 @@ function record(
       (state.physics ? physicsBlockers(state.physics).length : 0) +
       (state.spice?.hardFailures.length ?? 0) +
       (state.dfm ? dfmBlockers(state.dfm).length : 0) +
-      (state.placement ? placementBlockers(state.placement).length : 0),
+      (state.placement ? placementBlockers(state.placement).length : 0) +
+      (state.build ? buildBlockers(state.build).length : 0),
     spice_claims_passing: state.spice
       ? `${state.spice.claims.filter((c) => c.pass).length}/${state.spice.claims.length}`
       : undefined,

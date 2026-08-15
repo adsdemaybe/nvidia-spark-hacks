@@ -1,0 +1,21 @@
+{
+  "ambient_c": 25,
+  "rails": [
+    { "net": "VBAT", "voltage_v": 7.4, "source_pin": "Q1.pin3", "max_drop_mv": 200 }
+  ],
+  "loads": [
+    { "pin": "J2.pin1", "net": "VBAT", "current_a": 0.12 },
+    { "pin": "J3.pin1", "net": "VBAT", "current_a": 1.2 },
+    { "pin": "J4.pin1", "net": "VBAT", "current_a": 1.2 }
+  ],
+  "dissipation": [
+    { "component": "Q1", "power_w": 0.35, "max_temp_c": 150 },
+    { "component": "D1", "power_w": 0.006, "max_temp_c": 85 }
+  ],
+  "assumptions": [
+    "2S LiPo at 7.4V nominal, ASSUMED mid-discharge rather than 8.4V full",
+    "each motor-driver board draws 1.2A: two motors at 600mA, ASSUMED continuous not stall",
+    "controller draws 120mA at VBAT before its own regulator",
+    "Q1 R_ds(on) 50 mOhm ASSUMED — no part chosen"
+  ]
+}
