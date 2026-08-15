@@ -13,11 +13,120 @@
    onto a selected robot (fixture SO-101 today, swappable to the real
    CAD-generated robot later via a `RobotProvider` interface with zero
    downstream rewrites), verifies in MuJoCo, exports accepted demos as
-   `RobotEpisode` → LeRobot training data.
+   `RobotEpisode` → LeRobot training data. Now has three interchangeable
+   `HandFrame` sources: `mock`, `openxr`, and (Round 6, new) `webcam`.
 
 The old app was deliberately left running rather than torn out — see Round
-5's "why two apps" note. Combined test count: **139/139 Python, 81/81
-vitest**, both suites green, lint clean, both on `feat/arvr-integration`.
+5's "why two apps" note. Combined test count: **140/140 Python, 109/109
+vitest**, both suites green, lint clean, both on `feat/arvr-integration`
+(webcam work below is currently on `feat/webcam-hand-provider`, not yet
+merged in).
+
+### Round 6: Webcam hand tracking provider (browser-side MediaPipe)
+
+Branch `feat/webcam-hand-provider`, off `feat/arvr-integration`, not yet
+merged. The user wanted to test the pipeline with their laptop's own
+camera instead of a Quest — a new spec
+(`STRUCT_Webcam_MediaPipe_Hands_Claude.md`) asked for a `WebcamHandProvider`
+peer to `MockHandProvider`/`OpenXRHandProvider`, producing the same
+`HandFrame`, zero downstream changes.
+
+**Architecture decision, confirmed with the user before building (diverges
+from the spec's literal text):** the spec is written Python/OpenCV-flavored
+(`cv2.VideoCapture`, `python -m ... webcam_test` CLIs, Windows DirectShow
+notes). But every live hand-tracking path in this app is browser-side, and
+the Python `HandProvider` ABC (`spatial-providers`) has **no live consumer
+at all** — it's only used offline, replaying an already-recorded
+`HumanEpisode` during `/spatial/episodes/{id}/finish`. The spec's own
+Phase-4 gate ("mock and webcam share renderer") requires webcam frames to
+reach the existing THREE.js `ShadowHand`, which lives in the browser.
+Built it with MediaPipe's official JS/WASM Hand Landmarker
+(`@mediapipe/tasks-vision`) + `getUserMedia` instead — same model, same 21
+landmarks, reuses `ShadowHand`/`LiveRetargetSession`/`HumanEpisodeRecorder`
+exactly as they already exist, zero new backend service.
+
+**What's new:**
+
+- `packages/xr-web/src/webcamHand.ts` — `WebcamHandProvider`, a peer to
+  `MockHandProvider`. Pure conversion functions
+  (`mediapipeResultToHandFrame`, `imageToControlSpace`,
+  `worldLandmarksToStructJoints`, `palmOrientation`, `emaSmooth`,
+  `PinchHysteresis`) are exported and unit-tested against synthetic
+  MediaPipe-shaped results — no camera/WASM/DOM needed, same split as
+  `resolveBoneSegments`/`reachStatus` elsewhere. Builds an intermediate
+  struct_world `StructHandFrame` and converts it through `mockHand.ts`'s
+  existing `toHandFrame` (the same device-frame boundary the mock provider
+  already uses) rather than duplicating the WebXR conversion.
+- `ar-contracts`'s `HandSourceDevice` gained the `"webcam"` literal
+  (`Literal["openxr","phone","mock","webcam"]`) — additive, same pattern
+  as the earlier `VerificationChecks.collision_valid` extension.
+- `liveRetargetSession.ts`'s `toWireHandFrame` gained a `sourceDevice`
+  parameter (default `"openxr"`, preserving old call sites) — **fixed a
+  real pre-existing bug found while wiring this in**: it previously
+  hardcoded `source_device: "openxr"` on every wire frame, silently
+  mislabeling `mock` recordings' provenance too. `humanEpisodeRecorder.ts`
+  and `spatialTeachMain.ts` now pass the real provider through.
+- `spatialTeachMain.ts` gained a third HAND option, gated on
+  `navigator.mediaDevices` existing (mirrors how `openxr` is gated on
+  `detectCapabilities()`), a webcam preview panel in `spatial-teach.html`
+  (spec's split-screen layout, CSS-mirrored for natural selfie-view), and
+  the spec's required honesty readout (`HAND SOURCE: LAPTOP WEBCAM` /
+  `MODE: SCREEN CONTROL` / `DEPTH: ESTIMATED`) plus live fps/handedness/
+  pinch.
+
+**Two real bugs found by the new tests, not by inspection** (same
+discipline as Round 5): `palmOrientation`'s rotation-matrix-to-quaternion
+conversion was fed a left-handed basis (wrong cross-product order),
+producing a non-unit quaternion — caught by a magnitude assertion, fixed
+with a proper Gram-Schmidt orthonormalization. A smoothing test asserted
+the wrong array index — `hands.ts`'s `HandFrame` is WebXR-space, and
+`adapter.ts`'s `structToWebxr` maps struct `[x,y,z]` → webxr `[-y,z,-x]`,
+so a struct-x change shows up (negated) at webxr `position[2]`, not `[0]`;
+the test was wrong, not the code.
+
+**Judgment calls to flag:**
+
+1. Browser-side MediaPipe, not the spec's literal Python/OpenCV — see
+   architecture decision above. Confirmed with the user first.
+2. MediaPipe has only one metacarpal landmark (thumb); the WebXR
+   `*-finger-metacarpal` joints for index/middle/ring/pinky, and `palm`,
+   are simply never emitted for webcam frames rather than fabricated. Real,
+   visible consequence: those four fingers don't visually connect to the
+   wrist in `ShadowHand` for webcam-sourced hands (only thumb does) — a
+   disclosed gap, not a bug.
+3. Only the `wrist` joint's orientation is genuinely derived (palm basis
+   from three real landmarks, spec §18); finger-joint orientations stay
+   identity, since `hands.ts`'s `JointPose` has no `orientation_valid` flag
+   to extend for a purely cosmetic field, and `ShadowHand` never reads
+   per-joint orientation anyway.
+4. Default control-volume bounds are **not** the spec's literal example
+   numbers — they're recentered on this fixture scene's actual reachable
+   geometry (robot base at struct Y=-0.7, button at Y=0.0,Z=0.53; see
+   `DEFAULT_CONTROL_VOLUME` in `webcamHand.ts`). The spec's own axis
+   labels ("Y"=vertical, "Z"=depth) also don't match this app's real
+   Z-up struct convention (Z is genuinely "up" elsewhere, e.g. the
+   button's `z=0.53m` table height) — image up/down was deliberately
+   mapped to struct Z, camera depth to struct Y, not copied literally.
+5. Depth sign (`relative_mediapipe` strategy's near/far raw-z reference
+   points), the world-landmark axis mapping, and the mirrored-preview
+   handedness flip are internally consistent, tested design choices —
+   but **not yet verified against a real camera** (this agent has no
+   webcam access). Flagged in `webcamHand.ts`'s own docstring: "measure
+   rather than assume," confirm live and flip signs if toward/away or
+   left/right reads backwards.
+6. MediaPipe's WASM fileset + `.task` model load from MediaPipe's own
+   hosted CDN (jsdelivr / Google Cloud Storage), not self-hosted — first
+   run needs internet. Avoided pulling a multi-MB binary through this
+   agent's network-sandboxed shell; a disclosed tradeoff, not an oversight.
+7. Calibrated-workspace (ArUco) and a real Quest re-test are explicitly
+   out of scope this round, per the spec's own phase ordering (§46
+   Phases 10-11) — this covers Phases 1-9 (the "vertical slice") only.
+
+**Not yet done:** live browser verification with a real camera — this
+agent has no webcam access, so `npx vitest run`/`npm run typecheck`/
+`npm run build`/`uv run pytest` all pass, but nobody has actually opened
+`spatial-teach.html`, selected HAND=webcam, and watched a real hand track.
+That's the next step, and it needs the user's own machine.
 
 ### Round 5: Shadow Robot Spatial Demonstration Pipeline — Milestone 1 complete
 
@@ -168,11 +277,20 @@ part of this milestone.
 
 ## Next (Milestone 2+, per the new spec's own recommended order — §69-72: swap one provider, nothing else changes)
 
-1. Open `spatial-teach.html` in a real browser and actually click through
-   CALIBRATE → START DEMO → FINISH — the one thing this round couldn't
-   verify itself.
-2. `HAND=openxr` on real hardware (a Quest or a phone) — swap
-   `MockHandProvider` for the real WebXR path, already wired, untested.
+1. ~~Open `spatial-teach.html` in a real browser and click through CALIBRATE
+   → START DEMO → FINISH.~~ **Done** — user confirmed live: shadow hand
+   tracks the mock demo, robot bends through IK, verdict renders. (Initial
+   run surfaced a real bug — missing CORS middleware stalled the whole demo
+   silently; see Round 5's CORS note above. Fixed and reconfirmed.)
+2. `HAND=openxr` on real hardware (a Quest). Hardened this round (see
+   below) — `preferredInputSource` fixes a real two-hands-interleaving bug,
+   `session.end()` added on FINISH, `API_BASE` no longer hardcodes
+   `127.0.0.1`. A Windows-side `netsh interface portproxy` rule was set up
+   to bridge WSL's NAT isolation for LAN (headset) traffic reaching
+   `ar_backend`; the matching firewall rule was never confirmed run. **Not
+   live-tested against real hardware** — the user set this aside in favor
+   of `HAND=webcam` (Round 6, below) rather than continuing the headset
+   path. Still a real gap, not closed.
 3. Wire `interaction_ir` into `ArmRetargeter` (see gap above) — needed
    before a second robot embodiment can meaningfully reuse one HumanEpisode.
 4. `SimulationProvider` swap: Isaac Sim as the authoritative verifier,

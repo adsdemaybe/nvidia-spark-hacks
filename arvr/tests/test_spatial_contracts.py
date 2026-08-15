@@ -53,6 +53,11 @@ def test_hand_frame_round_trips():
     assert again.joints["thumb-tip"].confidence == 0.9
 
 
+def test_hand_frame_accepts_webcam_source_device():
+    frame = HandFrame.model_validate(_hand_frame_payload(source_device="webcam"))
+    assert frame.source_device == "webcam"
+
+
 def test_hand_frame_rejects_unknown_joint_name():
     wrist = _hand_frame_payload()["joints"]["wrist"]
     with pytest.raises(ValidationError):

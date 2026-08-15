@@ -12,6 +12,7 @@
     "loop": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.17",
     "three": "^0.171.0"
   },
   "devDependencies": {
