@@ -318,7 +318,7 @@ or the packer safe.
 **Want, all local:**
 | Tool | Role | Dev laptop | **Spark (aarch64), verified 2026-08-15** |
 |---|---|---|---|
-| `kicad-cli` | second DRC engine, path-B ERC + netlist + SPICE export, 3D render | KiCad 10.0.5 installed, headless verified | **NOT installed.** `apt` candidate is **7.0.11** (noble/universe arm64) — too old for `sch export netlist --format spice` reliability and older than SchGen's pin. **Action: install KiCad 8.x or 9+/10 on aarch64 (PPA or Flatpak) at H+0** — §7.6 |
+| `kicad-cli` | second DRC engine, path-B ERC + netlist + SPICE export, 3D render | KiCad 10.0.5 installed, headless verified | **8.0.9 VENDORED, rootless — `tools/vendor-kicad.sh`.** Correcting an earlier claim in this document: KiCad 8 is *not* blocked on aarch64. The **9.0 PPA is amd64-only** (no arm64 build exists at all); the **8.0 PPA does publish arm64**, at exactly the 8.0.9 SchGen pins. Assembling its closure by hand — the oracular build, OCCT 7.8 from oracular's archive since noble ships 7.6, OpenEXR from the public pool because noble's is ESM-only — gives a working `kicad-cli 8.0.9`. **Remaining gap: it cannot read our own output.** `circuit-json-to-kicad` emits file format 20250114 (KiCad 9) and v8 refuses it, so the principle-4 second opinion is blocked by *format*, not availability |
 | `circuit-json-to-kicad` | path-A bridge to KiCad | npm, 0.0.173 | npm, arch-independent ✔ |
 | `@tscircuit/checks` | ERC base | npm, 0.0.162 | npm ✔ |
 | **`ngspice` binary** | **L7 engine, both paths** | in node_modules (JS engine) | **NOT installed**; `apt` candidate **42** for arm64 → `sudo apt install ngspice` is a one-liner. Do it at H+0 |

@@ -241,8 +241,16 @@ runs/<name>/
 - **L7 coverage is 75%** on the rover. Raising it means real vendor `.lib` files.
 - **The compile fetches `modelcdn.tscircuit.com`** and times out on this box — a network
   dependency in a local-only pipeline, and it dominates run time.
-- **Path B (SchGen) is not wired.** It needs KiCad 8.0.9; apt here offers 7.0.11 and it
-  needs root. `tools/bench.ts` has the lane and reports `BLOCKED` with the reason.
+- **Path B (SchGen) is not wired**, but its tooling blocker is gone: `tools/vendor-kicad.sh`
+  installs **KiCad 8.0.9** on aarch64 without root, which is exactly the version SchGen
+  pins. (The 9.0 PPA is amd64-only — 8 is both the newest available here and the one
+  path B wants.) `tools/bench.ts` still reports the lane `BLOCKED` until the netlist
+  bridge exists.
+- **kicad-cli cannot read our own KiCad output.** `circuit-json-to-kicad` emits file
+  format 20250114 (KiCad 9); the vendored v8 refuses it. So the principle-4
+  second-opinion DRC/ERC is blocked by *format*, not by availability. Closing it needs a
+  target-version option upstream, an older converter release, or an amd64 box running
+  KiCad 9.
 - **The designer loop has not completed a full revision end to end** against a real
   model. Its pieces are unit-tested; the round trip is not proven.
 - Gerbers are produced but a human should review before money is spent.
