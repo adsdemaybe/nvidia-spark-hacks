@@ -18,6 +18,10 @@ import {
   type MediapipeHandResult,
   type MediapipeLandmark,
   type WebcamHandProviderOptions,
+  PALM_SPAN_FAR,
+  PALM_SPAN_NEAR,
+  depthFromPalmSpan,
+  palmSpanImage,
 } from "./webcamHand";
 
 function lm(x: number, y: number, z: number): MediapipeLandmark {
@@ -725,3 +729,76 @@ describe("WebcamHandProvider frame loop", () => {
     expect(wristStructX(seen[0]!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
   });
 });
+
+describe("depth from apparent hand size", () => {
+  it("reads a large palm as near and a small one as far", () => {
+    // The whole point: a hand's real size is fixed, so its projected size
+    // falls as 1/distance. Bigger on screen means closer.
+    expect(depthFromPalmSpan(PALM_SPAN_NEAR)).toBe(1);
+    expect(depthFromPalmSpan(PALM_SPAN_FAR)).toBe(0);
+  });
+
+  it("is monotonic between the calibration points", () => {
+    const mid = depthFromPalmSpan((PALM_SPAN_NEAR + PALM_SPAN_FAR) / 2);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+    expect(depthFromPalmSpan(0.20)).toBeGreaterThan(depthFromPalmSpan(0.14));
+  });
+
+  it("saturates rather than running off the end of the control volume", () => {
+    expect(depthFromPalmSpan(0.9)).toBe(1);
+    expect(depthFromPalmSpan(0.01)).toBe(0);
+  });
+
+  it("measures wrist to middle knuckle, which curling the fingers does not change", () => {
+    // A fingertip-based span would shrink the instant someone closes their
+    // hand to grab something, reporting a lunge toward the camera at exactly
+    // the wrong moment.
+    const open = landmarksWithPalm(0.18);
+    const gripping = landmarksWithPalm(0.18);
+    // Curl every fingertip inward; the palm landmarks are untouched.
+    for (const i of [4, 8, 12, 16, 20]) {
+      gripping[i] = { x: 0.5, y: 0.5, z: 0 };
+    }
+    expect(palmSpanImage(gripping)).toBeCloseTo(palmSpanImage(open)!, 9);
+  });
+
+  it("returns null when the palm landmarks are missing rather than guessing", () => {
+    expect(palmSpanImage(undefined)).toBeNull();
+    expect(palmSpanImage([{ x: 0, y: 0, z: 0 }])).toBeNull();
+  });
+
+  it("ignores MediaPipe's z when measuring the span", () => {
+    // Folding z back in would reintroduce the very signal this replaces.
+    const flat = landmarksWithPalm(0.16);
+    const deep = landmarksWithPalm(0.16).map((l) => ({ ...l, z: -0.4 }));
+    expect(palmSpanImage(deep)).toBeCloseTo(palmSpanImage(flat)!, 9);
+  });
+
+  it("drives the control volume's depth axis from the palm span when given one", () => {
+    const bounds = { xMin: 0, xMax: 1, yMin: 0, yMax: 1, zMin: 0, zMax: 1 };
+    const near = imageToControlSpace(0.5, 0.5, 0, bounds, PALM_SPAN_NEAR);
+    const far = imageToControlSpace(0.5, 0.5, 0, bounds, PALM_SPAN_FAR);
+    expect(near[1]).toBe(1);
+    expect(far[1]).toBe(0);
+  });
+
+  it("falls back to MediaPipe z only when no span is available", () => {
+    const bounds = { xMin: 0, xMax: 1, yMin: 0, yMax: 1, zMin: 0, zMax: 1 };
+    const withSpan = imageToControlSpace(0.5, 0.5, -0.15, bounds, PALM_SPAN_FAR);
+    const withoutSpan = imageToControlSpace(0.5, 0.5, -0.15, bounds, null);
+    // Same z, opposite ends: the span must win when present.
+    expect(withSpan[1]).toBe(0);
+    expect(withoutSpan[1]).toBe(1);
+  });
+});
+
+/** 21 landmarks with the wrist at origin and the middle-finger knuckle
+ * `span` away, so palmSpanImage returns exactly `span`. */
+function landmarksWithPalm(span: number): MediapipeLandmark[] {
+  const points: MediapipeLandmark[] = [];
+  for (let i = 0; i < 21; i += 1) points.push({ x: 0.5, y: 0.5, z: 0 });
+  points[0] = { x: 0.5, y: 0.5, z: 0 };
+  points[9] = { x: 0.5 + span, y: 0.5, z: 0 };
+  return points;
+}

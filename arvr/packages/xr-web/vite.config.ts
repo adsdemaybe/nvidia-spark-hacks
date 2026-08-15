@@ -67,9 +67,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        // One app: the can data-collection page, plus the headset capability
+        // One app: the mug data-collection page, plus the headset capability
         // probe (the only way to diagnose a Quest, and a few lines).
-        canPickup: resolve(__dirname, "can-pickup.html"),
+        mugPickup: resolve(__dirname, "mug-pickup.html"),
         probe: resolve(__dirname, "probe.html"),
       },
     },

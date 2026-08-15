@@ -1,9 +1,9 @@
 /**
- * STRUCT Can Pickup — the data-collection app.
+ * STRUCT Mug Pickup — the data-collection app.
  *
- * A human picks a can up off a table with their own hand, in front of a
+ * A human picks a mug up off a table with their own hand, in front of a
  * laptop webcam. Every frame of that hand -- all the joints the tracker
- * reports -- plus the can's pose and what happened to it is recorded as a
+ * reports -- plus the mug's pose and what happened to it is recorded as a
  * `HumanEpisode` and exported as a LeRobot dataset for reinforcement
  * learning.
  *
@@ -15,7 +15,7 @@
  * scale and context, swapped for the generated one through `RobotProvider`
  * later with no change to anything downstream.
  *
- * The scene contains a table, a can, and the arm. Nothing else, because every
+ * The scene contains a table, a mug, and the arm. Nothing else, because every
  * extra object is something a demonstrator can knock over and something a
  * policy has to learn to ignore.
  */
@@ -23,22 +23,20 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GraspController } from "./grasp";
-import { PinchLatch, pinchPoint, type HandPair } from "./hands";
+import { GripLatch, graspClosure, pinchPoint, type HandPair } from "./hands";
 import { ShadowHands } from "./shadowHand";
-import { ShadowRobot } from "./shadowRobot";
 import { WebcamHandProvider } from "./webcamHand";
-import { CanPickupScene, buildCanSceneLighting } from "./canPickupScene";
-import { CanPickupTask } from "./canPickupTask";
+import { MugPickupScene, buildMugSceneLighting } from "./mugPickupScene";
+import { MugPickupTask } from "./mugPickupTask";
 import {
-  ARM_REST_POSE,
-  CAN_ID,
-  CAN_PICKUP_TASK_ID,
-  CAN_RADIUS_M,
-  CAN_START,
+  MUG_CONTROL_VOLUME,
+  MUG_ID,
+  MUG_PICKUP_TASK_ID,
+  MUG_BODY_RADIUS_M,
+  MUG_START,
   LIFT_CLEARANCE_M,
-  ROBOT_BASE,
   TABLE_Z_M,
-} from "./canPickupLayout";
+} from "./mugPickupLayout";
 import { HumanEpisodeRecorder } from "./humanEpisodeRecorder";
 import { exportHumanEpisodeForTraining, type HumanExportResult } from "./humanEpisodeUpload";
 import { webxrToStruct } from "./adapter";
@@ -47,14 +45,18 @@ import type { Vec3 } from "./contracts";
 const API_BASE = import.meta.env["VITE_API_BASE"] ?? "";
 
 /**
- * How close the hand has to be to take the can.
+ * How close the hand has to be to take the mug.
  *
- * The can's own radius plus a hand's worth of slack. Webcam depth is
+ * The mug body's radius plus a hand's worth of slack. Webcam depth is
  * estimated rather than measured, so demanding centimetre precision here
  * would produce takes full of failed grabs -- which is worse than a
  * forgiving radius, because a failed grab is a recording of the wrong thing.
+ *
+ * Measured to the mug's origin, which is the centre of its base, so the
+ * radius also has to cover reaching for the middle of the body rather than
+ * down at the table.
  */
-const CAN_GRASP_RADIUS_M = CAN_RADIUS_M + 0.06;
+const MUG_GRASP_RADIUS_M = MUG_BODY_RADIUS_M + 0.09;
 
 const app = document.getElementById("app")!;
 const readoutEl = document.getElementById("readout")!;
@@ -72,17 +74,10 @@ app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14171c);
-buildCanSceneLighting(scene);
+buildMugSceneLighting(scene);
 
-const canScene = new CanPickupScene();
-scene.add(canScene.root);
-
-// The temporary arm. Real SO-101 geometry rather than a stand-in box, so the
-// scale of the scene is honest about what this data is for.
-const arm = new ShadowRobot();
-arm.placeBase(ROBOT_BASE);
-arm.setJoints(ARM_REST_POSE);
-scene.add(arm.root);
+const mugScene = new MugPickupScene();
+scene.add(mugScene.root);
 
 const shadowHands = new ShadowHands();
 scene.add(shadowHands.root);
@@ -101,12 +96,12 @@ addEventListener("resize", () => {
 });
 
 // ------------------------------------------------------------------- state --
-const task = new CanPickupTask();
+const task = new MugPickupTask();
 
 /**
  * A grasp and a pinch latch per hand.
  *
- * Either hand may pick the can up -- a demonstrator should use whichever is
+ * Either hand may pick the mug up -- a demonstrator should use whichever is
  * natural, and forcing one would bias every recording toward it. Tracking a
  * single hand is also how the webcam provider's `preferredHandIndex` picks
  * MediaPipe's camera-side "Right", which with a mirrored preview is the
@@ -114,8 +109,8 @@ const task = new CanPickupTask();
  * which side a label happens to mean.
  */
 const hands = {
-  left: { grasp: new GraspController(CAN_GRASP_RADIUS_M), pinch: new PinchLatch() },
-  right: { grasp: new GraspController(CAN_GRASP_RADIUS_M), pinch: new PinchLatch() },
+  left: { grasp: new GraspController(MUG_GRASP_RADIUS_M), grip: new GripLatch() },
+  right: { grasp: new GraspController(MUG_GRASP_RADIUS_M), grip: new GripLatch() },
 };
 
 let provider: WebcamHandProvider | undefined;
@@ -123,6 +118,13 @@ let tracking = false;
 let handTracked = false;
 let reachable = false;
 let lastFrameMs: number | undefined;
+/** Last struct_world hand position and its distance to the mug, shown in the
+ * readout so a hand that is tracked but out of reach is visibly that. */
+let handPosition: Vec3 | undefined;
+let handToCanM = Infinity;
+/** How curled the nearest hand is, shown so a demonstrator can watch the
+ * grab arm rather than guess why nothing happened. */
+let handClosure = 0;
 
 let recorder: HumanEpisodeRecorder | undefined;
 let recording = false;
@@ -178,8 +180,8 @@ function renderReadout(): void {
   statusEl.dataset["state"] = recording ? "recording" : tracking ? "ready" : "off";
 
   const lines = [
-    `task      ${CAN_PICKUP_TASK_ID}`,
-    `object    ${CAN_ID}`,
+    `task      ${MUG_PICKUP_TASK_ID}`,
+    `object    ${MUG_ID}`,
     `hand      ${handTracked ? "TRACKED" : "—"}`,
     `grasp     ${task.isHeld ? "HOLDING" : reachable ? "IN REACH" : "—"}`,
     `lift      ${task.wasLifted ? `✓ (>${(LIFT_CLEARANCE_M * 100).toFixed(0)}cm)` : "—"}`,
@@ -198,9 +200,28 @@ function renderReadout(): void {
   }
   if (episodesSaved > 0) lines.push("", `episodes this session: ${episodesSaved}`);
 
-  // Webcam depth is inferred, not measured. Saying so on screen keeps it from
-  // being forgotten by the time this data reaches whoever trains on it.
-  if (tracking) lines.push("", "DEPTH  ESTIMATED (single camera)");
+  // Everything needed to tell "the camera is off" from "the camera is on but
+  // sees no hand" from "it sees a hand but it is nowhere near the mug".
+  // Without these three numbers all of those look identical on screen, which
+  // is exactly how a control volume that could not reach the mug presented
+  // as "nothing happens".
+  if (tracking) {
+    const status = provider?.getStatus();
+    lines.push(
+      "",
+      `tracker   ${status ? `${status.resultFps.toFixed(0)} fps` : "starting…"}`,
+      `detected  ${status?.handedness ?? "no hand in frame"}`,
+      `grip      ${(handClosure * 100).toFixed(0)}%  (grabs at 55%)`,
+    );
+    if (handPosition) {
+      lines.push(
+        `hand xyz  ${handPosition.map((v) => v.toFixed(2)).join(", ")}`,
+        `mug  xyz  ${task.mugPosition().map((v) => v.toFixed(2)).join(", ")}`,
+        `distance  ${(handToCanM * 100).toFixed(0)}cm  (grab under ${(MUG_GRASP_RADIUS_M * 100).toFixed(0)}cm)`,
+      );
+    }
+    lines.push("", "DEPTH  ESTIMATED (single camera)");
+  }
 
   readoutEl.textContent = lines.join("\n");
 }
@@ -208,7 +229,7 @@ function renderReadout(): void {
 // ------------------------------------------------------------------ camera --
 async function startCamera(): Promise<void> {
   try {
-    provider = await WebcamHandProvider.create();
+    provider = await WebcamHandProvider.create({ controlVolume: MUG_CONTROL_VOLUME });
     videoPanelEl.appendChild(provider.videoElement);
     videoPanelEl.classList.add("active");
     provider.startPair(onHandPair);
@@ -229,7 +250,7 @@ function resetTask(): void {
   task.reset();
   for (const side of ["left", "right"] as const) {
     hands[side].grasp.clear();
-    hands[side].pinch.reset();
+    hands[side].grip.reset();
   }
   eventsRecorded = 0;
   renderControls();
@@ -237,14 +258,14 @@ function resetTask(): void {
 
 function startRecording(): void {
   // Each take starts from the same scene state, so every episode in the
-  // dataset begins with the can in the same place. A policy trained on takes
+  // dataset begins with the mug in the same place. A policy trained on takes
   // that each started somewhere different has to learn the variation as
   // signal.
   resetTask();
 
   recorder = new HumanEpisodeRecorder({
-    taskId: CAN_PICKUP_TASK_ID,
-    assetId: CAN_ID,
+    taskId: MUG_PICKUP_TASK_ID,
+    assetId: MUG_ID,
     handProvider: "webcam",
   });
   recorder.start(nowNs());
@@ -297,7 +318,7 @@ async function stopRecording(): Promise<void> {
 /**
  * One frame of tracked hands.
  *
- * Either hand may take the can, so both are offered a grasp. The can is a
+ * Either hand may take the mug, so both are offered a grasp. The mug is a
  * single object, so once one hand has it the other is offered nothing --
  * without that, both hands would own it and fight over its position every
  * frame.
@@ -315,6 +336,9 @@ function onHandPair(pair: HandPair): void {
   handTracked = anyTracked;
 
   reachable = false;
+  handToCanM = Infinity;
+  handPosition = undefined;
+  handClosure = 0;
 
   for (const side of ["right", "left"] as const) {
     const hand = pair[side];
@@ -322,29 +346,36 @@ function onHandPair(pair: HandPair): void {
 
     const pinchWebxr = hand ? pinchPoint(hand) : null;
     const pinchStruct = pinchWebxr ? (webxrToStruct.position(pinchWebxr) as Vec3) : null;
-    track.pinch.update(hand ? { gripper: hand.gripper } : null);
+    // Grip, not pinch: a mug is taken with the whole hand, and thumb-index
+    // aperture reads that as an open hand (see graspClosure).
+    track.grip.update(hand);
 
-    const canPosition = task.canPosition();
-    // Offer the can only if it is free, or already held by *this* hand.
-    const offered = !task.isHeld || track.grasp.held === CAN_ID;
+    const mugPosition = task.mugPosition();
+    // Offer the mug only if it is free, or already held by *this* hand.
+    const offered = !task.isHeld || track.grasp.held === MUG_ID;
     const result = track.grasp.update({
-      pinchActive: track.pinch.isEngaged,
+      pinchActive: track.grip.isEngaged,
       pinchCenter: pinchStruct,
       handOrientation: [0, 0, 0, 1],
-      balls: offered ? [{ id: CAN_ID, position: canPosition }] : [],
+      balls: offered ? [{ id: MUG_ID, position: mugPosition }] : [],
     });
 
     if (result.grasped) task.setHeld(true);
     if (result.released) task.setHeld(false);
-    if (result.heldId && result.ballPosition) task.setCanPosition(result.ballPosition);
+    if (result.heldId && result.ballPosition) task.setMugPosition(result.ballPosition);
 
-    if (pinchStruct && offered) {
+    if (pinchStruct) {
       const reach = Math.hypot(
-        canPosition[0] - pinchStruct[0],
-        canPosition[1] - pinchStruct[1],
-        canPosition[2] - pinchStruct[2],
+        mugPosition[0] - pinchStruct[0],
+        mugPosition[1] - pinchStruct[1],
+        mugPosition[2] - pinchStruct[2],
       );
-      if (reach <= CAN_GRASP_RADIUS_M) reachable = true;
+      if (reach < handToCanM) {
+        handToCanM = reach;
+        handPosition = pinchStruct;
+        handClosure = hand ? graspClosure(hand) : 0;
+      }
+      if (offered && reach <= MUG_GRASP_RADIUS_M) reachable = true;
     }
   }
 
@@ -363,17 +394,15 @@ function onHandPair(pair: HandPair): void {
     framesRecorded = recorder.frameCount;
 
     recorder.captureObject({
-      id: CAN_ID,
-      position_m: task.canPosition(),
+      id: MUG_ID,
+      position_m: task.mugPosition(),
       timestamp_ns: timestampNs,
     });
     for (const event of task.events.slice(eventsRecorded)) {
-      recorder.markEvent(mapEvent(event.type), timestampNs, { objectId: CAN_ID });
+      recorder.markEvent(mapEvent(event.type), timestampNs, { objectId: MUG_ID });
     }
     eventsRecorded = task.events.length;
   }
-
-  renderReadout();
 }
 
 /** The task's own vocabulary onto the recorded event vocabulary. `lifted` and
@@ -392,13 +421,24 @@ function mapEvent(type: string): "grasp_start" | "grasp_end" | "contact" | "task
 // ------------------------------------------------------------ render loop --
 renderer.setAnimationLoop(() => {
   orbit.update();
-  canScene.update(task, reachable);
+  mugScene.update(task, reachable);
+
+  // The readout is driven from here, not from the hand callback.
+  //
+  // That callback only fires when a hand is actually detected, so hanging the
+  // HUD off it means that when nothing is detected -- the exact case a person
+  // needs to debug -- the panel freezes at its last value and the app looks
+  // dead. Every diagnostic it shows becomes unreachable in the only situation
+  // it was added for. Redrawing every frame costs nothing and makes "camera
+  // on, no hand seen" a state you can actually read.
+  renderReadout();
+
   renderer.render(scene, camera);
 });
 
-canScene.update(task, false);
+mugScene.update(task, false);
 renderControls();
 
 // Keep the starting can pose visible in the readout even before the camera
 // starts, so the scene is legible on load.
-void CAN_START;
+void MUG_START;

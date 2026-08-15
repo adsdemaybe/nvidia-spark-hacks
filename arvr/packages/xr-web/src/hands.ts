@@ -246,6 +246,106 @@ export const PINCH_ENGAGE = 0.85;
 export const PINCH_RELEASE = 0.6;
 
 /**
+ * How curled the fingers are, 0 = flat open hand, 1 = closed fist.
+ *
+ * Thumb-to-index aperture describes a *precision pinch* and nothing else. It
+ * is the right signal for a parallel gripper and for picking up something
+ * small, and it is completely wrong for a power grasp: wrap your hand around
+ * a 66mm can and your thumb and index finger end up roughly 7cm apart, which
+ * `gripperFromAperture` reports as a fully OPEN hand. A task built on pinch
+ * alone therefore cannot detect the most natural way to pick up a can.
+ *
+ * Curl is measured instead as how far the four fingertips sit from the wrist,
+ * averaged. That falls as the fingers close regardless of whether they are
+ * closing onto each other, onto the thumb, or around an object -- so it reads
+ * a pinch and a power grasp alike.
+ */
+export function graspClosure(hand: HandFrame): number {
+  const wrist = hand.joints["wrist"];
+  if (!wrist) return 0;
+
+  const tips = [
+    "index-finger-tip",
+    "middle-finger-tip",
+    "ring-finger-tip",
+    "pinky-finger-tip",
+  ];
+
+  let total = 0;
+  let counted = 0;
+  for (const name of tips) {
+    const tip = hand.joints[name];
+    if (!tip) continue;
+    total += distance(wrist, tip);
+    counted += 1;
+  }
+  // No fingers tracked is not a closed hand. Returning 0 keeps a partially
+  // tracked hand from reading as a grab, the same way an untracked pinch
+  // reports open rather than closed.
+  if (counted === 0) return 0;
+
+  const mean = total / counted;
+  const t = (GRIP_OPEN_M - mean) / (GRIP_OPEN_M - GRIP_CLOSED_M);
+  return Math.min(1, Math.max(0, t));
+}
+
+/**
+ * Fingertip-to-wrist distances for an open hand and a closed fist.
+ *
+ * An adult hand runs about 18cm wrist to fingertip fully extended; curled
+ * into a fist the tips sit roughly 7cm from the wrist. The range below is
+ * deliberately narrower than that at the open end, because a hand *reaching*
+ * for something is already slightly curled and should not have to be
+ * splayed flat to read as open.
+ */
+export const GRIP_OPEN_M = 0.135;
+export const GRIP_CLOSED_M = 0.075;
+
+/** Grip closure at which a grab is made, and the looser value it must fall
+ * back below to release. Lower and wider apart than the pinch thresholds:
+ * curl is a coarser signal than tip separation, and a power grasp does not
+ * close as completely as a fist. */
+export const GRIP_ENGAGE = 0.55;
+export const GRIP_RELEASE = 0.35;
+
+/**
+ * Edge-triggered grab detection for whole-hand grasps.
+ *
+ * Same hysteresis discipline as {@link PinchLatch} -- and a separate class
+ * rather than a parameter on that one, because the two read different
+ * signals and a task should say which it means.
+ */
+export class GripLatch {
+  private engaged = false;
+
+  get isEngaged(): boolean {
+    return this.engaged;
+  }
+
+  /** True on the frame the grab closes. A lost hand releases. */
+  update(hand: HandFrame | null): boolean {
+    if (!hand) {
+      this.engaged = false;
+      return false;
+    }
+    const closure = graspClosure(hand);
+    if (this.engaged) {
+      if (closure < GRIP_RELEASE) this.engaged = false;
+      return false;
+    }
+    if (closure >= GRIP_ENGAGE) {
+      this.engaged = true;
+      return true;
+    }
+    return false;
+  }
+
+  reset(): void {
+    this.engaged = false;
+  }
+}
+
+/**
  * Edge-triggered pinch detection.
  *
  * A calibration anchor is placed on the *transition* into a pinch. Reading

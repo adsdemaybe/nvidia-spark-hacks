@@ -5,8 +5,13 @@ import {
   PINCH_ENGAGE,
   PINCH_OPEN_M,
   PINCH_RELEASE,
+  GRIP_CLOSED_M,
+  GRIP_ENGAGE,
+  GRIP_OPEN_M,
+  GripLatch,
   PinchLatch,
   distance,
+  graspClosure,
   gripperFromAperture,
   pinchPoint,
   pokePoint,
@@ -360,5 +365,114 @@ describe("PinchLatch", () => {
     expect(latch.update(null)).toBe(false);
     expect(latch.isEngaged).toBe(false);
     expect(latch.update(pinchHand(1))).toBe(true);
+  });
+});
+
+/** A hand whose four fingertips sit `reach` metres from the wrist. */
+function curledHand(reach: number): HandFrame {
+  return {
+    handedness: "right",
+    joints: {
+      wrist: joint([0, 0, 0]),
+      "index-finger-tip": joint([reach, 0, 0]),
+      "middle-finger-tip": joint([reach, 0, 0]),
+      "ring-finger-tip": joint([reach, 0, 0]),
+      "pinky-finger-tip": joint([reach, 0, 0]),
+    },
+    pinchApertureM: null,
+    gripper: 0,
+  };
+}
+
+describe("graspClosure", () => {
+  it("reads an extended hand as open", () => {
+    expect(graspClosure(curledHand(GRIP_OPEN_M))).toBe(0);
+    expect(graspClosure(curledHand(0.20))).toBe(0);
+  });
+
+  it("reads a closed fist as fully closed", () => {
+    expect(graspClosure(curledHand(GRIP_CLOSED_M))).toBe(1);
+    expect(graspClosure(curledHand(0.03))).toBe(1);
+  });
+
+  it("is monotonic in between", () => {
+    const mid = graspClosure(curledHand((GRIP_OPEN_M + GRIP_CLOSED_M) / 2));
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+  });
+
+  it("detects a hand wrapped around a can, which a pinch cannot", () => {
+    // The whole reason this exists. Gripping a 66mm can leaves the thumb and
+    // index ~7cm apart -- which gripperFromAperture calls fully OPEN -- while
+    // the fingers are clearly curled around it.
+    const wide = 0.07;
+    expect(gripperFromAperture(wide)).toBeLessThan(0.25);
+    expect(graspClosure(curledHand(0.095))).toBeGreaterThan(GRIP_ENGAGE);
+  });
+
+  it("treats a hand with no tracked fingertips as open, not as a grab", () => {
+    const bare: HandFrame = {
+      handedness: "right",
+      joints: { wrist: joint([0, 0, 0]) },
+      pinchApertureM: null,
+      gripper: 0,
+    };
+    expect(graspClosure(bare)).toBe(0);
+  });
+
+  it("works from whichever fingertips are tracked", () => {
+    const partial: HandFrame = {
+      handedness: "right",
+      joints: {
+        wrist: joint([0, 0, 0]),
+        "index-finger-tip": joint([GRIP_CLOSED_M, 0, 0]),
+      },
+      pinchApertureM: null,
+      gripper: 0,
+    };
+    expect(graspClosure(partial)).toBe(1);
+  });
+
+  it("returns 0 when the wrist is untracked rather than guessing", () => {
+    const noWrist: HandFrame = {
+      handedness: "right",
+      joints: { "index-finger-tip": joint([0.05, 0, 0]) },
+      pinchApertureM: null,
+      gripper: 0,
+    };
+    expect(graspClosure(noWrist)).toBe(0);
+  });
+});
+
+describe("GripLatch", () => {
+  it("fires once when the hand closes", () => {
+    const latch = new GripLatch();
+    expect(latch.update(curledHand(GRIP_OPEN_M))).toBe(false);
+    expect(latch.update(curledHand(GRIP_CLOSED_M))).toBe(true);
+    expect(latch.update(curledHand(GRIP_CLOSED_M))).toBe(false);
+  });
+
+  it("holds through the hysteresis band", () => {
+    const latch = new GripLatch();
+    latch.update(curledHand(GRIP_CLOSED_M));
+    // Closure between RELEASE and ENGAGE: still gripping.
+    const between = GRIP_OPEN_M - (GRIP_OPEN_M - GRIP_CLOSED_M) * 0.45;
+    latch.update(curledHand(between));
+    expect(latch.isEngaged).toBe(true);
+  });
+
+  it("releases once the hand opens past the release threshold", () => {
+    const latch = new GripLatch();
+    latch.update(curledHand(GRIP_CLOSED_M));
+    latch.update(curledHand(GRIP_OPEN_M));
+    expect(latch.isEngaged).toBe(false);
+    expect(latch.update(curledHand(GRIP_CLOSED_M))).toBe(true);
+  });
+
+  it("treats a lost hand as a release", () => {
+    const latch = new GripLatch();
+    latch.update(curledHand(GRIP_CLOSED_M));
+    expect(latch.update(null)).toBe(false);
+    expect(latch.isEngaged).toBe(false);
   });
 });

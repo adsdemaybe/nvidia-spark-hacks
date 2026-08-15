@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "mug_01",
+  "parts": {
+    "body": {
+      "interaction": "grasp",
+      "local_origin_m": [
+        0.0,
+        0.0,
+        0.0445
+      ],
+      "axis": [
+        1.0,
+        0.0,
+        0.0
+      ]
+    },
+    "handle": {
+      "interaction": "grasp",
+      "local_origin_m": [
+        0.068,
+        0.0,
+        0.045
+      ],
+      "axis": [
+        -1.0,
+        0.0,
+        0.0
+      ]
+    }
+  }
+}

@@ -168,16 +168,61 @@ export const DEFAULT_CONTROL_VOLUME: ControlVolumeBounds = {
   zMin: 0.08, zMax: 0.28,
 };
 
-// relative_mediapipe depth strategy (spec's default): the wrist's raw,
-// image-space MediaPipe z is a small, hand-relative, unitless value with no
-// fixed physical scale -- these two reference points are a starting
-// calibration, not a measured constant. Flip/retune after a live test if
-// toward/away feels backwards or insensitive (module docstring).
+// relative_mediapipe depth strategy: the wrist's raw, image-space MediaPipe z
+// is a small, hand-relative, unitless value with no fixed physical scale.
+// Retained only as the fallback below -- see depthFromPalmSpan for why it is
+// no longer the primary signal.
 const Z_NEAR_RAW: number = -0.15;
 const Z_FAR_RAW: number = 0.02;
 
 function normalizeDepth(zRaw: number): number {
   return clamp01((zRaw - Z_FAR_RAW) / (Z_NEAR_RAW - Z_FAR_RAW));
+}
+
+/**
+ * Apparent palm length at the near and far ends of the usable range, in
+ * normalized image units (the image is 0..1 across).
+ *
+ * A hand is a rigid object of roughly fixed size, so its projected size falls
+ * as 1/distance -- which makes apparent size a far stronger monocular depth
+ * cue than MediaPipe's landmark z, a hand-relative value with no physical
+ * scale that barely moves as the whole hand translates toward the camera.
+ * Depth was the axis people could not control, and this is why.
+ *
+ * The reference numbers: an adult palm (wrist to middle-finger knuckle) is
+ * about 10cm. A typical laptop camera has a horizontal field of view near
+ * 60 degrees, so it sees ~35cm across at 30cm away and ~80cm across at 70cm.
+ * A 10cm palm therefore spans ~0.29 of the image up close and ~0.12 at arm's
+ * length. The bounds below sit just inside that, so the extremes of the
+ * control volume are reachable without pressing your hand into the lens.
+ */
+export const PALM_SPAN_NEAR = 0.27;
+export const PALM_SPAN_FAR = 0.11;
+
+/**
+ * Depth from apparent palm size: 0 = far from the camera, 1 = near.
+ *
+ * Measured wrist-to-middle-finger-knuckle rather than to a fingertip on
+ * purpose. That span is fixed by the skeleton and does not change when the
+ * fingers curl -- and the fingers curl precisely when someone grabs
+ * something, which is the exact moment a fingertip-based measure would report
+ * a spurious lunge toward the camera.
+ */
+export function depthFromPalmSpan(spanImage: number): number {
+  return clamp01((spanImage - PALM_SPAN_FAR) / (PALM_SPAN_NEAR - PALM_SPAN_FAR));
+}
+
+/** Normalized-image distance from the wrist (landmark 0) to the middle-finger
+ * MCP knuckle (landmark 9). Null when either is missing. */
+export function palmSpanImage(
+  landmarks: readonly MediapipeLandmark[] | undefined,
+): number | null {
+  const wrist = landmarks?.[0];
+  const middleMcp = landmarks?.[9];
+  if (!wrist || !middleMcp) return null;
+  // Image x/y only. Including MediaPipe's z here would fold the very signal
+  // this function exists to replace back into the measurement.
+  return Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
 }
 
 /** Spec section 15: image x/y (+ relative z) -> a control-space anchor.
@@ -187,10 +232,18 @@ export function imageToControlSpace(
   yImage: number,
   zRaw: number,
   bounds: ControlVolumeBounds = DEFAULT_CONTROL_VOLUME,
+  palmSpan?: number | null,
 ): Vec3 {
   const x = lerp(bounds.xMin, bounds.xMax, clamp01(xImage));
   const z = lerp(bounds.zMin, bounds.zMax, clamp01(1 - yImage));
-  const y = lerp(bounds.yMin, bounds.yMax, normalizeDepth(zRaw));
+  // Apparent palm size when we have it, MediaPipe's landmark z only as a
+  // fallback. The fallback exists so a partially-tracked hand still produces
+  // a depth rather than none, not because the two are equally good.
+  const depth =
+    palmSpan !== undefined && palmSpan !== null
+      ? depthFromPalmSpan(palmSpan)
+      : normalizeDepth(zRaw);
+  const y = lerp(bounds.yMin, bounds.yMax, depth);
   return [x, y, z];
 }
 
@@ -434,7 +487,13 @@ function convertHandAtIndex(
   if (imageLandmarks.length < 21 || worldLandmarks.length < 21) return null;
 
   const wristImage = imageLandmarks[0];
-  const anchor = imageToControlSpace(wristImage.x, wristImage.y, wristImage.z, bounds);
+  const anchor = imageToControlSpace(
+    wristImage.x,
+    wristImage.y,
+    wristImage.z,
+    bounds,
+    palmSpanImage(imageLandmarks),
+  );
   const positions = worldLandmarksToStructJoints(worldLandmarks, anchor);
 
   const joints: Record<string, StructJoint> = {};
