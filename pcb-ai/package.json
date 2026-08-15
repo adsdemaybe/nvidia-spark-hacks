@@ -1,0 +1,38 @@
+{
+  "name": "pcb-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LangGraph PCB design loop: HDL generation, physics solvers, multi-agent review, model-agnostic",
+  "scripts": {
+    "design": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "stub": "tsx src/cli.ts --model stub"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.0",
+    "@langchain/anthropic": "^1.5.5",
+    "@langchain/core": "^1.2.7",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/langgraph": "^1.4.9",
+    "@langchain/ollama": "^1.3.0",
+    "@langchain/openai": "^1.5.7",
+    "@resvg/resvg-js": "^2.6.2",
+    "@tscircuit/eval": "^0.0.1196",
+    "circuit-json-to-bom-csv": "^0.0.15",
+    "circuit-json-to-gerber": "^0.0.94",
+    "circuit-to-svg": "^0.0.403",
+    "dsn-converter": "^0.0.91",
+    "langchain": "^1.5.8",
+    "tscircuit": "^0.0.2324",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@tscircuit/checks": "^0.0.162",
+    "@types/node": "^22.10.0",
+    "eslint": "^10.8.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.67.0"
+  }
+}

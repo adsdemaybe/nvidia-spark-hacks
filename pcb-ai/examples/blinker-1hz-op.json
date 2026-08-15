@@ -1,0 +1,25 @@
+{
+  "ambient_c": 25,
+  "rails": [
+    { "net": "VCC", "voltage_v": 5.0, "source_pin": "J1.pin1", "max_drop_mv": 50 }
+  ],
+  "loads": [
+    { "pin": "U1.VCC", "net": "VCC", "current_a": 0.006 },
+    { "pin": "R1.pin1", "net": "VCC", "current_a": 0.0001 },
+    { "pin": "C3.pin1", "net": "VCC", "current_a": 0.0 }
+  ],
+  "dissipation": [
+    { "component": "U1", "power_w": 0.030, "max_temp_c": 125 },
+    { "component": "R3", "power_w": 0.0273, "max_temp_c": 125 },
+    { "component": "D1", "power_w": 0.0182, "max_temp_c": 85 },
+    { "component": "R1", "power_w": 0.0001, "max_temp_c": 125 },
+    { "component": "R2", "power_w": 0.0001, "max_temp_c": 125 }
+  ],
+  "assumptions": [
+    "5V supply on J1, NE555 astable at 1.02Hz, 67% duty",
+    "LED modelled at DC 9.1mA (Vf 2.0V, R3 = 330R); real average is 67% of that",
+    "NE555 bipolar quiescent current 6mA at 5V",
+    "Timing chain R1=47k, R2=47k draws about 0.1mA average",
+    "Steady state, still air, 25C ambient, board flat and unenclosed"
+  ]
+}

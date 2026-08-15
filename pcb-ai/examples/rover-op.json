@@ -1,0 +1,104 @@
+{
+  "ambient_c": 25,
+  "rails": [
+    {
+      "net": "VBAT",
+      "voltage_v": 7.4,
+      "source_pin": "Q1.drain",
+      "max_drop_mv": 150
+    },
+    {
+      "net": "V3V3",
+      "voltage_v": 3.3,
+      "source_pin": "U1.VOUT",
+      "max_drop_mv": 60
+    }
+  ],
+  "loads": [
+    {
+      "pin": "U4.VM",
+      "net": "VBAT",
+      "current_a": 0.6
+    },
+    {
+      "pin": "U5.VM",
+      "net": "VBAT",
+      "current_a": 0.6
+    },
+    {
+      "pin": "U1.VIN",
+      "net": "VBAT",
+      "current_a": 0.09
+    },
+    {
+      "pin": "U2.VDD_1",
+      "net": "V3V3",
+      "current_a": 0.05
+    },
+    {
+      "pin": "U3.VDD",
+      "net": "V3V3",
+      "current_a": 0.004
+    },
+    {
+      "pin": "J3.pin1",
+      "net": "V3V3",
+      "current_a": 0.03
+    },
+    {
+      "pin": "R2.pin1",
+      "net": "V3V3",
+      "current_a": 0.003
+    }
+  ],
+  "dissipation": [
+    {
+      "component": "Q1",
+      "power_w": 0.083,
+      "max_temp_c": 150
+    },
+    {
+      "component": "U1",
+      "power_w": 0.369,
+      "max_temp_c": 125
+    },
+    {
+      "component": "U2",
+      "power_w": 0.165,
+      "max_temp_c": 85
+    },
+    {
+      "component": "U4",
+      "power_w": 0.065,
+      "max_temp_c": 150
+    },
+    {
+      "component": "U5",
+      "power_w": 0.065,
+      "max_temp_c": 150
+    },
+    {
+      "component": "U3",
+      "power_w": 0.013,
+      "max_temp_c": 85
+    },
+    {
+      "component": "R2",
+      "power_w": 0.009,
+      "max_temp_c": 125
+    },
+    {
+      "component": "R3",
+      "power_w": 0.009,
+      "max_temp_c": 125
+    }
+  ],
+  "assumptions": [
+    "2S LiPo, 7.4V nominal, motors running continuously at 0.3A each (1.2A total)",
+    "P-channel MOSFET reverse protection, RDS(on) 50 mohm at 1.29A -> 0.083W",
+    "AMS1117-3.3 drops 7.4-3.3 = 4.1V at 90mA logic load",
+    "DRV8833 RDS(on) 0.36 ohm per channel pair, 2 motors per driver",
+    "STM32F103 at 72MHz drawing 50mA, MPU-6050 4mA, GPS module 30mA",
+    "Steady state, still air, 25C ambient, board flat and unenclosed"
+  ]
+}
