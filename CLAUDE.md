@@ -96,8 +96,10 @@ not PowerShell.
 
 - **Never work on `main`.** Branch by capability, not by person: `feat/ar-teach`,
   `feat/ar-follow`, `feat/ar-isaac-bridge`. Capability branches merge into
-  `feat/arvr-integration` only after their acceptance tests pass; that branch reaches
-  `main` only after the integrated subsystem passes its own gates.
+  `ar/vr` (the AR/VR integration branch, renamed from `feat/arvr-integration` once
+  the individual capability branches it had absorbed were cleaned up) only after
+  their acceptance tests pass; that branch reaches `main` only after the
+  integrated subsystem passes its own gates.
 - **Canonical spatial convention**, everywhere, no exceptions: right-handed, **Z-up**,
   **meters**, quaternion `[x, y, z, w]`, timestamps in **nanoseconds**. Adapters convert
   at the boundary; nothing downstream re-interprets units.

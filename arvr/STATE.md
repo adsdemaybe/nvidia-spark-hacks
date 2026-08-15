@@ -22,9 +22,17 @@
 
 The old app was deliberately left running rather than torn out — see Round
 5's "why two apps" note. Combined test count: **157/157 Python, 111/111
-vitest**, both suites green, lint clean. Rounds 5-9 are merged into
-`feat/arvr-integration`; Round 10 is on `feat/soda-can-keyboard-interaction`,
-off `feat/arvr-integration`, not yet merged.
+vitest**, both suites green, lint clean. Rounds 5-10 are all merged and
+pushed to `origin`. Every Round's own capability branch (and Round 10's
+`feat/soda-can-keyboard-interaction`) has now been deleted, locally and on
+`origin`, once confirmed as a real ancestor of the integration branch — the
+commits live on through the merge history, only the now-redundant branch
+labels were removed. **The integration branch itself was renamed
+`feat/arvr-integration` → `ar/vr`** (still the same history/tip) per an
+explicit user request to consolidate under one clearly AR/VR-scoped branch
+name — every "off `feat/arvr-integration`" mention in the round-by-round
+history below is the accurate historical branch name at the time and is
+left as-is, not rewritten.
 
 ### Round 10: soda_can and keyboard — the master spec's own two remaining
 fixtures
