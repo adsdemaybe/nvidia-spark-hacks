@@ -45,9 +45,12 @@
         border-color: var(--accent); color: var(--accent);
       }
 
+      /* pre-wrap, not pre: the world/session lines are prose-length and were
+         being clipped by the panel edge, hiding exactly the caveat they exist
+         to state. */
       #readout { margin-top: 10px; background: var(--panel); border: 1px solid var(--line);
         border-radius: 6px; padding: 10px 12px; color: var(--muted); text-align: left;
-        white-space: pre; }
+        white-space: pre-wrap; overflow-wrap: anywhere; }
 
       /* three.js parks the VR button bottom-centre, so the controls and the
          hint sit above it rather than fighting it for the same strip. */

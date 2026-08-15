@@ -11,8 +11,14 @@ import { defineConfig } from "vite";
 // Vitest config lives in vitest.config.ts: vitest bundles its own copy of vite,
 // and importing defineConfig from "vitest/config" here makes the two vite
 // versions' Plugin types collide under exactOptionalPropertyTypes.
+// VITE_NO_SSL=1 drops the self-signed cert. http://localhost is already a
+// secure context, so getUserMedia and WebXR still work there -- this exists so
+// headless browsers and CI can drive the app without a cert exception. Never
+// use it for the LAN address a headset connects to.
+const https = !process.env["VITE_NO_SSL"];
+
 export default defineConfig({
-  plugins: [basicSsl()],
+  plugins: https ? [basicSsl()] : [],
   publicDir: "../../fixtures",
   server: { host: true, port: 5273 },
   build: {

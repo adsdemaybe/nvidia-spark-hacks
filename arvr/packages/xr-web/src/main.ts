@@ -14,6 +14,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { DesktopMockAdapter, XRControllerAdapter, structToWebxr } from "./adapter";
+import { CameraUnavailable, fitBackground, startCamera, type CameraFeed } from "./camera";
 import { readHand, wristTarget, type HandFrame } from "./hands";
 import { describe as describeSession, detectCapabilities, startBestSession, type SessionKind } from "./xr";
 import type { SpatialAdapter } from "./adapter";
@@ -294,6 +295,9 @@ function renderControls(): void {
     controlsEl.appendChild(button);
   };
 
+  // Always available: the physical world is not a per-mode concern.
+  add(cameraFeed ? "CAMERA OFF" : "CAMERA ON", () => void toggleCamera());
+
   if (mode === "TEACH") {
     if (recorder.isRecording) {
       add("GRAB", () => {
@@ -392,6 +396,41 @@ function hideAll(...objects: THREE.Object3D[]): void {
 
 const clock = new THREE.Clock();
 
+// ---------------------------------------------------------------- camera --
+// The physical world as pixels. Untracked -- see camera.ts. Kept separate from
+// the XR passthrough path so the HUD can always say which one is in play.
+let cameraFeed: CameraFeed | undefined;
+let cameraError: string | undefined;
+
+async function toggleCamera(): Promise<void> {
+  if (cameraFeed) {
+    cameraFeed.stop();
+    cameraFeed = undefined;
+    if (sessionKind !== "immersive-ar") scene.background = FLAT_BACKGROUND;
+    environment.grid.visible = sessionKind !== "immersive-ar";
+    renderControls();
+    return;
+  }
+
+  try {
+    cameraError = undefined;
+    cameraFeed = await startCamera();
+    fitBackground(cameraFeed.texture, cameraFeed.aspect, innerWidth / innerHeight);
+    scene.background = cameraFeed.texture;
+    // The real floor is in the video; a synthetic grid over it reads as fake.
+    environment.grid.visible = false;
+  } catch (error) {
+    cameraError = error instanceof CameraUnavailable ? error.message : String(error);
+  }
+  renderControls();
+}
+
+addEventListener("resize", () => {
+  if (cameraFeed) {
+    fitBackground(cameraFeed.texture, cameraFeed.aspect, innerWidth / innerHeight);
+  }
+});
+
 /** Hands seen this frame, when the runtime granted hand input. */
 let liveHands: HandFrame[] = [];
 
@@ -483,11 +522,25 @@ renderer.setAnimationLoop((_time, frame) => {
   renderer.render(scene, camera);
 });
 
+/**
+ * Where the "real world" in view is coming from, stated plainly.
+ *
+ * A webcam backdrop and tracked passthrough look similar in a screenshot and
+ * are not remotely the same claim (§48, §66). The HUD says which one it is.
+ */
+function worldSource(): string {
+  if (sessionKind === "immersive-ar") return "PASSTHROUGH AR — TRACKED";
+  if (cameraError) return `CAMERA UNAVAILABLE — ${cameraError}`;
+  if (cameraFeed) return `WEBCAM BACKDROP — NOT TRACKED (${cameraFeed.label})`;
+  return "NONE — virtual only, no physical environment";
+}
+
 function readout(): string {
   const p = (v: Vec3): string => v.map((n) => n.toFixed(2)).join(", ");
   const lines = [
     `MODE       ${mode}`,
     `session    ${describeSession(sessionKind, handTrackingGranted)}`,
+    `world      ${worldSource()}`,
     `input      ${adapter.deviceType}`,
   ];
 
