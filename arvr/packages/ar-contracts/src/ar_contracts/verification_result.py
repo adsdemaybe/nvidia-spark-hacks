@@ -37,6 +37,15 @@ class VerificationChecks(FrozenModel):
     velocity: bool
     replay: bool
     task_predicate: bool
+    # Optional, not required (rule 85.15 change, reviewed) -- default None
+    # means "not evaluated" rather than a claimed pass, and keeps every
+    # existing call site (ar_datapipe/pipeline.py's keyword-only
+    # VerificationChecks(...) construction) validating unchanged. Added
+    # for the Shadow Robot Spatial Demonstration Pipeline's
+    # MuJoCoSimulationProvider (spatial_providers), which does check
+    # collisions; the old TEACH pipeline still doesn't and now says so
+    # explicitly instead of by omission.
+    collision_valid: bool | None = None
 
 
 class VerificationResult(FrozenModel):
