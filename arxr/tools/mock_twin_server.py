@@ -49,12 +49,11 @@ async def publish(connection, hz: float, source_kind: str = "fixture") -> None:
     if source_kind == "mujoco":
         # Imported lazily: arxr-sim pulls in MuJoCo, and the fixture path must
         # stay usable on a machine that cannot install it.
-        from arxr.sim.director import SweepDirector
+        from arxr.sim.director import PickAndPlaceDirector
         from arxr.sim.twin import MujocoTwinSource
 
         sim = MujocoTwinSource(scene_id=scene_id, control_hz=hz)
-        director = SweepDirector()
-        emit = _mujoco_emitter(sim, director, hz)
+        emit = _mujoco_emitter(sim, PickAndPlaceDirector(), hz)
     else:
         fixture = MockTwinSource(scene_id=scene_id, hz=hz)
         emit = lambda tick: fixture.at_tick(tick)  # noqa: E731
@@ -70,8 +69,18 @@ async def publish(connection, hz: float, source_kind: str = "fixture") -> None:
 
 
 def _mujoco_emitter(sim, director, hz: float):
+    """Drive the arm through the routine and publish whatever physics produced.
+
+    The routine loops, and the sim is reset at the top of each cycle so the cube
+    returns to the table -- otherwise the demo runs once and then shows an arm
+    waving over an empty table forever.
+    """
+    period_ticks = max(1, round(director.duration_s * hz))
+
     def emit(tick: int):
-        sim.command(director.targets_at(tick / hz))
+        if tick > 0 and tick % period_ticks == 0:
+            sim.reset()
+        director.drive(sim, (tick % period_ticks) / hz)
         return sim.step()
 
     return emit

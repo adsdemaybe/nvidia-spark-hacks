@@ -141,26 +141,41 @@ export function updateLine(line: THREE.Line, from: Vec3, to: Vec3): void {
   line.computeLineDistances();
 }
 
-/** The trail a TEACH demonstration leaves behind (STRUCT_2.md 18). */
+/**
+ * The trail a TEACH demonstration leaves behind (STRUCT_2.md 18).
+ *
+ * The buffer is allocated once at full size and revealed with setDrawRange.
+ * Calling setFromPoints on a growing array instead makes three.js reuse a
+ * buffer that is too small -- it warns every frame and silently drops the tail,
+ * which at 60 Hz means a recording whose trail does not match its frames.
+ */
 export class Trail {
   readonly line: THREE.Line;
-  private points: THREE.Vector3[] = [];
+  private readonly positions: Float32Array;
+  private count = 0;
 
-  constructor(color = 0xffb347, private readonly maxPoints = 2000) {
-    this.line = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color }),
-    );
+  constructor(color = 0xffb347, private readonly maxPoints = 4000) {
+    this.positions = new Float32Array(maxPoints * 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
+    geometry.setDrawRange(0, 0);
+    this.line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color }));
+    this.line.frustumCulled = false;
   }
 
   push(position: Vec3): void {
-    this.points.push(new THREE.Vector3(...structToWebxr.position(position)));
-    if (this.points.length > this.maxPoints) this.points.shift();
-    this.line.geometry.setFromPoints(this.points);
+    if (this.count >= this.maxPoints) return;
+    const [x, y, z] = structToWebxr.position(position);
+    this.positions.set([x, y, z], this.count * 3);
+    this.count += 1;
+
+    const attribute = this.line.geometry.getAttribute("position") as THREE.BufferAttribute;
+    attribute.needsUpdate = true;
+    this.line.geometry.setDrawRange(0, this.count);
   }
 
   clear(): void {
-    this.points = [];
-    this.line.geometry.setFromPoints([]);
+    this.count = 0;
+    this.line.geometry.setDrawRange(0, 0);
   }
 }

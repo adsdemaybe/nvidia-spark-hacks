@@ -31,6 +31,7 @@ from arxr.core.schemas import (
     Pose,
     SceneManifest,
     SpatialEpisode,
+    SpatialFrame,
     VisualAsset,
 )
 from arxr.core.twin_mock import EPOCH_NS, MockTwinSource
@@ -210,6 +211,25 @@ def build_fixtures(dest: Path) -> Path:
     )
     pq.write_table(table, dest / "sample_episode.parquet", compression="none",
                    write_statistics=False, store_schema=False)
+
+    # Same frames as JSONL. Parquet is the artifact format the pipeline uses
+    # (STRUCT_2.md 35), but a browser client cannot read it without pulling in a
+    # large decoder, and REPLAY needs the poses. Same numbers, two encodings --
+    # a test asserts they agree so this cannot quietly drift.
+    episode_frames = [
+        SpatialFrame(
+            timestamp_ns=stamp,
+            source={"device_type": "phone"},
+            frame="struct_world",
+            position_m=tuple(position),
+            orientation_xyzw=tuple(orientation),
+            gripper=gripper,
+        ).model_dump_json()
+        for stamp, position, orientation, gripper in zip(
+            stamps, positions, orientations, grippers, strict=True
+        )
+    ]
+    (dest / "sample_episode.jsonl").write_text("\n".join(episode_frames) + "\n")
 
     grab_at = EPOCH_NS + round(EPISODE_FRAMES * 0.25 * 1e9 / HZ)
     release_at = EPOCH_NS + round(EPISODE_FRAMES * 0.90 * 1e9 / HZ)

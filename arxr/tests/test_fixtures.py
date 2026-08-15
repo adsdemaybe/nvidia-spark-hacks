@@ -17,6 +17,7 @@ from arxr.core.schemas import (
     FollowState,
     SceneManifest,
     SpatialEpisode,
+    SpatialFrame,
     TwinState,
 )
 
@@ -109,6 +110,25 @@ def test_episode_metadata_matches_its_parquet_artifact(pack: Path):
 
     assert (pack / episode.frames_artifact).exists()
     assert [e.type for e in episode.events] == ["START", "GRAB", "RELEASE", "FINISH"]
+
+
+def test_the_jsonl_episode_matches_the_parquet_one(pack: Path):
+    """Two encodings of one recording. If they drift, REPLAY in the browser
+    shows a different demonstration than the pipeline retargets."""
+    import pyarrow.parquet as pq
+
+    rows = pq.read_table(pack / "sample_episode.parquet").to_pylist()
+    lines = [
+        SpatialFrame.model_validate_json(line)
+        for line in (pack / "sample_episode.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+
+    assert len(rows) == len(lines)
+    for row, frame in zip(rows, lines, strict=True):
+        assert row["timestamp_ns"] == frame.timestamp_ns
+        assert row["position_m"] == pytest.approx(list(frame.position_m))
+        assert row["gripper"] == pytest.approx(frame.gripper)
 
 
 def test_generation_is_deterministic(tmp_path: Path):

@@ -1,11 +1,11 @@
 /**
  * STRUCT browser spatial client (STRUCT_2.md 28).
  *
- * The same modes as the phone app -- PLACE, TEACH, FOLLOW, TWIN, CORRECT --
- * driven by whatever spatial input is available. With a headset that is a
- * tracked controller; without one it is the mouse and WASD. Both go through a
- * SpatialAdapter, so the downstream path is identical either way, which is the
- * claim in STRUCT_2.md 5 made concrete.
+ * The same modes as the phone app -- PLACE, TEACH, REPLAY, FOLLOW, TWIN,
+ * CORRECT -- driven by whatever spatial input is available. With a headset that
+ * is a tracked controller; without one it is the mouse and WASD. Both go
+ * through a SpatialAdapter, so the downstream path is identical either way,
+ * which is the claim in STRUCT_2.md 5 made concrete.
  *
  * This is the optional client. It exists to prove hardware optionality and to
  * be developable without a Mac; the phone remains the primary demo device.
@@ -16,9 +16,21 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import { DesktopMockAdapter, XRControllerAdapter, structToWebxr } from "./adapter";
 import type { SpatialAdapter } from "./adapter";
-import { DEFAULT_FOLLOW_DISTANCE_M, type TwinState, type Vec3 } from "./contracts";
+import { ArticulatedArm, REACH_M, SHOULDER_HEIGHT, reachStatus } from "./arm";
+import type { CorrectionEvent, TwinState, Vec3 } from "./contracts";
+import { DEFAULT_FOLLOW_DISTANCE_M, SCHEMA_VERSION } from "./contracts";
+import { gripperEvents, loadEpisode, path, poseAt, type LoadedEpisode } from "./episode";
 import { EpisodeRecorder } from "./recorder";
-import { Trail, buildEnvironment, loadScene, makeTargetLine, placeAtStruct, updateLine } from "./scene";
+import {
+  FIXTURES_BASE,
+  LAYOUT,
+  Trail,
+  buildEnvironment,
+  loadScene,
+  makeTargetLine,
+  placeAtStruct,
+  updateLine,
+} from "./scene";
 import { followTarget } from "./spatial";
 import {
   MockTwinStateProvider,
@@ -30,7 +42,7 @@ const MODES = ["PLACE", "TEACH", "REPLAY", "FOLLOW", "TWIN", "CORRECT"] as const
 type Mode = (typeof MODES)[number];
 
 const TWIN_WS = "ws://127.0.0.1:8850/twin/demo_room";
-const FIXTURE_TWIN = "/ar-xr/fake_twin_state.jsonl";
+const FIXTURE_TWIN = `${FIXTURES_BASE}fake_twin_state.jsonl`;
 
 const app = document.getElementById("app")!;
 const modesEl = document.getElementById("modes")!;
@@ -51,8 +63,6 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14171c);
 buildEnvironment(scene);
 
-// Framed to hold the whole workspace -- robot, table, cube and bin -- plus the
-// couple of metres of floor the human walks in FOLLOW.
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.01, 100);
 camera.position.set(2.6, 2.4, 3.4);
 
@@ -67,18 +77,46 @@ addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+// -------------------------------------------------------------------- arm --
+const arm = new ArticulatedArm();
+let robotBase: Vec3 = LAYOUT["robot"] ?? [0.15, -0.7, 0];
+arm.placeBase(robotBase);
+scene.add(arm.root);
+
+/** The reach envelope PLACE shows: a sphere about the shoulder. */
+const envelope = new THREE.Mesh(
+  new THREE.SphereGeometry(REACH_M, 32, 24),
+  new THREE.MeshBasicMaterial({
+    color: 0x00d4aa,
+    transparent: true,
+    opacity: 0.06,
+    depthWrite: false,
+    side: THREE.BackSide,
+  }),
+);
+const envelopeWire = new THREE.LineSegments(
+  new THREE.WireframeGeometry(new THREE.SphereGeometry(REACH_M, 20, 12)),
+  new THREE.LineBasicMaterial({ color: 0x00d4aa, transparent: true, opacity: 0.14 }),
+);
+scene.add(envelope, envelopeWire);
+
 // ------------------------------------------------------------------ markers --
 const human = marker(0x00d4aa, 0.09);
 const followMarker = marker(0xffb347, 0.07);
 const endEffector = marker(0xe06c75, 0.045);
 const correctionGhost = marker(0xc678dd, 0.055);
-scene.add(human, followMarker, endEffector, correctionGhost);
+const originalGhost = marker(0x565f89, 0.045);
+const grabMarker = marker(0x98c379, 0.04);
+const releaseMarker = marker(0xe5c07b, 0.04);
+scene.add(human, followMarker, endEffector, correctionGhost, originalGhost, grabMarker, releaseMarker);
 
 const followLine = makeTargetLine();
-scene.add(followLine);
+const correctionLine = makeTargetLine(0xc678dd);
+scene.add(followLine, correctionLine);
 
-const trail = new Trail();
-scene.add(trail.line);
+const liveTrail = new Trail();
+const demoTrail = new Trail(0x61afef);
+scene.add(liveTrail.line, demoTrail.line);
 
 function marker(color: number, radius: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
@@ -86,17 +124,26 @@ function marker(color: number, radius: number): THREE.Mesh {
     new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35 }),
   );
   mesh.castShadow = true;
+  mesh.visible = false;
   return mesh;
 }
 
 // --------------------------------------------------------------------- state --
 let mode: Mode = "TWIN";
-let humanPosition: Vec3 = [1.6, 0.0, 0.0];
+let humanPosition: Vec3 = [1.6, 0.6, 0.0];
 let humanYaw = Math.PI;
 let followDistance = DEFAULT_FOLLOW_DISTANCE_M;
 let latestTwin: TwinState | undefined;
 let provider: TwinStateProvider | undefined;
-let robotJointPhase = 0;
+let sceneObjects: Map<string, THREE.Object3D> | undefined;
+
+let episode: LoadedEpisode | undefined;
+let replaySeconds = 0;
+let replayPlaying = true;
+
+const ORIGINAL_TARGET: Vec3 = [0.45, -0.05, 1.0];
+let correctedTarget: Vec3 = [0.45, -0.05, 1.18];
+let corrections: CorrectionEvent[] = [];
 
 const adapter: SpatialAdapter = navigator.xr ? new XRControllerAdapter() : new DesktopMockAdapter();
 const recorder = new EpisodeRecorder({
@@ -108,6 +155,62 @@ const recorder = new EpisodeRecorder({
 const keys = new Set<string>();
 addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
 addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+// ---------------------------------------------------------------- picking --
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let dragging = false;
+
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (mode !== "PLACE" && mode !== "CORRECT") return;
+  dragging = true;
+  orbit.enabled = false;
+  handlePointer(e);
+});
+addEventListener("pointerup", () => {
+  if (dragging && mode === "CORRECT") recordCorrection();
+  dragging = false;
+  orbit.enabled = true;
+});
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (dragging) handlePointer(e);
+});
+
+function handlePointer(event: PointerEvent): void {
+  pointer.set(
+    (event.clientX / innerWidth) * 2 - 1,
+    -(event.clientY / innerHeight) * 2 + 1,
+  );
+  raycaster.setFromCamera(pointer, camera);
+
+  if (mode === "PLACE") {
+    // Drop the robot wherever the floor was clicked.
+    const hit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(floorPlane, hit)) return;
+    robotBase = [-hit.z, -hit.x, 0];
+    arm.placeBase(robotBase);
+  } else {
+    // Drag the ghost in a horizontal plane at its current height.
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -correctedTarget[2]);
+    const hit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, hit)) return;
+    correctedTarget = [-hit.z, -hit.x, correctedTarget[2]];
+  }
+}
+
+function recordCorrection(): void {
+  const event: CorrectionEvent = {
+    schema_version: SCHEMA_VERSION,
+    task_id: "cube_to_bin",
+    timestamp_ns: nowNs(),
+    original_target: { position_m: ORIGINAL_TARGET },
+    corrected_target: { position_m: correctedTarget },
+    reason: "collision_avoidance",
+  };
+  corrections = [...corrections, event];
+  console.info("CorrectionEvent captured", event);
+}
 
 // ---------------------------------------------------------------------- HUD --
 for (const m of MODES) {
@@ -124,6 +227,7 @@ function setMode(next: Mode): void {
   for (const button of modesEl.querySelectorAll("button")) {
     button.setAttribute("aria-pressed", String(button.dataset["mode"] === next));
   }
+  if (next === "REPLAY") replaySeconds = 0;
   renderControls();
 }
 
@@ -139,21 +243,31 @@ function renderControls(): void {
 
   if (mode === "TEACH") {
     if (recorder.isRecording) {
-      add("GRAB", () => recorder.grab(nowNs()));
-      add("RELEASE", () => recorder.release(nowNs()));
+      add("GRAB", () => {
+        recorder.grab(nowNs());
+        placeAtStruct(grabMarker, effectorPosition());
+        grabMarker.visible = true;
+      });
+      add("RELEASE", () => {
+        recorder.release(nowNs());
+        placeAtStruct(releaseMarker, effectorPosition());
+        releaseMarker.visible = true;
+      });
       add("FINISH", () => {
-        const episode = recorder.finish(nowNs());
-        console.info("episode captured", episode, recorder.frames().length, "frames");
+        const captured = recorder.finish(nowNs());
+        console.info("episode captured", captured, recorder.frames().length, "frames");
         renderControls();
       }, "rec");
       add("CANCEL", () => {
         recorder.cancel(nowNs());
-        trail.clear();
+        liveTrail.clear();
+        grabMarker.visible = releaseMarker.visible = false;
         renderControls();
       });
     } else {
       add("START DEMO", () => {
-        trail.clear();
+        liveTrail.clear();
+        grabMarker.visible = releaseMarker.visible = false;
         recorder.start(nowNs());
         renderControls();
       }, "rec");
@@ -162,8 +276,20 @@ function renderControls(): void {
     add("−0.25 m", () => { followDistance = Math.max(0.25, followDistance - 0.25); });
     add("+0.25 m", () => { followDistance += 0.25; });
   } else if (mode === "TWIN") {
-    add("USE LIVE ISAAC/MOCK SERVER", () => connectTwin("live"));
-    add("USE FIXTURE STREAM", () => connectTwin("fixture"));
+    add("LIVE SERVER", () => void connectTwin("live"));
+    add("FIXTURE STREAM", () => void connectTwin("fixture"));
+  } else if (mode === "REPLAY") {
+    add(replayPlaying ? "PAUSE" : "PLAY", () => { replayPlaying = !replayPlaying; renderControls(); });
+    add("RESTART", () => { replaySeconds = 0; });
+  } else if (mode === "PLACE") {
+    add("RESET ROBOT", () => {
+      robotBase = LAYOUT["robot"] ?? [0.15, -0.7, 0];
+      arm.placeBase(robotBase);
+    });
+  } else if (mode === "CORRECT") {
+    add("RESET GHOST", () => { correctedTarget = [0.45, -0.05, 1.18]; });
+    add("RAISE", () => { correctedTarget = [correctedTarget[0], correctedTarget[1], correctedTarget[2] + 0.05]; });
+    add("LOWER", () => { correctedTarget = [correctedTarget[0], correctedTarget[1], Math.max(0.05, correctedTarget[2] - 0.05)]; });
   }
 }
 
@@ -190,6 +316,10 @@ function nowNs(): number {
   return Math.round(performance.now() * 1e6);
 }
 
+function effectorPosition(): Vec3 {
+  return [humanPosition[0], humanPosition[1], 0.95];
+}
+
 function stepHuman(dt: number): void {
   const speed = 1.2 * dt;
   if (keys.has("a")) humanYaw += 1.6 * dt;
@@ -203,6 +333,10 @@ function stepHuman(dt: number): void {
   ];
 }
 
+function hideAll(...objects: THREE.Object3D[]): void {
+  for (const o of objects) o.visible = false;
+}
+
 const clock = new THREE.Clock();
 
 renderer.setAnimationLoop(() => {
@@ -210,40 +344,69 @@ renderer.setAnimationLoop(() => {
   orbit.update();
   stepHuman(dt);
 
-  const humanQuat: [number, number, number, number] = [
-    0, 0, Math.sin(humanYaw / 2), Math.cos(humanYaw / 2),
-  ];
-  const humanPose = { position_m: humanPosition, orientation_xyzw: humanQuat };
-  placeAtStruct(human, humanPosition);
+  hideAll(
+    human, followMarker, endEffector, correctionGhost, originalGhost,
+    followLine, correctionLine, envelope, envelopeWire,
+  );
+  liveTrail.line.visible = false;
+  demoTrail.line.visible = false;
 
-  const target = followTarget(humanPose, followDistance);
-  const showFollow = mode === "FOLLOW";
-  followMarker.visible = showFollow;
-  followLine.visible = showFollow;
-  if (showFollow) {
+  const shoulderWorld = structToWebxr.position([
+    robotBase[0], robotBase[1], robotBase[2] + SHOULDER_HEIGHT,
+  ]);
+  envelope.position.set(...shoulderWorld);
+  envelopeWire.position.copy(envelope.position);
+
+  if (mode === "PLACE") {
+    envelope.visible = envelopeWire.visible = true;
+  }
+
+  if (mode === "FOLLOW") {
+    const humanQuat: [number, number, number, number] = [
+      0, 0, Math.sin(humanYaw / 2), Math.cos(humanYaw / 2),
+    ];
+    const target = followTarget(
+      { position_m: humanPosition, orientation_xyzw: humanQuat }, followDistance,
+    );
+    human.visible = followMarker.visible = followLine.visible = true;
+    placeAtStruct(human, humanPosition);
     placeAtStruct(followMarker, target);
     updateLine(followLine, humanPosition, target);
   }
 
-  // The end effector rides the human's hand position in the desktop fallback.
-  const effector: Vec3 = [humanPosition[0], humanPosition[1], 0.95];
-  placeAtStruct(endEffector, effector);
-  endEffector.visible = mode === "TEACH" || mode === "REPLAY";
-  correctionGhost.visible = mode === "CORRECT";
-  if (mode === "CORRECT") placeAtStruct(correctionGhost, [0.45, -0.05, 1.18]);
+  if (mode === "TEACH") {
+    const effector = effectorPosition();
+    endEffector.visible = true;
+    liveTrail.line.visible = true;
+    placeAtStruct(endEffector, effector);
 
-  if (mode === "TEACH" && recorder.isRecording) {
-    const frame = adapter.toSpatialFrame(
-      { position: structToWebxr.position(effector), orientation: [0, 0, 0, 1], trigger: 0 },
-      nowNs(),
-    );
-    recorder.capture(frame);
-    trail.push(effector);
+    if (recorder.isRecording) {
+      recorder.capture(
+        adapter.toSpatialFrame(
+          { position: structToWebxr.position(effector), orientation: [0, 0, 0, 1], trigger: 0 },
+          nowNs(),
+        ),
+      );
+      liveTrail.push(effector);
+    }
   }
-  trail.line.visible = mode === "TEACH" || mode === "REPLAY";
+
+  if (mode === "REPLAY" && episode) {
+    if (replayPlaying) replaySeconds = (replaySeconds + dt) % episode.durationSeconds;
+    const frame = poseAt(episode, replaySeconds);
+    endEffector.visible = demoTrail.line.visible = true;
+    placeAtStruct(endEffector, frame.position_m);
+  }
+
+  if (mode === "CORRECT") {
+    correctionGhost.visible = originalGhost.visible = correctionLine.visible = true;
+    placeAtStruct(originalGhost, ORIGINAL_TARGET);
+    placeAtStruct(correctionGhost, correctedTarget);
+    updateLine(correctionLine, ORIGINAL_TARGET, correctedTarget);
+  }
 
   if (latestTwin) {
-    robotJointPhase = latestTwin.robot.joint_positions[0] ?? 0;
+    arm.setJoints(latestTwin.robot.joint_positions);
     for (const object of latestTwin.objects) {
       const mesh = sceneObjects?.get(object.id.replace(/_\d+$/, ""));
       if (mesh) placeAtStruct(mesh, object.position_m);
@@ -258,6 +421,18 @@ function readout(): string {
   const p = (v: Vec3): string => v.map((n) => n.toFixed(2)).join(", ");
   const lines = [`MODE       ${mode}`, `input      ${adapter.deviceType}`];
 
+  if (mode === "PLACE") {
+    const cube = reachStatus(robotBase, [0.3, 0.1, 0.78]);
+    const bin = reachStatus(robotBase, [0.6, -0.7, 0.34]);
+    lines.push(
+      `base       ${p(robotBase)}`,
+      `reach      ${REACH_M.toFixed(2)} m from shoulder`,
+      `cube       ${cube.reachable ? "REACHABLE ✓" : "OUTSIDE WORKSPACE ✗"} (${cube.distance.toFixed(2)} m)`,
+      `bin        ${bin.reachable ? "REACHABLE ✓" : "OUTSIDE WORKSPACE ✗"} (${bin.distance.toFixed(2)} m)`,
+      "",
+      "click the floor to reposition",
+    );
+  }
   if (mode === "FOLLOW") {
     const target = followTarget(
       { position_m: humanPosition, orientation_xyzw: [0, 0, Math.sin(humanYaw / 2), Math.cos(humanYaw / 2)] },
@@ -276,22 +451,52 @@ function readout(): string {
       `duration   ${recorder.durationSeconds.toFixed(1)} s`,
     );
   }
+  if (mode === "REPLAY") {
+    if (!episode) lines.push("episode    loading…");
+    else {
+      const events = gripperEvents(episode)
+        .map((e) => `${e.type}@${e.at.toFixed(1)}s`)
+        .join("  ");
+      lines.push(
+        "REPLAYING DEMONSTRATION",
+        `task       ${episode.meta.task_id}`,
+        `frames     ${episode.frames.length}`,
+        `t          ${replaySeconds.toFixed(2)} / ${episode.durationSeconds.toFixed(2)} s`,
+        `events     ${events}`,
+      );
+    }
+  }
+  if (mode === "CORRECT") {
+    const moved = Math.hypot(
+      correctedTarget[0] - ORIGINAL_TARGET[0],
+      correctedTarget[1] - ORIGINAL_TARGET[1],
+      correctedTarget[2] - ORIGINAL_TARGET[2],
+    );
+    lines.push(
+      `original   ${p(ORIGINAL_TARGET)}`,
+      `corrected  ${p(correctedTarget)}`,
+      `delta      ${moved.toFixed(3)} m`,
+      `captured   ${corrections.length}`,
+      "",
+      "drag the ghost, release to capture",
+    );
+  }
   if (latestTwin) {
     lines.push(
       `scene      ${latestTwin.scene_id}`,
       `task       ${latestTwin.task?.id ?? "-"} ${latestTwin.task?.status ?? ""}`,
-      `joint[0]   ${robotJointPhase.toFixed(3)}`,
+      `joints     ${latestTwin.robot.joint_positions.map((j) => j.toFixed(2)).join(" ")}`,
     );
   }
   return lines.join("\n");
 }
 
 // ------------------------------------------------------------------- boot --
-let sceneObjects: Map<string, THREE.Object3D> | undefined;
-
 loadScene()
   .then((loaded) => {
     sceneObjects = loaded.objects;
+    // The robot GLB is a static stand-in; the articulated arm replaces it.
+    loaded.objects.get("robot")?.removeFromParent();
     scene.add(loaded.root);
     readoutEl.textContent = "scene loaded";
     return connectTwin("fixture");
@@ -300,5 +505,12 @@ loadScene()
     readoutEl.textContent = `scene failed to load:\n${String(error)}`;
     provenanceEl.textContent = "SCENE UNAVAILABLE";
   });
+
+loadEpisode(FIXTURES_BASE)
+  .then((loaded) => {
+    episode = loaded;
+    for (const position of path(loaded)) demoTrail.push(position);
+  })
+  .catch((error: unknown) => console.warn("episode unavailable:", error));
 
 renderControls();
