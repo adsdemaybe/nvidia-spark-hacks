@@ -5,6 +5,7 @@ description = "STRUCT AR/XR spatial robotics interface (Feat 4 + Feat 5): PLACE,
 requires-python = ">=3.11"
 dependencies = [
     "ar-contracts",
+    "ar-datapipe",
 ]
 
 [tool.uv.workspace]
@@ -16,6 +17,19 @@ exclude = ["packages/xr-web", "packages/isaac-bridge"]
 
 [tool.uv.sources]
 ar-contracts = { workspace = true }
+ar-datapipe = { workspace = true }
+
+[tool.uv]
+# This code only ever runs on a dev laptop (win32) or the Spark (linux
+# aarch64) — never macOS. Without this, uv's universal lock resolves across
+# all platforms and can pick a dependency version (e.g. cmeel-assimp, a
+# Pinocchio transitive dep) that has no win32 wheel just because a newer
+# version satisfies macOS/linux.
+environments = [
+    "sys_platform == 'win32'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 
 [dependency-groups]
 dev = [

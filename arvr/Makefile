@@ -1,7 +1,8 @@
 # The validation loop for the AR/XR subsystem (Feat 4 + Feat 5).
-# `make loop` is the whole truth about contract-layer health: lint -> unit
-# tests. Once the datapipe/retarget stages exist this grows a `run` target
-# that mirrors realsim's fixture pipeline (see ../realsim/Makefile).
+# `make loop` is the whole truth about contract-layer + datapipe health:
+# lint -> unit tests. ar-datapipe's Pinocchio/MuJoCo deps are Linux-only
+# (see packages/ar-datapipe/README.md) — those tests self-skip on Windows
+# via pytest.importorskip rather than failing `make loop`.
 
 .PHONY: loop lint test fixtures mock-twin
 

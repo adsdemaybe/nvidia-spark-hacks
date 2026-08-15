@@ -16,10 +16,13 @@ directory implements. Start here for current status: [`STATE.md`](STATE.md).
 arvr/
 ├── packages/
 │   └── ar-contracts/   frozen spatial schemas (SpatialFrame, TwinState, ...)
+│   └── ar-datapipe/     normalize -> retarget (Pinocchio) -> verify (MuJoCo) -> export
 │   └── isaac-bridge/    <- Spark-only, not yet built (needs Isaac Sim installed)
 │   └── xr-web/          <- optional WebXR adapter, not yet built
 ├── apps/ios/            <- Andrew's phone app, not yet built
-├── fixtures/ar-xr/       fixture pack — develop against this, don't wait on F3/Isaac
+├── fixtures/
+│   ├── ar-xr/            fixture pack — develop against this, don't wait on F3/Isaac
+│   └── robot/            placeholder test-arm URDF (NOT the real robot)
 ├── tools/
 │   ├── make_fixtures.py  regenerate the fixture pack deterministically
 │   └── mock_twin_server.py  stream fake TwinState over WebSocket
