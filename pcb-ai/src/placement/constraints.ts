@@ -24,6 +24,15 @@
  */
 import { z } from "zod"
 
+/**
+ * The four edges of the board OUTLINE, in the XY plane.
+ *
+ * Note the vocabulary trap, which has already caused one misreading: "top" and "bottom"
+ * mean two unrelated things in PCB work. Here they are *edges of the rectangle* —
+ * y-max and y-min. The copper **side** a part is soldered to is `layer`, and it uses
+ * the same two words for a completely different axis. Every human-facing message says
+ * which one it means.
+ */
 export const EDGES = ["left", "right", "top", "bottom"] as const
 export type Edge = (typeof EDGES)[number]
 
@@ -56,13 +65,18 @@ export const PlacementRuleSchema = z.object({
     .enum(["left", "right", "top", "bottom", "any"])
     .nullable()
     .describe(
-      "For at_edge/same_edge: which edge, or 'any' when only proximity matters. " +
-        "null for every other rule kind.",
+      "For at_edge/same_edge: which edge of the board outline in the XY plane " +
+        "(top = y-max, bottom = y-min), or 'any' when only proximity matters. " +
+        "This is NOT the copper side — that is `layer`. null for every other rule kind.",
     ),
   layer: z
     .enum(["top", "bottom"])
     .nullable()
-    .describe("For on_layer. null otherwise."),
+    .describe(
+      "For on_layer: which copper SIDE the part is soldered to. Only emit this rule " +
+        "when the specification actually asks for single-sided assembly — bottom-side " +
+        "connectors are a normal design choice, not a defect. null otherwise.",
+    ),
   max_mm: z
     .number()
     .nullable()

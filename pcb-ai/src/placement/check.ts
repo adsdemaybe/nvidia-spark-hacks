@@ -142,7 +142,7 @@ export function checkPlacement(
                 `${p.ref} is ${mm(gap)} mm from the ${rule.edge} edge (limit ${mm(tol)} mm). ` +
                   `It is closest to the ${p.nearest} edge at ${mm(p.nearestGap)} mm` +
                   (p.nearest === OPPOSITE[rule.edge as Edge]
-                    ? " — the opposite side of the board."
+                    ? " — the opposite edge of the outline."
                     : "."),
               )
             }
@@ -168,8 +168,8 @@ export function checkPlacement(
             rule,
             `${a.ref} is on the ${a.nearest} edge and ${b.ref} is on the ${b.nearest} edge — ` +
               (a.nearest === b.nearest
-                ? `both on the same side, not opposite ones.`
-                : `adjacent sides, not opposite ones.`),
+                ? `both against the same edge, not opposing ones.`
+                : `adjacent edges, not opposing ones.`),
           )
         }
         for (const p of targets) {
@@ -210,8 +210,10 @@ export function checkPlacement(
         if (wrong.length) {
           fail(
             rule,
-            `${wrong.length} part(s) on the wrong side of the board: ` +
-              `${wrong.map((p) => `${p.ref} (${p.layer})`).join(", ")} — expected ${want}`,
+            `${wrong.length} part(s) mounted on the wrong copper side: ` +
+              `${wrong.map((p) => `${p.ref} (${p.layer} side)`).join(", ")} — expected the ` +
+              `${want} side. This is which FACE of the board the part is soldered to, not ` +
+              `which edge of the outline it sits near.`,
           )
         }
         break
@@ -277,7 +279,10 @@ export function describePlacement(report: PlacementReport): string {
 
   const connectors = report.parts.filter((p) => /^(J|P|CN|SW)\d/i.test(p.ref))
   if (connectors.length) {
-    lines.push("", "  edge each connector actually sits on:")
+    lines.push(
+      "",
+      "  which OUTLINE EDGE each connector sits near (in-plane; not the copper side):",
+    )
     for (const c of connectors) {
       lines.push(
         `    ${c.ref.padEnd(6)} ${c.nearest.padEnd(6)} edge, ${mm(c.nearestGap).padStart(7)} mm clear` +
@@ -290,7 +295,10 @@ export function describePlacement(report: PlacementReport): string {
   if (bottom.length) {
     lines.push(
       "",
-      `  ${bottom.length} part(s) on the bottom layer: ${bottom.map((p) => p.ref).join(", ")}`,
+      `  ${bottom.length} part(s) mounted on the BOTTOM COPPER SIDE: ` +
+        `${bottom.map((p) => p.ref).join(", ")}. This is a legitimate choice — ` +
+        `bottom-side connectors are common — and is only a defect if the specification ` +
+        `asked for single-sided assembly.`,
     )
   }
 
