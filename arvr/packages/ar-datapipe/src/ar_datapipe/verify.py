@@ -16,11 +16,17 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-import mujoco
 import numpy as np
 from ar_contracts import PositionM
 
 from .robot_model import DEFAULT_MODEL, RobotModel
+
+try:
+    import mujoco
+except ImportError:  # pragma: no cover - exercised via pytest.importorskip
+    # See retarget.py's matching comment: deferred so `import ar_datapipe`
+    # (and anything transitively importing it) still succeeds on Windows.
+    mujoco = None
 
 # Cross-engine tolerance: Pinocchio said "converged" at POSE_ERR_TOL (retarget.py);
 # this checks MuJoCo's independent FK agrees the tip really lands there.
@@ -36,6 +42,12 @@ class ReplayResult:
 
 class MujocoReplay:
     def __init__(self, robot: RobotModel = DEFAULT_MODEL) -> None:
+        if mujoco is None:
+            raise ImportError(
+                "mujoco is not installed on this platform (Linux only — "
+                "see packages/ar-datapipe/README.md). ar_datapipe itself "
+                "imports fine everywhere; only MujocoReplay needs it."
+            )
         self.model = mujoco.MjModel.from_xml_path(str(robot.urdf_path))
         self.data = mujoco.MjData(self.model)
         self.ee_body_id = mujoco.mj_name2id(

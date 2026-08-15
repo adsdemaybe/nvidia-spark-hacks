@@ -16,10 +16,20 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-import pinocchio as pin
 from ar_contracts import OrientationXYZW, PositionM
 
 from .robot_model import DEFAULT_MODEL, RobotModel
+
+try:
+    import pinocchio as pin
+except ImportError:  # pragma: no cover - exercised via pytest.importorskip
+    # Pinocchio is Linux-only here (see package README). Deferring the
+    # ImportError to IkSolver.__init__ instead of module import time means
+    # `import ar_datapipe` — and anything that transitively imports it, like
+    # ar_backend's FastAPI app — still succeeds on Windows; only code paths
+    # that actually need IK fail, with a clear message instead of a bare
+    # "No module named 'pinocchio'" at an unrelated import line.
+    pin = None
 
 MAX_ITERS = 1500
 DT = 0.2
@@ -47,6 +57,12 @@ class IkSolver:
     frame) don't re-parse the URDF every time."""
 
     def __init__(self, robot: RobotModel = DEFAULT_MODEL) -> None:
+        if pin is None:
+            raise ImportError(
+                "pinocchio is not installed on this platform (Linux only — "
+                "see packages/ar-datapipe/README.md). ar_datapipe itself "
+                "imports fine everywhere; only IkSolver needs it."
+            )
         self.model = pin.buildModelFromUrdf(str(robot.urdf_path))
         self.data = self.model.createData()
         self.frame_id = self.model.getFrameId(robot.end_effector_frame)

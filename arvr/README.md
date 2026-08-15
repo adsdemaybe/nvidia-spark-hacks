@@ -17,6 +17,7 @@ arvr/
 ├── packages/
 │   └── ar-contracts/   frozen spatial schemas (SpatialFrame, TwinState, ...)
 │   └── ar-datapipe/     normalize -> retarget (Pinocchio) -> verify (MuJoCo) -> export
+│   └── ar-backend/       FastAPI Episodes + Scenes API (spec section 36-37), wraps ar-datapipe
 │   └── isaac-bridge/    <- Spark-only, not yet built (needs Isaac Sim installed)
 │   └── xr-web/          <- optional WebXR adapter, not yet built
 ├── apps/ios/            <- Andrew's phone app, not yet built
@@ -38,6 +39,7 @@ uv sync
 make loop           # lint + test
 make fixtures        # regenerate fixtures/ar-xr/*
 make mock-twin       # ws://0.0.0.0:8765/twin/<scene_id> at 30 Hz
+uv run uvicorn ar_backend.app:app --reload --port 8000  # Episodes + Scenes API
 ```
 
 ## Branch / ownership
