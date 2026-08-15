@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Emit meshes, URDF, SRDF and USD from the current parametric design."""
+from __future__ import annotations
+import argparse, json, os, sys
+from _common import bootstrap
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--no-meshes", action="store_true",
+                    help="skip tessellation; physics uses primitive colliders")
+    ap.add_argument("--out", default="sim")
+    a = ap.parse_args()
+
+    root = bootstrap()
+    os.chdir(root)
+    import export_sim as E, rover_arm as R
+
+    design_file = os.path.join(a.out, "design.json")
+    if os.path.exists(design_file):
+        with open(design_file) as f:
+            R.reconfigure(**json.load(f))
+        print(f"applied {design_file}")
+
+    links, joints = E.build_model()
+    os.makedirs(a.out, exist_ok=True)
+    if not a.no_meshes:
+        E.write_meshes(links)
+    E.write_urdf(links, joints, os.path.join(a.out, "rover.urdf"),
+                 visuals=not a.no_meshes)
+    E.write_srdf(joints, os.path.join(a.out, "rover.srdf"))
+    usd = os.path.join(a.out, "rover.usda")
+    if os.path.exists(usd):
+        os.remove(usd)
+    try:
+        E.write_usd(links, joints, usd)
+        print(f"wrote {usd}  (emitted, NOT loaded — Isaac Sim not available here)")
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"warning: USD export failed: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
+    print(f"wrote {a.out}/rover.urdf and {a.out}/rover.srdf")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

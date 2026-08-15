@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Validate a URDF: parse, inertia audit, physics load, settle, drive.
+
+Collects every finding in one pass and reports which steps were skipped.
+Exits nonzero if any check fails.
+"""
+from __future__ import annotations
+import argparse, json, math, sys
+from _common import bootstrap
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("urdf", nargs="?", default="sim/rover.urdf")
+    ap.add_argument("--format", choices=("text", "json"), default="text")
+    a = ap.parse_args()
+
+    root = bootstrap()
+    findings = []
+    def add(step, ok, note, skipped=False):
+        findings.append({"step": step, "ok": ok, "skipped": skipped, "note": note})
+
+    # 1. parse
+    try:
+        import yourdfpy
+        r = yourdfpy.URDF.load(a.urdf)
+        add("parse", True, f"{len(r.link_map)} links, {len(r.joint_map)} joints, "
+                           f"root={r.base_link}")
+    except ImportError:
+        add("parse", True, "yourdfpy not installed", skipped=True); r = None
+    except Exception as exc:                                   # noqa: BLE001
+        add("parse", False, f"{type(exc).__name__}: {exc}")
+        r = None
+
+    # 2. inertia audit
+    try:
+        import numpy as np, export_sim as E
+        links, _ = E.build_model()
+        worst, bad = 0.0, []
+        for lk in links:
+            ev = np.linalg.eigvalsh(E.combine(lk.solids, lk.points).tensor)
+            lo, mid, hi = sorted(ev)
+            if lo <= 0 or lo + mid < hi:
+                bad.append(lk.name)
+            worst = max(worst, -lo, hi - (lo + mid))
+        add("inertia", not bad,
+            f"worst margin {worst:.2e}" + (f"; invalid: {bad}" if bad else ""))
+    except Exception as exc:                                   # noqa: BLE001
+        add("inertia", False, f"{type(exc).__name__}: {exc}")
+
+    # 3-5. physics load, settle, drive
+    try:
+        import design_loop as D
+        for c in D.sim_checks(a.urdf):
+            add(c.name, c.ok, c.note)
+    except ImportError:
+        for s in ("sim_loads", "settles", "drives"):
+            add(s, True, "mujoco not installed", skipped=True)
+    except Exception as exc:                                   # noqa: BLE001
+        add("physics", False, f"{type(exc).__name__}: {exc}")
+
+    add("consumer_smoke_test", True,
+        "Isaac Sim / Gazebo / RViz not available in this environment",
+        skipped=True)
+    add("joint_axis_sweep", True,
+        "no viewer sweep run — a wrong axis sign passes every check above",
+        skipped=True)
+
+    failed = [f for f in findings if not f["ok"] and not f["skipped"]]
+    if a.format == "json":
+        print(json.dumps({"urdf": a.urdf, "passed": not failed,
+                          "findings": findings}, indent=2))
+    else:
+        for f in findings:
+            tag = "SKIP" if f["skipped"] else ("PASS" if f["ok"] else "FAIL")
+            print(f"  {tag}  {f['step']:20} {f['note']}")
+        n_skip = sum(1 for f in findings if f["skipped"])
+        print(f"  {'-'*60}\n  {'PASS' if not failed else 'FAIL'}"
+              f"  ({len(findings)-n_skip} ran, {n_skip} skipped)")
+    return 0 if not failed else 1
+
+if __name__ == "__main__":
+    sys.exit(main())

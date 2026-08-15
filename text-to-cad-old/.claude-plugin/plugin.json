@@ -1,0 +1,9 @@
+{
+  "name": "rover-design",
+  "version": "0.1.0",
+  "description": "Closed-loop parametric robot design: CAD, physics-verified refinement, and simulation export.",
+  "license": "MIT",
+  "keywords": ["cad", "robotics", "urdf", "usd", "simulation", "build123d",
+               "mujoco", "isaac-sim", "design-optimisation"],
+  "skills": "./skills/"
+}

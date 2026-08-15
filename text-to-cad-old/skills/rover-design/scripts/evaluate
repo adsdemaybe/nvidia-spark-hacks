@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""Build the CAD, export a URDF, run physics, and score every criterion.
+
+This is ground truth. Exits nonzero if any criterion fails, so it composes in a
+shell loop or CI.
+"""
+from __future__ import annotations
+import argparse, json, sys
+from _common import bootstrap, WORKDIR, report_dict, print_report
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--current", action="store_true",
+                   help="evaluate the design currently loaded in the model")
+    g.add_argument("--design", metavar="JSON",
+                   help="partial design dict, merged over the current design")
+    ap.add_argument("--format", choices=("text", "json"), default="text")
+    a = ap.parse_args()
+
+    bootstrap()
+    import design_loop as D, rover_arm as R
+
+    design = R.current_design()
+    design["SHOULDER_MOTOR"] = R.SHOULDER_MOTOR
+    design["DRIVE_MOTOR"] = R.DRIVE_MOTOR
+    design["SHOULDER_GEAR"] = R.SHOULDER_GEAR
+
+    if a.design:
+        try:
+            patch = json.loads(a.design)
+        except json.JSONDecodeError as exc:
+            print(f"error: --design is not valid JSON: {exc}", file=sys.stderr)
+            return 2
+        unknown = [k for k in patch
+                   if k not in design and k not in R.DESIGN_VARS]
+        if unknown:
+            print(f"error: unknown design variable(s): {unknown}", file=sys.stderr)
+            print(f"known: {sorted(set(design) | set(R.DESIGN_VARS))}", file=sys.stderr)
+            return 2
+        design.update(patch)
+
+    try:
+        rep = D.evaluate(design, WORKDIR)
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"error: evaluation failed: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
+        return 3
+
+    d = report_dict(rep)
+    d["design"] = design
+    print_report(d, a.format)
+    return 0 if d["passed"] else 1
+
+if __name__ == "__main__":
+    sys.exit(main())

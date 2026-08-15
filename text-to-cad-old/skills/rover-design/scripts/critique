@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Adversarial critic that PERTURBS the design and measures what happens.
+
+A critic that only reads a proposal can reject an unbuyable part or an
+out-of-bounds value, and nothing else. It cannot find a defect in a subsystem
+nobody proposed changing — which is how a 14 mm gripper aperture shipped on a
+robot rated for a 937 g payload.
+
+This critic has hands. For every design variable it perturbs the value and runs
+a real evaluation, then reports three things the passive critic cannot see:
+
+  FRAGILE   a criterion flips pass -> fail under a small perturbation, so the
+            design passes only by luck and has no engineering margin
+  SENSITIVE a criterion moves sharply; the variable is load-bearing and should
+            not be changed casually elsewhere
+  BLIND     perturbing the variable moves NO criterion at all. The subsystem it
+            controls is invisible to the harness. This is the dangerous one:
+            the loop cannot optimise, protect, or even notice it.
+
+Exit code is nonzero if anything FRAGILE or BLIND is found.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+
+from _common import bootstrap, WORKDIR, report_dict
+
+
+def evaluate(design, D):
+    return report_dict(D.evaluate(dict(design), WORKDIR))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--design", metavar="JSON",
+                    help="partial design dict; defaults to the current design")
+    ap.add_argument("--radius", type=float, default=0.10,
+                    help="perturbation as a fraction of each variable's range")
+    ap.add_argument("--only", nargs="*", help="probe only these variables")
+    ap.add_argument("--format", choices=("text", "json"), default="text")
+    a = ap.parse_args()
+
+    bootstrap()
+    import design_loop as D
+    import rover_arm as R
+
+    base = R.current_design()
+    base["SHOULDER_MOTOR"] = R.SHOULDER_MOTOR
+    base["DRIVE_MOTOR"] = R.DRIVE_MOTOR
+    base["SHOULDER_GEAR"] = R.SHOULDER_GEAR
+    if a.design:
+        base.update(json.loads(a.design))
+
+    ref = evaluate(base, D)
+    ref_vals = {c["name"]: c["value"] for c in ref["checks"]}
+    ref_ok = {c["name"]: c["ok"] for c in ref["checks"]}
+
+    variables = [v for v in R.DESIGN_VARS if not a.only or v in a.only]
+    findings, probes = [], []
+
+    for var in variables:
+        lo, hi = R.DESIGN_VARS[var]
+        step = (hi - lo) * a.radius
+        moved_any, worst, rel = {}, [], {}
+
+        for direction in (+1, -1):
+            cand = dict(base)
+            cand[var] = min(hi, max(lo, float(base[var]) + direction * step))
+            if abs(cand[var] - float(base[var])) < 1e-9:
+                continue
+            rep = evaluate(cand, D)
+            for c in rep["checks"]:
+                delta = c["value"] - ref_vals.get(c["name"], 0.0)
+                if abs(delta) > 1e-6:
+                    moved_any[c["name"]] = max(
+                        abs(delta), moved_any.get(c["name"], 0.0))
+                    denom = abs(ref_vals.get(c["name"], 0.0)) or 1.0
+                    rel[c["name"]] = max(abs(delta) / denom,
+                                         rel.get(c["name"], 0.0))
+                # A purely boolean criterion has value 0.0 forever, so a
+                # magnitude test can never see it. Flipping pass<->fail IS the
+                # response for those, and counts as full coverage.
+                if bool(c["ok"]) != bool(ref_ok.get(c["name"], c["ok"])):
+                    moved_any[c["name"]] = max(1.0, moved_any.get(c["name"], 0.0))
+                    rel[c["name"]] = 1.0
+                # a criterion that was passing and now fails
+                if ref_ok.get(c["name"]) and not c["ok"]:
+                    worst.append((c["name"], cand[var], c["note"]))
+
+        probes.append({"variable": var, "step": round(step, 4),
+                       "criteria_moved": sorted(moved_any),
+                       "relative": {k: round(v, 5) for k, v in rel.items()},
+                       "broke": [w[0] for w in worst]})
+
+        if worst:
+            for name, val, note in worst:
+                findings.append({
+                    "kind": "FRAGILE", "variable": var, "criterion": name,
+                    "detail": f"{var} -> {val:g} flips {name} to FAIL ({note})"})
+        if not moved_any:
+            findings.append({
+                "kind": "BLIND", "variable": var, "criterion": None,
+                "detail": f"perturbing {var} by +/-{step:g} moves NO criterion; "
+                          f"whatever it controls is unmeasured"})
+
+    # Coverage is a question of MAGNITUDE, not of which criteria responded.
+    #
+    # v1 asked "did any criterion move?" -> false negative: a gripper variable
+    #    nudges total mass, so payload/drives twitch and it looks covered.
+    # v2 asked "did it move anything beyond the universal mass-coupled set?"
+    #    -> five false positives: AXLE_FRAC genuinely drives payload, and that
+    #    is the criterion working, not incidental coupling.
+    # v3 measures the relative response. Calibrated on this model: variables
+    #    with real coverage move a criterion by 6.6-13.9%; unmeasured ones move
+    #    it by 0.0-0.1%. The gap is two orders of magnitude, so the threshold
+    #    is not delicate.
+    COVERAGE_MIN = 0.02
+    for pr in probes:
+        strong = [c for c, rel in pr["relative"].items() if rel >= COVERAGE_MIN]
+        pr["covered_by"] = sorted(strong)
+        if not strong:
+            weak = ", ".join(f"{c} {pr['relative'][c]*100:.1f}%"
+                             for c in sorted(pr["relative"])) or "nothing"
+            findings.append({
+                "kind": "BLIND", "variable": pr["variable"], "criterion": None,
+                "detail": f"{pr['variable']}: no criterion responds by more than "
+                          f"{COVERAGE_MIN:.0%} ({weak}). Whatever it controls is "
+                          f"unmeasured."})
+
+    fragile = [f for f in findings if f["kind"] == "FRAGILE"]
+    blind = [f for f in findings if f["kind"] == "BLIND"]
+    verdict = "reject" if fragile else ("revise" if blind else "accept")
+
+    out = {"verdict": verdict, "coverage_threshold": COVERAGE_MIN,
+           "baseline_passed": ref["passed"],
+           "baseline_score": ref["score"], "radius": a.radius,
+           "findings": findings, "probes": probes}
+
+    if a.format == "json":
+        print(json.dumps(out, indent=2))
+    else:
+        print(f"baseline: {'PASS' if ref['passed'] else 'FAIL'} "
+              f"score {ref['score']:.4f}   probe radius {a.radius:.0%} of range\n")
+        print(f"{'variable':18} {'step':>8}  criteria that MEASURE it "
+              f"(>= {COVERAGE_MIN:.0%} response)")
+        for p in probes:
+            cov = ", ".join(f"{c} {p['relative'][c]*100:.0f}%"
+                            for c in p.get("covered_by", [])) or "-- NOTHING --"
+            print(f"  {p['variable']:16} {p['step']:8.3f}  {cov}")
+        print()
+        for f in findings:
+            print(f"  {f['kind']:9} {f['detail']}")
+        if not findings:
+            print("  no fragile or unmeasured variables found")
+        print(f"\nverdict: {verdict.upper()}"
+              f"   ({len(fragile)} fragile, {len(blind)} blind)")
+
+    return 0 if verdict == "accept" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

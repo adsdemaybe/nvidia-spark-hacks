@@ -1,0 +1,119 @@
+<mujoco model="quadruped">
+  <compiler angle="radian" meshdir="meshes" autolimits="true"/>
+  <option gravity="0 0 -9.81" timestep="0.002" integrator="implicitfast"/>
+  <visual><global offwidth="1600" offheight="1200"/></visual>
+
+  <asset>
+    <mesh name="trunk" file="trunk.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="hip"   file="hip.stl"   scale="0.001 0.001 0.001"/>
+    <mesh name="upper" file="upper.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="lower" file="lower.stl" scale="0.001 0.001 0.001"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1=".13 .15 .18"
+             rgb2=".18 .21 .25" width="512" height="512"/>
+    <material name="grid" texture="grid" texrepeat="10 10" reflectance="0.05"/>
+    <material name="body" rgba="0.78 0.62 0.36 1"/>
+    <material name="link" rgba="0.62 0.66 0.72 1"/>
+    <material name="foot" rgba="0.20 0.22 0.25 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="1.5 -1.5 3" dir="-0.3 0.3 -1" directional="true"/>
+    <geom name="ground" type="plane" size="30 30 0.1" material="grid"
+          friction="1.2 0.02 0.001"/>
+    <body name="trunk" pos="0 0 0.2650">
+      <freejoint name="root"/>
+      <geom type="mesh" mesh="trunk" mass="2.2609" material="body"/>
+      <body name="hip_fl" pos="0.08840 0.06500 0" euler="0 0 0.00000">
+        <joint name="abduct_fl" type="hinge" axis="1 0 0"
+               range="-0.6 0.6" damping="0.35"/>
+        <geom type="mesh" mesh="hip" mass="0.8088" material="link"/>
+        <body name="upper_fl" pos="0 0.05500 0">
+          <joint name="hip_fl" type="hinge" axis="0 1 0"
+                 range="-1.8 1.8" damping="0.35"/>
+          <geom type="mesh" mesh="upper" mass="0.8213" material="link"/>
+          <body name="lower_fl" pos="0 0 -0.15000">
+            <joint name="knee_fl" type="hinge" axis="0 1 0"
+                   range="-2.7 0.0" damping="0.35"/>
+            <geom type="mesh" mesh="lower" mass="0.1213" material="link"/>
+            <geom name="foot_fl" type="sphere" size="0.0160"
+                  pos="0 0 -0.15000" mass="0.02"
+                  friction="1.2 0.02 0.001" material="foot"/>
+          </body>
+        </body>
+      </body>
+      <body name="hip_fr" pos="0.08840 -0.06500 0" euler="0 0 3.14159">
+        <joint name="abduct_fr" type="hinge" axis="1 0 0"
+               range="-0.6 0.6" damping="0.35"/>
+        <geom type="mesh" mesh="hip" mass="0.8088" material="link"/>
+        <body name="upper_fr" pos="0 0.05500 0">
+          <joint name="hip_fr" type="hinge" axis="0 1 0"
+                 range="-1.8 1.8" damping="0.35"/>
+          <geom type="mesh" mesh="upper" mass="0.8213" material="link"/>
+          <body name="lower_fr" pos="0 0 -0.15000">
+            <joint name="knee_fr" type="hinge" axis="0 1 0"
+                   range="-2.7 0.0" damping="0.35"/>
+            <geom type="mesh" mesh="lower" mass="0.1213" material="link"/>
+            <geom name="foot_fr" type="sphere" size="0.0160"
+                  pos="0 0 -0.15000" mass="0.02"
+                  friction="1.2 0.02 0.001" material="foot"/>
+          </body>
+        </body>
+      </body>
+      <body name="hip_rl" pos="-0.08840 0.06500 0" euler="0 0 0.00000">
+        <joint name="abduct_rl" type="hinge" axis="1 0 0"
+               range="-0.6 0.6" damping="0.35"/>
+        <geom type="mesh" mesh="hip" mass="0.8088" material="link"/>
+        <body name="upper_rl" pos="0 0.05500 0">
+          <joint name="hip_rl" type="hinge" axis="0 1 0"
+                 range="-1.8 1.8" damping="0.35"/>
+          <geom type="mesh" mesh="upper" mass="0.8213" material="link"/>
+          <body name="lower_rl" pos="0 0 -0.15000">
+            <joint name="knee_rl" type="hinge" axis="0 1 0"
+                   range="-2.7 0.0" damping="0.35"/>
+            <geom type="mesh" mesh="lower" mass="0.1213" material="link"/>
+            <geom name="foot_rl" type="sphere" size="0.0160"
+                  pos="0 0 -0.15000" mass="0.02"
+                  friction="1.2 0.02 0.001" material="foot"/>
+          </body>
+        </body>
+      </body>
+      <body name="hip_rr" pos="-0.08840 -0.06500 0" euler="0 0 3.14159">
+        <joint name="abduct_rr" type="hinge" axis="1 0 0"
+               range="-0.6 0.6" damping="0.35"/>
+        <geom type="mesh" mesh="hip" mass="0.8088" material="link"/>
+        <body name="upper_rr" pos="0 0.05500 0">
+          <joint name="hip_rr" type="hinge" axis="0 1 0"
+                 range="-1.8 1.8" damping="0.35"/>
+          <geom type="mesh" mesh="upper" mass="0.8213" material="link"/>
+          <body name="lower_rr" pos="0 0 -0.15000">
+            <joint name="knee_rr" type="hinge" axis="0 1 0"
+                   range="-2.7 0.0" damping="0.35"/>
+            <geom type="mesh" mesh="lower" mass="0.1213" material="link"/>
+            <geom name="foot_rr" type="sphere" size="0.0160"
+                  pos="0 0 -0.15000" mass="0.02"
+                  friction="1.2 0.02 0.001" material="foot"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="abduct_fl" joint="abduct_fl" kp="40" ctrlrange="-0.6 0.6" forcerange="-25 25"/>
+    <position name="hip_fl" joint="hip_fl" kp="90" ctrlrange="-1.8 1.8" forcerange="-25 25"/>
+    <position name="knee_fl" joint="knee_fl" kp="90" ctrlrange="-2.7 0.0" forcerange="-25 25"/>
+    <position name="abduct_fr" joint="abduct_fr" kp="40" ctrlrange="-0.6 0.6" forcerange="-25 25"/>
+    <position name="hip_fr" joint="hip_fr" kp="90" ctrlrange="-1.8 1.8" forcerange="-25 25"/>
+    <position name="knee_fr" joint="knee_fr" kp="90" ctrlrange="-2.7 0.0" forcerange="-25 25"/>
+    <position name="abduct_rl" joint="abduct_rl" kp="40" ctrlrange="-0.6 0.6" forcerange="-25 25"/>
+    <position name="hip_rl" joint="hip_rl" kp="90" ctrlrange="-1.8 1.8" forcerange="-25 25"/>
+    <position name="knee_rl" joint="knee_rl" kp="90" ctrlrange="-2.7 0.0" forcerange="-25 25"/>
+    <position name="abduct_rr" joint="abduct_rr" kp="40" ctrlrange="-0.6 0.6" forcerange="-25 25"/>
+    <position name="hip_rr" joint="hip_rr" kp="90" ctrlrange="-1.8 1.8" forcerange="-25 25"/>
+    <position name="knee_rr" joint="knee_rr" kp="90" ctrlrange="-2.7 0.0" forcerange="-25 25"/>
+  </actuator>
+
+  <keyframe>
+    <key name="stand" qpos="0.0000 0.0000 0.2650 1.0000 0.0000 0.0000 0.0000 0.0000 0.7954 -1.5908 0.0000 0.7954 -1.5908 0.0000 0.7954 -1.5908 0.0000 0.7954 -1.5908" ctrl="0.0000 0.7954 -1.5908 0.0000 0.7954 -1.5908 0.0000 0.7954 -1.5908 0.0000 0.7954 -1.5908"/>
+  </keyframe>
+</mujoco>

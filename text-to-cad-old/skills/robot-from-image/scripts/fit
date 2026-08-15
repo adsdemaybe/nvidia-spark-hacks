@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Turn a proportional spec read off an image into design variables, then test it.
+
+An image yields RATIOS, not millimetres. This maps those ratios onto the design
+space, reports every ratio the design space could not honour, and evaluates the
+result. Where the picture and the buildable space disagree, the picture loses —
+and the disagreement is reported rather than silently absorbed.
+"""
+from __future__ import annotations
+import argparse, json, sys
+from _common import bootstrap, WORKDIR, report_dict, print_report
+
+# ratio name -> (variable it sets, variable it is measured against)
+RATIOS = {
+    "wheel_d_over_chassis_l":   ("WHEEL_D", "CHASSIS_L"),
+    "chassis_w_over_chassis_l": ("CHASSIS_W", "CHASSIS_L"),
+    "link1_over_chassis_l":     ("LINK1_LEN", "CHASSIS_L"),
+    "link2_over_chassis_l":     ("LINK2_LEN", "CHASSIS_L"),
+    "axle_frac":                ("AXLE_FRAC", None),
+    "jaw_len_over_chassis_l":   ("JAW_LEN", "CHASSIS_L"),
+}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--spec", required=True, metavar="JSON",
+                    help="proportional spec read from the image")
+    ap.add_argument("--format", choices=("text", "json"), default="text")
+    a = ap.parse_args()
+
+    bootstrap()
+    import design_loop as D, rover_arm as R
+
+    spec = json.loads(a.spec)
+    design = R.current_design()
+    design["SHOULDER_MOTOR"] = R.SHOULDER_MOTOR
+    design["DRIVE_MOTOR"] = R.DRIVE_MOTOR
+    design["SHOULDER_GEAR"] = R.SHOULDER_GEAR
+
+    # An absolute hint is the ONLY way to get real size out of a picture.
+    hint = spec.get("absolute_hint_mm", {})
+    if "chassis_l" in hint:
+        design["CHASSIS_L"] = float(hint["chassis_l"])
+    base_l = design["CHASSIS_L"]
+
+    conflicts = []
+    for name, val in (spec.get("ratios") or {}).items():
+        if name not in RATIOS:
+            conflicts.append(f"unknown ratio {name!r}; known: {sorted(RATIOS)}")
+            continue
+        var, against = RATIOS[name]
+        want = float(val) * (base_l if against else 1.0)
+        lo, hi = R.DESIGN_VARS[var]
+        got = min(hi, max(lo, want))
+        if abs(got - want) > 1e-6:
+            conflicts.append(
+                f"{name}={val} implies {var}={want:.1f}, outside [{lo}, {hi}] "
+                f"-> clamped to {got:.1f}. The image asks for something this "
+                f"design space cannot build.")
+        design[var] = got
+
+    # Topology the image asserts but the parametric model cannot vary.
+    if spec.get("wheel_count") not in (None, 4):
+        conflicts.append(f"image shows {spec['wheel_count']} wheels; the model "
+                         f"is fixed at 4 and cannot change topology")
+    if spec.get("arm_links") not in (None, 2):
+        conflicts.append(f"image shows {spec['arm_links']} arm links; the model "
+                         f"is fixed at 2")
+
+    rep = report_dict(D.evaluate(design, WORKDIR))
+    out = {"design": design, "conflicts": conflicts, **rep}
+    if a.format == "json":
+        print(json.dumps(out, indent=2))
+    else:
+        print("fitted design:")
+        for k, v in design.items():
+            print(f"  {k:20} {v}")
+        print()
+        if conflicts:
+            print("image / design-space conflicts:")
+            for c in conflicts:
+                print(f"  ! {c}")
+            print()
+        print_report(rep, "text")
+    return 0 if rep["passed"] and not conflicts else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

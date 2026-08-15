@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""Turn a BLIND critic finding into a real criterion, and verify it stuck.
+
+The critic can prove a variable is unmeasured; it cannot invent what "correct"
+means for it. That judgement is the agent's. What IS mechanisable — and what
+this does — is everything around the judgement:
+
+  1. pick a criterion PATTERN for the blind variable (from a library of
+     failure modes that recur across robots)
+  2. generate the check function and wire it into the harness
+  3. RE-RUN the critic and confirm the variable now has a response above the
+     coverage threshold
+  4. revert the edit if it did not, because a criterion that moves 0.1% has
+     fixed nothing and would only give false confidence
+
+Step 3 is the point. Without it this is a code generator; with it, it is a
+closed loop that can tell whether its own fix worked.
+
+  close-blind --list
+  close-blind --variable RACK_TRAVEL --pattern grip_aperture --apply
+  close-blind --all --apply
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+from _common import bootstrap
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
+ARM = os.path.join(ROOT, "packages", "roverkit", "rover_arm.py")
+LOOP = os.path.join(ROOT, "packages", "roverkit", "design_loop.py")
+
+# ---------------------------------------------------------------------------
+# Criterion patterns: recurring failure modes, not one-off patches.
+# Each names the physical failure it detects, because a check whose failure
+# mode you cannot state is a check you cannot trust.
+# ---------------------------------------------------------------------------
+PATTERNS = {
+    "grip_aperture": {
+        "vars": ["RACK_TRAVEL", "JAW_LEN"],
+        "check": "check_grip_aperture",
+        "metric": "metric_grip_aperture",
+        "failure": "the gripper cannot open wide enough to grasp an object of "
+                   "the mass the robot is rated to carry",
+        "code": '''
+
+def check_grip_aperture() -> list[str]:
+    """
+    The jaws must open wider than the object the robot is rated to carry.
+
+    Failure mode: a gripper sized independently of payload. This machine could
+    lift 937 g while opening only 14 mm — it could carry a brick it was
+    physically unable to pick up, and no criterion noticed for six revisions.
+
+    Object size is derived from the payload target at a representative density
+    (1.0 g/cm^3, i.e. water/plastic), treated as a cube.
+    """
+    import math as _m
+    target_kg = GRIP_TARGET_PAYLOAD_KG
+    side_mm = (target_kg / 1.0e-6) ** (1.0 / 3.0)   # 1.0 g/cm^3 -> kg/mm^3
+    usable = RACK_TRAVEL - 2 * GRIP_FINGER_MARGIN
+    if usable < side_mm:
+        return [f"aperture {usable:.0f} mm cannot grasp a {target_kg * 1000:.0f} g "
+                f"object ({side_mm:.0f} mm cube); rated payload is ungraspable"]
+    return []
+
+
+def metric_grip_aperture():
+    """(usable aperture, required object size) in mm — so it is measurable."""
+    side_mm = (GRIP_TARGET_PAYLOAD_KG / 1.0e-6) ** (1.0 / 3.0)
+    return RACK_TRAVEL - 2 * GRIP_FINGER_MARGIN, side_mm
+''',
+        "constants": '''
+# Gripper sizing target. A gripper is only useful if it can grasp what the arm
+# can lift, so this is tied to the payload criterion rather than set freely.
+GRIP_TARGET_PAYLOAD_KG = 0.30
+GRIP_FINGER_MARGIN = 2.0       # mm of approach clearance each side
+''',
+    },
+    "lateral_stability": {
+        "vars": ["CHASSIS_W"],
+        "check": "check_lateral_stability",
+        "metric": "metric_lateral_stability",
+        "failure": "the robot tips sideways on a slope or under a lateral push, "
+                   "which a flat-ground drop test never exercises",
+        "code": '''
+
+def check_lateral_stability() -> list[str]:
+    """
+    Static sideways tip-over angle must exceed a minimum.
+
+    Failure mode: track too narrow for the centre-of-gravity height. The
+    `settles` criterion drops the robot on flat ground with no lateral
+    disturbance, so it cannot see this at all — which is why CHASSIS_W measured
+    as unmeasured despite obviously mattering.
+    """
+    ratio, need = metric_lateral_stability()
+    if ratio < need:
+        return [f"lateral tip ratio {ratio:.2f} below the {need:.2f} minimum "
+                f"(track half-width vs CG height); the robot tips sideways "
+                f"before it reaches the required slope angle"]
+    return []
+
+
+def metric_lateral_stability():
+    """
+    (tip ratio, required ratio) = track half-width / CG height.
+
+    Expressed as a RATIO rather than an angle on purpose: the tip condition is
+    physically tan(theta), and taking the arctangent compresses it so hard near
+    70 deg that a real dependence on track width reads as 1.4% sensitivity and
+    looks unmeasured. How a criterion is expressed changes whether the coverage
+    metric can see it.
+    """
+    import math as _m
+    track_half = CHASSIS_W / 2.0 + WHEEL_W / 2.0 + PART_GAP
+    cg_h = max(CHASSIS_H / 2.0, 1.0)
+    return track_half / cg_h, _m.tan(_m.radians(MIN_TIP_ANGLE_DEG))
+''',
+        "constants": '''
+MIN_TIP_ANGLE_DEG = 50.0       # static sideways tip-over margin
+''',
+    },
+}
+
+
+def read(p):
+    with open(p) as f:
+        return f.read()
+
+
+def write(p, s):
+    with open(p, "w") as f:
+        f.write(s)
+
+
+def blind_variables(design_json: str | None):
+    """Ask the critic which variables are unmeasured."""
+    cmd = [sys.executable, os.path.join(HERE, "critique"), "--format", "json"]
+    if design_json:
+        cmd += ["--design", design_json]
+    out = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    try:
+        rep = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        print(out.stdout[-2000:], file=sys.stderr)
+        print(out.stderr[-2000:], file=sys.stderr)
+        raise SystemExit("could not parse critique output")
+    return ([f["variable"] for f in rep["findings"] if f["kind"] == "BLIND"],
+            rep.get("coverage_threshold", 0.02), rep)
+
+
+def coverage_of(var: str, design_json: str | None) -> float:
+    cmd = [sys.executable, os.path.join(HERE, "critique"),
+           "--format", "json", "--only", var]
+    if design_json:
+        cmd += ["--design", design_json]
+    out = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    rep = json.loads(out.stdout)
+    pr = next((p for p in rep["probes"] if p["variable"] == var), None)
+    return max(pr["relative"].values()) if pr and pr["relative"] else 0.0
+
+
+def apply_pattern(name: str) -> bool:
+    """Insert the criterion into rover_arm.py and score it in design_loop.py."""
+    pat = PATTERNS[name]
+    arm, loop = read(ARM), read(LOOP)
+    if pat["check"] in arm:
+        print(f"    already present: {pat['check']}")
+        return False
+
+    # constants go right after the existing tunables
+    anchor = "def check_mechanics() -> list[str]:"
+    if anchor not in arm:
+        raise SystemExit("could not find an insertion anchor in rover_arm.py")
+    arm = arm.replace(anchor, pat["constants"].strip() + "\n\n\n" + anchor, 1)
+    arm = arm.rstrip() + "\n" + pat["code"]
+    write(ARM, arm)
+
+    lines = loop.split("\n")
+    idx = next(i for i, l in enumerate(lines) if 'Check("mount_fits"' in l)
+    # find the end of that append() call
+    while ")" not in lines[idx]:
+        idx += 1
+    while not lines[idx].rstrip().endswith("))"):
+        idx += 1
+    lines[idx + 1:idx + 1] = [
+        f"    _f = R.{pat['check']}()",
+        f"    _v, _t = R.{pat['metric']}()",
+        f'    rep.checks.append(Check("{name}", not _f, value=_v, target=_t,',
+        f'                            note=_f[0] if _f else f"{{_v:.1f}} vs {{_t:.1f}}"))',
+    ]
+    write(LOOP, "\n".join(lines))
+    return True
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--variable")
+    ap.add_argument("--pattern", choices=sorted(PATTERNS))
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--apply", action="store_true",
+                    help="write the change; without this it is a dry run")
+    ap.add_argument("--design", metavar="JSON")
+    a = ap.parse_args()
+
+    bootstrap()
+    blind, threshold, _ = blind_variables(a.design)
+
+    if a.list or not (a.variable or a.all):
+        print(f"blind variables (coverage threshold {threshold:.0%}):")
+        for v in blind:
+            match = [n for n, p in PATTERNS.items() if v in p["vars"]]
+            hint = ", ".join(match) or "NONE - needs a new pattern (judgement)"
+            print(f"  {v:16} -> pattern: {hint}")
+        if not blind:
+            print("  none — every variable has a real responder")
+        return 0
+
+    targets = []
+    if a.all:
+        for v in blind:
+            for n, p in PATTERNS.items():
+                if v in p["vars"] and n not in targets:
+                    targets.append(n)
+    else:
+        if not a.pattern:
+            print("error: --pattern required with --variable", file=sys.stderr)
+            return 2
+        targets = [a.pattern]
+
+    if not targets:
+        print("no pattern matches the blind variables; write one by hand and "
+              "add it to PATTERNS")
+        return 1
+
+    rc = 0
+    for name in targets:
+        pat = PATTERNS[name]
+        print(f"\npattern {name}")
+        print(f"  detects: {pat['failure']}")
+        probe_var = next((v for v in pat["vars"] if v in blind), pat["vars"][0])
+        before = coverage_of(probe_var, a.design)
+        print(f"  {probe_var} coverage before: {before:.1%}")
+        if not a.apply:
+            print("  dry run — pass --apply to write it")
+            continue
+
+        bak_arm, bak_loop = ARM + ".bak", LOOP + ".bak"
+        shutil.copy(ARM, bak_arm); shutil.copy(LOOP, bak_loop)
+        try:
+            if not apply_pattern(name):
+                os.remove(bak_arm); os.remove(bak_loop)
+                continue
+            after = coverage_of(probe_var, a.design)
+            print(f"  {probe_var} coverage after : {after:.1%}")
+            if after >= threshold:
+                print(f"  KEPT — {probe_var} is now measured")
+                os.remove(bak_arm); os.remove(bak_loop)
+            else:
+                shutil.copy(bak_arm, ARM); shutil.copy(bak_loop, LOOP)
+                os.remove(bak_arm); os.remove(bak_loop)
+                print(f"  REVERTED — response {after:.1%} is below the "
+                      f"{threshold:.0%} threshold, so the criterion does not "
+                      f"actually measure this variable")
+                rc = 1
+        except Exception as exc:                                # noqa: BLE001
+            shutil.copy(bak_arm, ARM); shutil.copy(bak_loop, LOOP)
+            os.remove(bak_arm); os.remove(bak_loop)
+            print(f"  REVERTED — {type(exc).__name__}: {exc}")
+            rc = 1
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
