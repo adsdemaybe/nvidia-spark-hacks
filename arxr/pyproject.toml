@@ -20,6 +20,7 @@ dev = [
     "pyarrow>=16.0",
     "websockets>=12.0",
     "trimesh>=4.4",
+    "scipy>=1.13",  # trimesh needs it for vertex normals on GLB export
 ]
 
 [tool.ruff]

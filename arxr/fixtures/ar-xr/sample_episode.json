@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "episode_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+  "task_id": "cube_to_bin",
+  "source": {
+    "device_type": "phone",
+    "input_type": null
+  },
+  "coordinate_frame": "struct_world",
+  "frames_artifact": "sample_episode.parquet",
+  "events": [
+    {
+      "type": "START",
+      "timestamp_ns": 1700000000000000000
+    },
+    {
+      "type": "GRAB",
+      "timestamp_ns": 1700000001500000000
+    },
+    {
+      "type": "RELEASE",
+      "timestamp_ns": 1700000005400000000
+    },
+    {
+      "type": "FINISH",
+      "timestamp_ns": 1700000005966666667
+    }
+  ]
+}
