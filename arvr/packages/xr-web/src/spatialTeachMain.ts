@@ -109,6 +109,36 @@ const ASSET_CONFIGS: Record<string, AssetConfig> = {
     // mirror in this client (docs/CONTRACTS.md).
     taskPredicateExtra: { pullAxis: [0, -1, 0], pullDistanceM: 0.08 },
   },
+  // Round 10: a second rigid_graspable object, same grasp-and-place
+  // predicate shape as cube_01 -- reuses cube's own bin prop/drop point
+  // (only one asset is ever loaded into the scene at a time, see
+  // loadAssetVisual(), so there's no placement conflict). All three points
+  // below are real IkSolver-converged, within-limits outputs (same
+  // discipline as every other AssetConfig here), not guessed.
+  soda_can_01: {
+    taskId: "soda_can_to_bin",
+    worldPosition: [0.32, -0.1, 0.135], // can's base -- grasp point is +0.035 in Z
+    glbUrl: "/spatial-training/assets/soda_can/asset.glb",
+    propGlbUrl: "/spatial-training/props/bin.glb",
+    propWorldPosition: [0.3, 0.12, 0.0],
+    goalPositionM: [0.3, 0.12, 0.18],
+    goalToleranceM: 0.05,
+    taskPredicateExtra: { objectPositionM: [0.32, -0.1, 0.17], objectCaptureRadiusM: 0.05 },
+  },
+  // Round 10: keyboard's key_K -- reuses button's exact reach-goal
+  // predicate shape (spec section 63's Demo B: press K). The fixture
+  // itself models five named keys (A/K/T/SPACE/ENTER, spec section 27);
+  // only key_K is wired to a selectable demo task this round, matching
+  // spec section 42 ("do not require all keys") -- a per-key TASK
+  // selector is a reasonable next increment, not built here.
+  keyboard_01: {
+    taskId: "press_key_k",
+    worldPosition: [0.35, 0.05, 0.1], // keyboard slab's base
+    glbUrl: "/spatial-training/assets/keyboard/asset.glb",
+    goalPositionM: [0.328, 0.05, 0.116], // key_K's world press point
+    goalToleranceM: 0.05,
+    taskPredicateExtra: {},
+  },
 };
 
 function currentAssetConfig(): AssetConfig {

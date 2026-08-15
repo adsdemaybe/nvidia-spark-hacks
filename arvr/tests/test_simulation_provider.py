@@ -151,6 +151,13 @@ CUBE_GRASP_M = (0.32, -0.10, 0.15)
 BIN_DROP_M = (0.30, 0.12, 0.18)
 DRAWER_HANDLE_CLOSED_M = (0.38, -0.02, 0.16)
 DRAWER_HANDLE_PULLED_M = (0.38, -0.10, 0.16)
+# Round 10: soda_can (a second rigid_graspable object -- reuses BIN_DROP_M,
+# same bin) and keyboard's key_K press point. Both are real IkSolver-
+# converged, within-limits outputs (checked directly against the solver
+# before being hardcoded here), not guessed -- same discipline as the four
+# points above.
+SODA_CAN_GRASP_M = (0.32, -0.10, 0.17)
+KEY_K_PRESS_M = (0.328, 0.05, 0.116)
 
 
 def _frame_at(bundle, solver, position, gripper, timestamp_ns, q_init=None):
@@ -259,6 +266,78 @@ def test_pull_rejects_an_insufficient_pull():
         goal_position_m=DRAWER_HANDLE_PULLED_M, tolerance_m=0.02,
         pull_axis=drawer_part.axis, pull_distance_m=drawer_part.limit_m[1],
     )
+    result = MuJoCoSimulationProvider().replay_and_verify(bundle, asset, trajectory, task)
+    assert result.status == "rejected"
+    assert result.checks.task_predicate is False
+
+
+# ---------------------------------------------------------------------------
+# Round 10 -- soda_can (a second rigid_graspable object, same grasp-and-place
+# predicate cube_01 already exercises) and keyboard (a second reach-goal
+# object, same predicate button_01 already exercises). Neither needed new
+# predicate code -- see tools/make_object_assets.py's module docstring.
+# ---------------------------------------------------------------------------
+
+
+def test_grasp_and_place_accepts_a_real_soda_can_pick_and_place_trajectory():
+    bundle = _robot_bundle()
+    asset = FixtureAssetProvider().get_asset_bundle("soda_can_01")
+    trajectory = _build_manual_trajectory(
+        bundle,
+        [
+            (SODA_CAN_GRASP_M, 0.0),   # approach, open
+            (SODA_CAN_GRASP_M, 1.0),   # grasp
+            (BIN_DROP_M, 1.0),         # carry, still closed
+            (BIN_DROP_M, 0.0),         # release
+        ],
+    )
+    task = TaskSpec(
+        goal_position_m=BIN_DROP_M, tolerance_m=0.05,
+        object_position_m=SODA_CAN_GRASP_M, object_capture_radius_m=0.05,
+    )
+    result = MuJoCoSimulationProvider().replay_and_verify(bundle, asset, trajectory, task)
+    assert result.status == "accepted", result.rejection_reason
+    assert result.checks.task_predicate is True
+
+
+def test_grasp_and_place_rejects_a_soda_can_dropped_short_of_the_bin():
+    bundle = _robot_bundle()
+    asset = FixtureAssetProvider().get_asset_bundle("soda_can_01")
+    trajectory = _build_manual_trajectory(
+        bundle,
+        [
+            (SODA_CAN_GRASP_M, 0.0),
+            (SODA_CAN_GRASP_M, 1.0),
+            (SODA_CAN_GRASP_M, 0.0),  # released right where it was grasped, never carried
+        ],
+    )
+    task = TaskSpec(
+        goal_position_m=BIN_DROP_M, tolerance_m=0.05,
+        object_position_m=SODA_CAN_GRASP_M, object_capture_radius_m=0.05,
+    )
+    result = MuJoCoSimulationProvider().replay_and_verify(bundle, asset, trajectory, task)
+    assert result.status == "rejected"
+    assert result.checks.task_predicate is False
+
+
+def test_reach_predicate_accepts_a_real_keyboard_key_k_press():
+    bundle = _robot_bundle()
+    asset = FixtureAssetProvider().get_asset_bundle("keyboard_01")
+    key_k = asset.parts["key_K"]
+    assert key_k.interaction == "press"
+    trajectory = _build_manual_trajectory(bundle, [(KEY_K_PRESS_M, 0.0)])
+    task = TaskSpec(goal_position_m=KEY_K_PRESS_M, tolerance_m=0.05)
+    result = MuJoCoSimulationProvider().replay_and_verify(bundle, asset, trajectory, task)
+    assert result.status == "accepted", result.rejection_reason
+    assert result.checks.task_predicate is True
+
+
+def test_reach_predicate_rejects_a_press_that_misses_key_k():
+    bundle = _robot_bundle()
+    asset = FixtureAssetProvider().get_asset_bundle("keyboard_01")
+    trajectory = _build_manual_trajectory(bundle, [(KEY_K_PRESS_M, 0.0)])
+    far_goal = (KEY_K_PRESS_M[0] + 0.2, KEY_K_PRESS_M[1], KEY_K_PRESS_M[2])
+    task = TaskSpec(goal_position_m=far_goal, tolerance_m=0.05)
     result = MuJoCoSimulationProvider().replay_and_verify(bundle, asset, trajectory, task)
     assert result.status == "rejected"
     assert result.checks.task_predicate is False

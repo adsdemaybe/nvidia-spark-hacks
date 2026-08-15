@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "keyboard_01",
+  "parts": {
+    "key_A": {
+      "interaction": "press",
+      "local_origin_m": [
+        -0.044,
+        0.0,
+        0.016
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "travel_m": 0.004
+    },
+    "key_K": {
+      "interaction": "press",
+      "local_origin_m": [
+        -0.022,
+        0.0,
+        0.016
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "travel_m": 0.004
+    },
+    "key_T": {
+      "interaction": "press",
+      "local_origin_m": [
+        0.0,
+        0.0,
+        0.016
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "travel_m": 0.004
+    },
+    "key_SPACE": {
+      "interaction": "press",
+      "local_origin_m": [
+        0.022,
+        0.0,
+        0.016
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "travel_m": 0.004
+    },
+    "key_ENTER": {
+      "interaction": "press",
+      "local_origin_m": [
+        0.044,
+        0.0,
+        0.016
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "travel_m": 0.004
+    }
+  }
+}

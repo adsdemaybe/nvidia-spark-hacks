@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "soda_can_01",
+  "parts": {
+    "can": {
+      "interaction": "grasp",
+      "local_origin_m": [
+        0.0,
+        0.0,
+        0.035
+      ]
+    }
+  }
+}
