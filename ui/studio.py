@@ -145,7 +145,11 @@ def pipeline(run: Run) -> None:
         run.emit("\x01end\x02")
 
 
-PAGE = """<!doctype html>
+# Raw, so every backslash escape reaches JavaScript untouched and JS interprets it.
+# Non-raw, Python eats them first: `\[` in a regex is not a valid Python escape and warns,
+# while `\u0001` becomes a literal control byte embedded in the HTML source. Both happen to
+# work, which is worse than either failing.
+PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>STRUCT Studio</title>
@@ -200,7 +204,35 @@ button[disabled]{opacity:.5;cursor:progress}
 #log .good{color:var(--ok)}
 #log .warnl{color:var(--warn)}
 #log .head{color:var(--accent);font-weight:600;display:block;margin-top:10px}
-.empty{color:var(--muted);padding:24px 16px;max-width:60ch}
+.empty{color:var(--muted);padding:24px 16px;max-width:64ch;white-space:pre-wrap;font-size:13.5px}
+.tabs{margin-left:auto;display:flex;gap:4px}
+.tab{font-size:12px;padding:3px 10px;border-radius:6px;color:var(--muted);cursor:pointer;
+  border:1px solid transparent}
+.tab.on{color:var(--ink);border-color:var(--line);background:var(--bg)}
+#timeline{flex:1;overflow:auto;padding:14px 16px}
+.card{border:1px solid var(--line);border-radius:9px;background:var(--panel);
+  margin-bottom:12px;overflow:hidden}
+.card>h3{margin:0;padding:9px 13px;font-size:13px;display:flex;align-items:center;gap:9px;
+  border-bottom:1px solid var(--line);background:var(--bg)}
+.card>h3 .delta{margin-left:auto;font-size:12px;font-weight:600}
+.delta.worse{color:var(--bad)} .delta.better{color:var(--ok)} .delta.same{color:var(--muted)}
+.metrics{display:flex;flex-wrap:wrap;gap:6px;padding:10px 13px}
+.metric{font-size:12px;font-family:var(--mono);padding:2px 8px;border-radius:5px;
+  border:1px solid var(--line);color:var(--muted)}
+.metric.bad{border-color:var(--bad);color:var(--bad)}
+.metric.good{border-color:var(--ok);color:var(--ok)}
+.fixes{padding:2px 13px 12px}
+.fixes h4{margin:8px 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);font-weight:600}
+.fix{display:flex;gap:8px;font-size:13px;padding:4px 0;line-height:1.45}
+.fix .sev{flex:none;font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 6px;
+  border-radius:4px;height:fit-content;margin-top:2px}
+.sev.blocker{background:var(--bad);color:#fff}
+.sev.major{background:var(--warn);color:#fff}
+.sev.minor{background:var(--line);color:var(--muted)}
+.applied{padding:9px 13px;border-top:1px solid var(--line);font-size:13px;color:var(--accent);
+  background:var(--bg)}
+.applied.none{color:var(--muted)}
 </style></head><body>
 <header>
   <h1>STRUCT Studio</h1>
@@ -237,39 +269,153 @@ button[disabled]{opacity:.5;cursor:progress}
       <span class="pill" id="p-f1">F1 — board</span>
       <span class="pill" id="p-f2">F2 — enclosure</span>
       <span class="pill" id="p-done">done</span>
+      <span class="tabs">
+        <a id="t-play" class="tab on">play-by-play</a><a id="t-raw" class="tab">raw log</a>
+      </span>
     </div>
-    <pre id="log"><div class="empty">Describe a board and press <b>Design it</b>.
+    <div id="timeline">
+      <div class="empty">Describe a board and press <b>Design it</b>.
 
-F1 turns the specification into a parts plan, then tscircuit HDL, then runs the gate
-ladder — lint, compile, place, route, DRC, physics, SPICE, DFM, placement rules — and
-three reviewers argue about the result. F2 then fits an enclosure to the finished board.
+F1 turns the specification into a parts plan, then tscircuit HDL, then runs the gate ladder
+— lint, compile, place, route, DRC, physics, SPICE, DFM, placement rules — and three
+reviewers argue about the result. Each iteration appears here as a card: what the gates
+measured, what the reviewers want fixed, and what the model changed in response.
 
-Output streams here as it happens. A run that ends in REVISE is the normal outcome
-today, and the blockers are the interesting part.</div></pre>
+A run ending in REVISE is the normal outcome today. The blockers are the interesting part.</div>
+    </div>
+    <pre id="log" hidden></pre>
   </div>
 </main>
 <script>
 const $ = s => document.querySelector(s);
 // Named, because slicing a fixed 2 off a 7-character sentinel silently renders
-// "tageF1 — board" and looks like a typo in the stage name rather than an off-by-five.
+// "tageF1 - board" and looks like a typo in the stage name rather than an off-by-five.
 const STAGE = '\u0001stage\u0002', END = '\u0001end\u0002';
+
 document.querySelectorAll('.examples a').forEach(a =>
   a.onclick = () => { $('#spec').value = a.dataset.spec; });
 
-function classify(line){
-  if (line.startsWith('$ ')) return 'cmd';
-  if (line.startsWith('!!')) return 'err';
-  if (/\\b(0 errors|clean|ACCEPT|pass|CONVERGED|violations=0)\\b/.test(line)) return 'good';
-  if (/\\b(REVISE|blocker|error\\(s\\)|FAIL|\\*\\*)/.test(line)) return 'warnl';
-  return '';
+$('#t-play').onclick = () => {
+  $('#t-play').classList.add('on'); $('#t-raw').classList.remove('on');
+  $('#timeline').hidden = false; $('#log').hidden = true;
+};
+$('#t-raw').onclick = () => {
+  $('#t-raw').classList.add('on'); $('#t-play').classList.remove('on');
+  $('#timeline').hidden = true; $('#log').hidden = false;
+};
+
+// ---- the play-by-play ------------------------------------------------------
+// Parsed from the CLI's own output rather than from a second machine-readable channel.
+// One format to keep in step instead of two, and what you see is literally what the
+// pipeline said. The cost is that a change to the CLI's wording lands here; the raw-log
+// tab is always there underneath when this parser does not recognise something.
+let iters = [], cur = null, prevErrors = null;
+
+function num(re, line){ const m = line.match(re); return m ? +m[1] : null; }
+
+function card(it, idx){
+  const el = document.createElement('div'); el.className = 'card';
+  const h = document.createElement('h3');
+  h.appendChild(document.createTextNode('Iteration ' + it.n));
+
+  // The delta is the whole point of a play-by-play: not "what does it say now" but
+  // "did the last round of fixes help". A revise loop that makes a board worse looks
+  // identical to one that helps unless the numbers are put side by side.
+  if (it.errors !== null && it.prev !== null && it.prev !== undefined) {
+    const d = it.errors - it.prev, sp = document.createElement('span');
+    sp.className = 'delta ' + (d > 0 ? 'worse' : d < 0 ? 'better' : 'same');
+    sp.textContent = d > 0 ? ('\u25b2 +' + d + ' errors — worse')
+                   : d < 0 ? ('\u25bc ' + d + ' errors — better')
+                           : 'no change in errors';
+    h.appendChild(sp);
+  }
+  el.appendChild(h);
+
+  const m = document.createElement('div'); m.className = 'metrics';
+  for (const [label, val, bad] of it.metrics) {
+    const b = document.createElement('span');
+    b.className = 'metric' + (bad === true ? ' bad' : bad === false ? ' good' : '');
+    b.textContent = label + ' ' + val;
+    m.appendChild(b);
+  }
+  if (it.metrics.length) el.appendChild(m);
+
+  if (it.fixes.length) {
+    const f = document.createElement('div'); f.className = 'fixes';
+    const t = document.createElement('h4'); t.textContent = 'what the reviewers want fixed';
+    f.appendChild(t);
+    for (const {sev, text} of it.fixes) {
+      const row = document.createElement('div'); row.className = 'fix';
+      const s1 = document.createElement('span'); s1.className = 'sev ' + sev; s1.textContent = sev;
+      const s2 = document.createElement('span'); s2.textContent = text;
+      row.appendChild(s1); row.appendChild(s2); f.appendChild(row);
+    }
+    el.appendChild(f);
+  }
+
+  if (it.applied !== null) {
+    const a = document.createElement('div');
+    a.className = 'applied' + (it.applied ? '' : ' none');
+    a.textContent = it.applied
+      ? ('\u270e the model applied ' + it.applied + ' edit block' + (it.applied === 1 ? '' : 's') + ' in response')
+      : '\u270e no edits applied';
+    el.appendChild(a);
+  }
+  return el;
+}
+
+function render(){
+  const tl = $('#timeline'); tl.textContent = '';
+  iters.forEach((it, i) => tl.appendChild(card(it, i)));
+  tl.scrollTop = tl.scrollHeight;
+}
+
+function newIteration(n){
+  cur = {n, metrics: [], fixes: [], applied: null, errors: null, prev: prevErrors};
+  iters.push(cur);
+}
+
+function feed(line){
+  const it = line.match(/^\u2500\u2500 iteration ([0-9]+)/);
+  if (it) { newIteration(+it[1]); render(); return; }
+  if (!cur) return;
+
+  if (/^ {2}lint/.test(line)) {
+    const e = num(/([0-9]+) error/, line);
+    cur.metrics.push(['lint', e ? e + ' errors' : 'clean', e ? true : false]);
+  } else if (/^ {2}compile/.test(line)) {
+    const e = num(/([0-9]+) errors/, line), p = num(/([0-9]+) parts/, line);
+    cur.errors = e;
+    cur.metrics.push(['compile', (p !== null ? p + ' parts, ' : '') + e + ' errors', e > 0]);
+  } else if (/^ {2}physics/.test(line)) {
+    const d = num(/([0-9]+) DRC/, line), pk = line.match(/peak ([0-9.]+)/);
+    cur.metrics.push(['physics', (pk ? pk[1] + '\u00b0C, ' : '') + d + ' DRC', d > 0]);
+  } else if (/^ {2}(spice|dfm|placement)/.test(line)) {
+    const name = line.trim().split(/ +/)[0];
+    const e = num(/([0-9]+) (?:error|violation)/, line);
+    if (e !== null) cur.metrics.push([name, e + (name === 'placement' ? ' violations' : ' errors'), e > 0]);
+  } else if (/^ {2}verdict/.test(line)) {
+    const b = num(/([0-9]+) blocker/, line);
+    const v = line.includes('ACCEPT') ? 'ACCEPT' : 'REVISE';
+    cur.metrics.push(['verdict', v + (b !== null ? ' \u00b7 ' + b + ' blockers' : ''),
+                      v === 'ACCEPT' ? false : true]);
+  } else if (line.includes('\u00b7 [')) {
+    const m = line.match(/\u00b7 \[(blocker|major|minor)\] (.*)$/);
+    if (m) cur.fixes.push({sev: m[1], text: m[2].trim()});
+  } else if (/applied ([0-9]+) edit block/.test(line)) {
+    cur.applied = num(/applied ([0-9]+) edit block/, line);
+    prevErrors = cur.errors;
+  }
+  render();
 }
 
 $('#go').onclick = async () => {
   const spec = $('#spec').value.trim();
   if (!spec) { $('#spec').focus(); return; }
-  const log = $('#log'); log.textContent = '';
+  iters = []; cur = null; prevErrors = null;
+  $('#timeline').textContent = ''; $('#log').textContent = '';
   ['p-f1','p-f2','p-done'].forEach(id => $('#'+id).className = 'pill');
-  $('#go').disabled = true; $('#go').textContent = 'Designing…';
+  $('#go').disabled = true; $('#go').textContent = 'Designing\u2026';
 
   const res = await fetch('/run', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({spec, model: $('#model').value, iterations: +$('#iters').value})});
@@ -280,25 +426,19 @@ $('#go').onclick = async () => {
     const line = JSON.parse(ev.data);
     if (line === END) {
       es.close(); $('#go').disabled = false; $('#go').textContent = 'Design it';
-      $('#p-done').className = 'pill done';
-      return;
+      $('#p-done').className = 'pill done'; return;
     }
     if (line.startsWith(STAGE)) {
       const name = line.slice(STAGE.length);
       if (name.startsWith('F1')) $('#p-f1').className = 'pill active';
       if (name.startsWith('F2')) { $('#p-f1').className='pill done'; $('#p-f2').className='pill active'; }
       if (name === 'done') $('#p-f2').className = 'pill done';
-      const h = document.createElement('span');
-      h.className = 'head'; h.textContent = '── ' + name + ' ' + '─'.repeat(Math.max(0, 46 - name.length));
-      log.appendChild(h); log.appendChild(document.createTextNode('\\n'));
-      log.scrollTop = log.scrollHeight;
+      $('#log').appendChild(document.createTextNode('\n== ' + name + ' ==\n'));
       return;
     }
-    const el = document.createElement('span');
-    const c = classify(line); if (c) el.className = c;
-    el.textContent = line + '\\n';
-    log.appendChild(el);
-    log.scrollTop = log.scrollHeight;
+    $('#log').appendChild(document.createTextNode(line + '\n'));
+    if ($('#t-raw').classList.contains('on')) $('#log').scrollTop = $('#log').scrollHeight;
+    feed(line);
   };
   es.onerror = () => { es.close(); $('#go').disabled = false; $('#go').textContent = 'Design it'; };
 };
