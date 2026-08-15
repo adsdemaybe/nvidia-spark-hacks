@@ -35,6 +35,27 @@ const { values } = parseArgs({
 
 const PORT = Number(values.port)
 const ROOT = path.resolve(values.root!)
+const MANIFEST = path.resolve("robots.json")
+
+/**
+ * Which robot each board belongs to.
+ *
+ * A manifest rather than a naming convention, because a robot's boards do not reliably
+ * share a prefix — the rover's controller run is called `regress`. Unlisted runs fall
+ * back to prefix grouping and then to "unassigned", so a new run always appears
+ * somewhere rather than vanishing because nobody edited a file.
+ */
+interface RobotBoard { run: string; role?: string; count?: number; note?: string }
+interface Robot { id: string; name: string; description?: string; boards: RobotBoard[] }
+
+async function loadRobots(): Promise<Robot[]> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(MANIFEST, "utf8"))
+    return Array.isArray(parsed.robots) ? parsed.robots : []
+  } catch {
+    return []
+  }
+}
 
 interface BoardSummary {
   name: string
@@ -216,28 +237,71 @@ async function ensureViewer(name: string): Promise<string | null> {
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 
-function indexPage(boards: BoardSummary[]): string {
+function indexPage(boards: BoardSummary[], robots: Robot[]): string {
   const chip = (g: BoardSummary["gates"][number]) =>
     `<span class="chip ${g.state}" title="${esc(g.detail)}">${esc(g.label)}</span>`
 
-  const rows = boards
-    .map((b) => {
-      const when = new Date(b.mtime).toLocaleString()
-      return `<a class="card" href="/board/${encodeURIComponent(b.name)}">
-        <div class="card-head">
-          <h2>${esc(b.name)}</h2>
-          ${b.verdict ? `<span class="verdict ${b.verdict.toLowerCase()}">${b.verdict}</span>` : ""}
-        </div>
-        <div class="meta">
-          ${b.parts != null ? `${b.parts} parts` : "—"} ·
-          ${b.nets != null ? `${b.nets} nets` : "—"}
-          ${b.peakC != null ? ` · peak ${b.peakC.toFixed(1)} °C` : ""}
-        </div>
-        <div class="chips">${b.gates.map(chip).join("")}</div>
-        <div class="when">${esc(when)}</div>
-      </a>`
-    })
-    .join("\n")
+  const byName = new Map(boards.map((b) => [b.name, b]))
+  const claimed = new Set<string>()
+
+  const card = (b: BoardSummary, meta?: RobotBoard) => {
+    const when = new Date(b.mtime).toLocaleString()
+    return `<a class="card" href="/board/${encodeURIComponent(b.name)}">
+      <div class="card-head">
+        <h2>${esc(meta?.role ?? b.name)}${meta && (meta.count ?? 1) > 1 ? `<span class="mult"> x${meta.count}</span>` : ""}</h2>
+        ${b.verdict ? `<span class="verdict ${b.verdict.toLowerCase()}">${b.verdict}</span>` : ""}
+      </div>
+      ${meta?.role ? `<div class="runname">${esc(b.name)}</div>` : ""}
+      ${meta?.note ? `<div class="note">${esc(meta.note)}</div>` : ""}
+      <div class="meta">
+        ${b.parts != null ? `${b.parts} parts` : "—"} ·
+        ${b.nets != null ? `${b.nets} nets` : "—"}
+        ${b.peakC != null ? ` · peak ${b.peakC.toFixed(1)} °C` : ""}
+      </div>
+      <div class="chips">${b.gates.map(chip).join("")}</div>
+      <div class="when">${esc(when)}</div>
+    </a>`
+  }
+
+  const sections: string[] = []
+  for (const robot of robots) {
+    const cards = robot.boards
+      .map((rb) => {
+        const b = byName.get(rb.run)
+        if (!b) return ""
+        claimed.add(rb.run)
+        return card(b, rb)
+      })
+      .filter(Boolean)
+    if (!cards.length) continue
+    // A robot is only as built as its worst board, so the header says that outright
+    // rather than leaving it to be inferred from a row of chips.
+    const its = robot.boards.map((rb) => byName.get(rb.run)).filter(Boolean) as BoardSummary[]
+    const failing = its.filter((b) => b.gates.some((g) => g.state === "fail")).length
+    const fitted = robot.boards.reduce((n, rb) => n + (byName.has(rb.run) ? (rb.count ?? 1) : 0), 0)
+    sections.push(`<section class="robot">
+      <div class="robot-head">
+        <h2 class="robot-name">${esc(robot.name)}</h2>
+        <span class="robot-stat ${failing ? "bad" : "good"}">${
+          failing ? `${failing} of ${its.length} board(s) failing a gate` : `all ${its.length} boards clean`
+        }</span>
+      </div>
+      ${robot.description ? `<p class="robot-desc">${esc(robot.description)} · ${fitted} board${fitted === 1 ? "" : "s"} fitted</p>` : ""}
+      <div class="grid">${cards.join("")}</div>
+    </section>`)
+  }
+
+  const rest = boards.filter((b) => !claimed.has(b.name))
+  if (rest.length) {
+    sections.push(`<section class="robot">
+      <div class="robot-head"><h2 class="robot-name">Unassigned</h2>
+      <span class="robot-stat">${rest.length} run${rest.length === 1 ? "" : "s"}</span></div>
+      <p class="robot-desc">Not listed in <code>robots.json</code> — add them there to group them under a robot.</p>
+      <div class="grid">${rest.map((b) => card(b)).join("")}</div>
+    </section>`)
+  }
+
+  const rows = sections.join("\n")
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -276,11 +340,23 @@ function indexPage(boards: BoardSummary[]): string {
   .chip.warn{background:var(--warn-bg);color:var(--warn)}
   .when{color:var(--muted);font-size:11.5px;font-family:ui-monospace,monospace}
   .empty{color:var(--muted);padding:40px 0}
+  .robot{margin:0 0 34px}
+  .robot-head{display:flex;align-items:baseline;gap:12px;
+              border-bottom:1px solid var(--line);padding-bottom:7px;margin-bottom:6px}
+  .robot-name{font-size:17px;margin:0;letter-spacing:-.01em}
+  .robot-stat{font-size:11.5px;font-weight:650;padding:2px 8px;border-radius:999px;
+              background:var(--skip-bg);color:var(--muted);white-space:nowrap}
+  .robot-stat.good{background:var(--pass-bg);color:var(--pass)}
+  .robot-stat.bad{background:var(--warn-bg);color:var(--warn)}
+  .robot-desc{color:var(--muted);font-size:12.5px;margin:0 0 13px}
+  .runname{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--muted);margin-bottom:3px}
+  .note{font-size:12px;color:var(--muted);margin-bottom:7px;line-height:1.4}
+  .mult{color:var(--accent);font-weight:650}
 </style></head><body><div class="wrap">
   <p class="eyebrow">pcb-ai</p>
   <h1>Boards</h1>
-  <p class="sub">${boards.length} run${boards.length === 1 ? "" : "s"} under <code>${esc(ROOT)}</code> · newest first · click for schematic, PCB, 3D and every gate report</p>
-  ${boards.length ? `<div class="grid">${rows}</div>` : '<p class="empty">No runs yet.</p>'}
+  <p class="sub">${boards.length} run${boards.length === 1 ? "" : "s"} under <code>${esc(ROOT)}</code> · grouped by robot from <code>robots.json</code> · click any board for schematic, PCB, 3D and every gate report</p>
+  ${boards.length ? rows : '<p class="empty">No runs yet.</p>'}
 </div></body></html>`
 }
 
@@ -293,7 +369,8 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      return send(200, "text/html; charset=utf-8", indexPage(await listBoards()))
+      const [boards, robots] = await Promise.all([listBoards(), loadRobots()])
+      return send(200, "text/html; charset=utf-8", indexPage(boards, robots))
     }
 
     const board = url.pathname.match(/^\/board\/([^/]+)\/?$/)

@@ -14,8 +14,11 @@
  * power board is an inductor at that timescale. C1 supplies those edges locally; without
  * it the raw rail rings and the controller sees it through its own regulator.
  */
+// 38mm wide, not 34: autosize measured the content at 34.08mm, so the connectors on both
+// edges were hanging 0.04mm off the board. Small enough that the placement check let it
+// through, and still a board whose copper runs to the router bit.
 export default () => (
-  <board width="34mm" height="28mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
+  <board width="38mm" height="28mm" pcbPack pcbPackGap="1.8mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
     <net name="VBAT" />
     <net name="V3V3" />
     <net name="GND" />

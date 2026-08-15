@@ -12,8 +12,12 @@
  *
  * J1  3V3 + GND + 2 signals from the controller
  */
+// Sized by tools/autosize.ts rather than by guessing: the content is 18.06 x 10.63 mm,
+// so 22 x 15 leaves the fab's 0.3mm copper-to-edge clearance plus 1.5mm for handling.
+// The parts also moved 4.5mm right — they had drifted left of centre, and shrinking the
+// outline without moving them would have cut J1 off the board rather than saving space.
 export default () => (
-  <board width="26mm" height="14mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
+  <board width="22mm" height="14mm" pcbPack pcbPackGap="1.2mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
     <net name="V3V3" />
     <net name="GND" />
     <net name="STAT1" />
@@ -26,21 +30,21 @@ export default () => (
         producing copper that runs off the edge — the right call, and the reason a
         placement error reads as ten routing errors until you look at the root cause. */}
     <pinheader name="J1" pinCount={4} footprint="pinrow4" pitch="2.54mm"
-      pcbX={-8} pcbY={0} schX={-10} schY={0} />
+      pcbX={-3.5} pcbY={0} schX={-10} schY={0} />
 
     <capacitor name="C1" capacitance="100nF" footprint="0402"
-      maxDecouplingTraceLength="12mm" pcbX={-4} pcbY={-4} schX={-6} schY={-3} />
+      maxDecouplingTraceLength="12mm" pcbX={0.5} pcbY={-4} schX={-6} schY={-3} />
 
     {/* ~1.3 mA each at 3V3 through 1k with a 2V forward drop: visible indoors, and
         small enough that three of them do not move the controller's rail. */}
-    <resistor name="R1" resistance="1k" footprint="0402" pcbX={-1} pcbY={4} schX={-2} schY={3} />
-    <led name="D1" color="green" footprint="0603" pcbX={3} pcbY={4} schX={1} schY={3} />
+    <resistor name="R1" resistance="1k" footprint="0402" pcbX={3.5} pcbY={4} schX={-2} schY={3} />
+    <led name="D1" color="green" footprint="0603" pcbX={7.5} pcbY={4} schX={1} schY={3} />
 
-    <resistor name="R2" resistance="1k" footprint="0402" pcbX={-1} pcbY={0} schX={-2} schY={0} />
-    <led name="D2" color="red" footprint="0603" pcbX={3} pcbY={0} schX={1} schY={0} />
+    <resistor name="R2" resistance="1k" footprint="0402" pcbX={3.5} pcbY={0} schX={-2} schY={0} />
+    <led name="D2" color="red" footprint="0603" pcbX={7.5} pcbY={0} schX={1} schY={0} />
 
-    <resistor name="R3" resistance="1k" footprint="0402" pcbX={-1} pcbY={-4} schX={-2} schY={-3} />
-    <led name="D3" color="yellow" footprint="0603" pcbX={3} pcbY={-4} schX={1} schY={-3} />
+    <resistor name="R3" resistance="1k" footprint="0402" pcbX={3.5} pcbY={-4} schX={-2} schY={-3} />
+    <led name="D3" color="yellow" footprint="0603" pcbX={7.5} pcbY={-4} schX={1} schY={-3} />
 
     <trace name="T_J1_V" from=".J1 > .pin1" to="net.V3V3" />
     <trace name="T_J1_G" from=".J1 > .pin2" to="net.GND" />

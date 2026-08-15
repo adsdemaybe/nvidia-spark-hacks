@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "Which boards belong to which robot, for the front end.",
+    "",
+    "A manifest rather than a naming convention, because a robot's boards do not",
+    "reliably share a prefix — the rover's controller run is called 'regress' and the",
+    "CAD side will add its own names on its own schedule. Anything not listed here",
+    "falls back to prefix grouping and then to 'unassigned', so adding a run never",
+    "requires editing this file first.",
+    "",
+    "'role' is what the board does in the robot; 'count' is how many are fitted, which",
+    "is how one verified design becomes two motor drivers."
+  ],
+  "robots": [
+    {
+      "id": "rover",
+      "name": "4-wheel rover",
+      "description": "Four boards: power distribution, two identical motor drivers, a controller, and a status indicator.",
+      "boards": [
+        { "run": "regress", "role": "Controller", "count": 1, "note": "STM32F103 + MPU-6050 + GPS + 3V3 regulation" },
+        { "run": "rover-power", "role": "Power distribution", "count": 1, "note": "2S LiPo in, reverse protection, bulk, fan-out" },
+        { "run": "rover-motor-driver", "role": "Motor driver", "count": 2, "note": "DRV8833 dual H-bridge, one board per side" },
+        { "run": "rover-indicator", "role": "Status indicator", "count": 1, "note": "power + two firmware-driven status LEDs" }
+      ]
+    },
+    {
+      "id": "bench",
+      "name": "Bench and fixtures",
+      "description": "Boards used to exercise the pipeline rather than to fly on a robot.",
+      "boards": [
+        { "run": "rover-viafix", "role": "Golden board", "count": 1, "note": "the rover with a manufacturable via stack — every gate green" },
+        { "run": "compass", "role": "Fixture", "count": 1, "note": "smallest board that exercises the from-spec path" }
+      ]
+    }
+  ]
+}
