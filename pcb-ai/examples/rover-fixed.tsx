@@ -17,6 +17,18 @@
  */
 export default () => (
   <board width="80mm" height="62mm" layers={4} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
+
+    {/* ── mounting: M3 at the corners ──────────────────────────────────────
+        The controller is the largest and heaviest board in the rover and was the
+        last one still unsecured: cad.check_fit reported
+        `board_not_mechanically_secured` against it, meaning the enclosure had
+        nothing to bolt it to. Positions computed from the placed geometry rather
+        than chosen by eye — MH4 sits at y=21.1 rather than the corner because the
+        corner is occupied. */}
+    <hole name="MH1" diameter="3.2mm" pcbX={-37.4} pcbY={-28.4} />
+    <hole name="MH2" diameter="3.2mm" pcbX={37.1} pcbY={-28.4} />
+    <hole name="MH3" diameter="3.2mm" pcbX={-37.4} pcbY={28.1} />
+    <hole name="MH4" diameter="3.2mm" pcbX={37.1} pcbY={21.1} />
     <net name="VBAT" />
     <net name="VIN" />
     <net name="V3V3" />
