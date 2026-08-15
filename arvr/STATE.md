@@ -16,15 +16,122 @@
    (Round 8 — a second, independent, genuinely-different verifier, not a
    duplicate), exports accepted demos as `RobotEpisode` → LeRobot training
    data. Three interchangeable `HandFrame` sources: `mock`, `openxr`,
-   `webcam` (Round 6). Three demo tasks: press a button, grasp a cube into a
-   bin, pull open a drawer (Round 9).
+   `webcam` (Round 6). Five demo tasks: press a button, grasp a cube into a
+   bin, pull open a drawer (Round 9), grasp a soda can into a bin, press
+   keyboard key K (Round 10).
 
 The old app was deliberately left running rather than torn out — see Round
-5's "why two apps" note. Combined test count: **151/151 Python, 111/111
-vitest**, both suites green, lint clean. Rounds 5-9 are all merged into
-`feat/arvr-integration` (Round 9 via `feat/object-interaction`); that
-branch itself is 2 commits ahead of `origin/feat/arvr-integration` as of
-this writing, not yet pushed.
+5's "why two apps" note. Combined test count: **157/157 Python, 111/111
+vitest**, both suites green, lint clean. Rounds 5-9 are merged into
+`feat/arvr-integration`; Round 10 is on `feat/soda-can-keyboard-interaction`,
+off `feat/arvr-integration`, not yet merged.
+
+### Round 10: soda_can and keyboard — the master spec's own two remaining
+fixtures
+
+Branch `feat/soda-can-keyboard-interaction`, off `feat/arvr-integration`
+(includes Round 9). The user dropped a new, much larger master spec
+(`STRUCT_Interactable_Assets_Master_Claude.md`, 69 sections) asking for the
+full interactable-asset pipeline. Read against the repo as it actually
+stood: Round 9 (built by a separate, concurrent session while this one was
+still in plan mode — see below) had already covered cube→bin and
+drawer-pull, which turn out to be the exact same spec's §14 demo
+progression. What was still missing, cross-checked section by section, was
+only the spec's other two named objects: **soda_can** (§20-22, its own
+"first object") and **keyboard** (§25-28, Demo B) — everything else
+(contract shape, providers, `InteractionIR`'s object-relative math,
+`RobotEpisode` provenance, the `SimulationProvider` swap point) was already
+built in Rounds 5-9 and needed no changes.
+
+**Concurrency, handled explicitly, not silently**: mid-exploration, this
+session found `feat/object-interaction` actively being edited on disk by a
+separate concurrent session (same repo, different Claude Code instance) —
+confirmed with the user before touching anything. Stood down and watched
+rather than risk a conflicting rewrite; only resumed once that session had
+committed and merged its own work into `feat/arvr-integration` and the
+user explicitly asked to continue. That merge is Round 9, described below
+with its own honesty notes intact (not modified by this round).
+
+**soda_can and keyboard needed zero new predicate/contract/provider code.**
+soda_can is a second `rigid_graspable`-shaped object exercising the exact
+grasp-and-place `TaskSpec` predicate Round 9 already built for cube_01 (see
+that round's own honesty note on what this predicate does and doesn't
+simulate -- unchanged here). keyboard's five named keys (A, K, T, SPACE,
+ENTER, per spec §26 "start with only selected fully interactive keys") are
+five `press`-interaction `AssetPart`s on one asset, exercising the exact
+reach-goal predicate button_01 already exercises -- `derive_interaction_ir`
+needed zero changes either, same as Round 9 found for grasp/pull. This
+round is fixture data + real IK-verified world points + tests, not new
+machinery.
+
+**Fixture assets** (`tools/make_object_assets.py`, extended with
+`make_soda_can()`/`make_keyboard()`, same crude-on-purpose trimesh
+convention): `soda_can_01` (a single `"grasp"` part, a small cylinder --
+r=0.018m h=0.07m, same reduced fixture scale as the 0.03m cube, not a
+literal 0.033x0.122m can) and `keyboard_01` (a flat slab + five raised key
+caps, one `AssetPart` each named `key_A`/`key_K`/`key_T`/`key_SPACE`/
+`key_ENTER`, `travel_m: 0.004`/`axis: [0,0,-1]` matching spec §27's own
+example literally). soda_can reuses cube_01's exact bin prop and drop point
+(`BIN_DROP_M`/the bin GLB) rather than duplicating a second bin -- nothing
+in `spatialTeachMain.ts` ever shows two assets at once (`loadAssetVisual`
+clears the previous group first), so there's no placement conflict.
+
+**Every new world-space point is real, IK-verified, same discipline as
+Round 7/9**: computed directly against a live `ar_datapipe.retarget.IkSolver`
+in WSL (not guessed) -- soda_can's grasp point (0.32, -0.10, 0.17) and
+key_K's world press point (0.328, 0.05, 0.116), both confirmed
+`converged=True, within_limits=True` before being hardcoded into
+`test_simulation_provider.py` and `spatialTeachMain.ts`'s `ASSET_CONFIGS`.
+
+**Real environment bug found and fixed, not just worked around**: this
+session's first attempt to run `uv run` from the Windows-native Bash tool
+against this repo's WSL-built `.venv` failed trying to remove a Linux
+`lib64` symlink (`Access is denied`) -- a genuine cross-platform venv
+corruption risk, not a flake. Fixed by only ever running Python/pytest for
+this workspace through `wsl.exe -d Ubuntu`, matching `packages/ar-datapipe/
+README.md`'s own documented platform note, and let `uv sync` rebuild the
+venv cleanly (56 packages, ~12 minutes over the `/mnt/c` 9p mount -- slow,
+not stuck). Separately, `pinocchio` failed to import
+(`libgomp.so.1: cannot open shared object file`) until `LD_LIBRARY_PATH`
+was pointed at the sudo-less `~/.local/libgomp` extraction that
+`ar-datapipe/README.md`'s platform note already documents (someone had
+already run the `apt-get download && dpkg-deb -x` workaround in this WSL
+image; this round just needed to actually set the env var when invoking
+`uv run`).
+
+**Tests**: `test_spatial_providers.py` gained soda_can/keyboard
+asset-loading checks; `test_simulation_provider.py` gained four predicate
+tests (soda_can grasp-and-place accept + reject, key_K reach accept +
+reject) -- same hand-built, IK-verified-waypoint pattern
+(`_build_manual_trajectory`) Round 9 established. 157/157 Python (up from
+153), 111/111 vitest, `ruff check` clean, `tsc --noEmit` clean.
+
+**UI**: `spatialTeachMain.ts`'s `ASSET_CONFIGS` gained `soda_can_01`/
+`keyboard_01` entries, wired through the same generic
+`loadAssetVisual`/`startDemo`/`finishDemo` path Round 9 built -- no new UI
+code, only new config data.
+
+**Not yet done, stated plainly:**
+- **A per-key TASK selector** (spec §50's minimal UI shows a separate
+  "Press K" task dropdown for the keyboard) -- this round wires only
+  `key_K` to a selectable demo task; `key_A`/`key_T`/`key_SPACE`/
+  `key_ENTER` exist as real `AssetPart`s on the fixture (so
+  `FixtureAssetProvider`/`InteractionIR`/a future task predicate can all
+  already address them) but have no `ASSET_CONFIGS` entry of their own.
+  Reasonable next increment, not built here (spec §42 explicitly permits
+  shipping fewer than all keys as selectable tasks).
+- **Isaac Sim asset validation** for any of the five fixtures (spec
+  §39-42) -- Spark-only by the spec's own rule (§6/§69: "only after local
+  acceptance passes"); this session never opened a Spark SSH session.
+- **PremadeAssetProvider/ScanAssetProvider** (spec §16-17, §47) -- the
+  spec's own cut-line items #1 and #2 (cut first).
+- Live browser verification of the two new tasks specifically -- same
+  limitation as every prior round, this agent has no way to open a browser
+  here. Round 9's live-browser gap (cube→bin, drawer-pull) is also still
+  open.
+- `feat/soda-can-keyboard-interaction` is not yet merged into
+  `feat/arvr-integration`, and neither branch has been pushed to
+  `origin` this round.
 
 ### Round 9: Object interaction — cube→bin, drawer pull
 

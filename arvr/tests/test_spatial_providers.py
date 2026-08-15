@@ -103,3 +103,18 @@ def test_fixture_asset_provider_loads_drawer():
     assert drawer.interaction == "pull"
     assert drawer.joint_type == "prismatic"
     assert drawer.limit_m == (0.0, 0.08)
+
+
+def test_fixture_asset_provider_loads_soda_can():
+    asset = FixtureAssetProvider().get_asset_bundle("soda_can_01")
+    part = asset.parts["can"]
+    assert part.interaction == "grasp"
+
+
+def test_fixture_asset_provider_loads_keyboard():
+    asset = FixtureAssetProvider().get_asset_bundle("keyboard_01")
+    assert set(asset.parts) == {"key_A", "key_K", "key_T", "key_SPACE", "key_ENTER"}
+    key_k = asset.parts["key_K"]
+    assert key_k.interaction == "press"
+    assert key_k.axis == (0.0, 0.0, -1.0)
+    assert key_k.travel_m == 0.004
