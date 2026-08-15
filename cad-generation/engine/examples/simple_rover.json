@@ -1,0 +1,265 @@
+{
+  "id": "b4199588-5003-4be3-9330-08d6d460118e",
+  "name": "simple_rover",
+  "root_link": "chassis",
+  "links": [
+    {
+      "id": "chassis",
+      "geometry": {
+        "generator": "plate",
+        "params": {
+          "length": {
+            "value": 0.3,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "chassis footprint"
+            }
+          },
+          "width": {
+            "value": 0.2,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "chassis footprint"
+            }
+          },
+          "thickness": {
+            "value": 0.01,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "chassis footprint"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "bracket_L",
+      "geometry": {
+        "generator": "bracket",
+        "params": {
+          "arm_a_length": {
+            "value": 0.05,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "wheel mount bracket"
+            }
+          },
+          "arm_b_length": {
+            "value": 0.08,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "wheel mount bracket"
+            }
+          },
+          "thickness": {
+            "value": 0.005,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "wheel mount bracket"
+            }
+          },
+          "width": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "wheel mount bracket"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": -0.002
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_L",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.06,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "wheel"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.05,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "wheel hub bore"
+            }
+          },
+          "length": {
+            "value": 0.02,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "example fixture",
+              "note": "wheel width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "chassis_to_bracket",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "bracket_L",
+      "origin": {
+        "position": {
+          "x": 0.1,
+          "y": 0.03,
+          "z": 0.01
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "bracket_to_wheel",
+      "kind": "revolute",
+      "parent": "bracket_L",
+      "child": "wheel_L",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.08
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": {
+          "value": -3.1416,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "example fixture",
+            "note": "one full rotation range"
+          }
+        },
+        "upper": {
+          "value": 3.1416,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "example fixture",
+            "note": "one full rotation range"
+          }
+        },
+        "effort": {
+          "value": 1.0,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "example fixture",
+            "note": "placeholder torque budget"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "example fixture",
+            "note": "placeholder speed budget"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_direct",
+        "catalogue": "stepper_motors"
+      }
+    }
+  ]
+}

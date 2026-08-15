@@ -1,0 +1,23 @@
+[project]
+name = "engine"
+version = "0.1.0"
+description = "Robot design platform core engine — Robot IR, geometry registry, criteria, evaluate() harness. Zero I/O by design (§11.7 of robot-platform-tech-stack.md)."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "build123d>=0.11",
+    "anthropic>=0.40",
+    "openai>=1.50",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
