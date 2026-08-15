@@ -38,23 +38,56 @@ Run `./configure.sh` for a live check.
 - **The 4917-restart crashloop is stopped.** The sandbox cannot fetch a policy without a
   gateway, so it exited and restarted forever.
 
-**Blocked, and it needs a decision that is not mine to make:**
+**Blocked on one thing, and it is a hard stop:**
 
-The sandbox rebuild fails its container-DNS preflight — Docker containers on this host
-cannot resolve `registry.npmjs.org`, which the agent install needs. The documented fix is
-to add a `dns` entry to `/etc/docker/daemon.json` and **restart the Docker daemon**. That
-restarts every container on this box: `coder-next-vllm` (the model everything is currently
-using) and whatever the CAD session has running. So it is a maintenance-window change, not
-a background one.
+`nemoclaw onboard` step 3 (*Configuring inference provider*) **always selects the NVIDIA
+cloud provider in non-interactive mode** and requires a real `NVIDIA_INFERENCE_API_KEY`.
+There is no provider flag, and the key is *validated* — a placeholder returns HTTP 403 and
+the step fails. Choosing local vLLM is only reachable through the interactive prompt.
+
+So finishing this needs one of:
 
 ```bash
-# after the daemon restart, and with the model server back up:
-NEMOCLAW_SKIP_HOST_DNS_PREFLIGHT=1 nemoclaw my-assistant rebuild --yes
+# a) run it interactively and pick the local vLLM option
+NEMOCLAW_SKIP_HOST_DNS_PREFLIGHT=1 NEMOCLAW_GATEWAY_PORT=17670 \
+  nemoclaw onboard --resume --name my-assistant
+
+# b) or supply a real key, then repoint inference at the local model afterwards
+export NVIDIA_INFERENCE_API_KEY=nvapi-...
 ```
 
-`NEMOCLAW_SKIP_HOST_DNS_PREFLIGHT=1` is needed because the *host* preflight also resolves
-`integrate.api.nvidia.com`, which is irrelevant to a box doing only local inference. The
-container-DNS check is separate and is the one that actually blocks.
+**The sandbox container no longer exists.** `rebuild --force` destroyed it and the
+recreate then failed, because the rebuild resets the gateway port to the default 8080,
+which the CAD viewer holds. Its state was backed up first, by hand, because nemoclaw's own
+backup could not read a container that would not stay running:
+
+```
+/home/acer01/nemoclaw-sandbox-backup-<timestamp>/   # 18 MB
+    sandbox/          # /sandbox — .openclaw, .nemoclaw, workspace
+    .openclaw/state/  # /root/.openclaw
+```
+
+### Why it was blocked, in order
+
+Worth recording because almost every layer reported a symptom rather than the cause:
+
+1. **Stale certificates.** The container's TLS binds pointed at
+   `~/.local/state/nemoclaw/openshell-docker-gateway/tls/` — the *old* gateway — while the
+   running one is `openshell-docker-gateway-17670/` with a fresh CA. It could not
+   authenticate, could not fetch a policy, exited, restarted, forever.
+2. Fixing that needs a rebuild, which recreates the container with correct binds.
+3. The rebuild preflight requires **gateway route == sandbox record**, and they differed on
+   model (`qwen3-coder-next` vs `nvidia/Qwen3.6-35B-A3B-NVFP4`).
+4. Updating that record requires reading `/sandbox/.openclaw/openclaw.json` **from a
+   running sandbox** — the thing that is broken. A genuine deadlock. Break it from the
+   other side: point the gateway route at the *recorded* model, rebuild, fix it after.
+5. `nemoclaw`'s `vllm-local` provider has **port 8000 hardcoded** and `--no-verify` does
+   not skip that probe. `port_forward_8000.py` answers it without moving anything.
+6. Then step 3, above, which no amount of configuration gets past.
+
+A check that reported a *transient* failure once and passed on every retry afterwards:
+"DNS resolution from inside a docker container failed". It is not the blocker. Both the
+default and `openshell-docker` bridges resolve `registry.npmjs.org` fine.
 
 ### Secondary agents
 
