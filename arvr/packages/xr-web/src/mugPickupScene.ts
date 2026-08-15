@@ -37,12 +37,29 @@ export interface MugVisualState {
   readonly isHeld: boolean;
 }
 
+/**
+ * Where the hand is over the table, and how high.
+ *
+ * Perspective and shadows tell you *roughly* where something is, but a
+ * reaching task needs better than roughly: you have to know whether your hand
+ * is short of the mug or past it, and a shadow under a diffuse light is too
+ * soft to read that from. A hard marker on the table directly beneath the
+ * hand separates the two questions -- the ring answers "where on the table",
+ * the drop line answers "how high" -- and both are exact.
+ */
+
 export class MugPickupScene {
   readonly root = new THREE.Group();
   /** The placeholder first, then the loaded asset. Both are base-origin, so
    * `update` can place either without knowing which it holds. */
   private mug: THREE.Object3D;
   private readonly mugMaterial: THREE.MeshStandardMaterial;
+  /** Ring on the tabletop under the hand, and a line from it up to the hand. */
+  private readonly handMarker: THREE.Mesh;
+  private readonly dropLine: THREE.Line;
+  /** The same ring under the mug, so the two can be compared directly rather
+   * than judged separately against a background. */
+  private readonly mugMarker: THREE.Mesh;
 
   constructor() {
     this.root.add(buildTable());
@@ -75,7 +92,49 @@ export class MugPickupScene {
     this.mug = placeholder;
     this.root.add(this.mug);
 
+    // Markers live at the tabletop, flat. Rendered without depth-testing
+    // against the table so they read as projections onto it rather than
+    // z-fighting decals.
+    this.mugMarker = makeMarker(0xffd479, 0.055);
+    this.root.add(this.mugMarker);
+
+    this.handMarker = makeMarker(0x61afef, 0.045);
+    this.handMarker.visible = false;
+    this.root.add(this.handMarker);
+
+    this.dropLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+      new THREE.LineDashedMaterial({ color: 0x61afef, dashSize: 0.015, gapSize: 0.012 }),
+    );
+    this.dropLine.visible = false;
+    this.root.add(this.dropLine);
+
     void this.loadMugAsset();
+  }
+
+  /**
+   * Show where the hand is over the table. Pass null when it is untracked --
+   * a stale marker is worse than none, because it reads as a hand that is
+   * still there.
+   */
+  updateHand(handStruct: Vec3 | null): void {
+    if (!handStruct) {
+      this.handMarker.visible = false;
+      this.dropLine.visible = false;
+      return;
+    }
+
+    this.handMarker.visible = true;
+    placeAtStruct(this.handMarker, [handStruct[0], handStruct[1], TABLE_Z_M + 0.0015]);
+
+    const from = structToWebxrPoint([handStruct[0], handStruct[1], TABLE_Z_M]);
+    const to = structToWebxrPoint(handStruct);
+    this.dropLine.geometry.setFromPoints([
+      new THREE.Vector3(...from),
+      new THREE.Vector3(...to),
+    ]);
+    this.dropLine.computeLineDistances();
+    this.dropLine.visible = true;
   }
 
   /** Replace the placeholder with the generated mug. Fire-and-forget: a
@@ -110,7 +169,9 @@ export class MugPickupScene {
   }
 
   update(state: MugVisualState, reachable: boolean): void {
-    placeAtStruct(this.mug, state.mugPosition());
+    const mugAt = state.mugPosition();
+    placeAtStruct(this.mug, mugAt);
+    placeAtStruct(this.mugMarker, [mugAt[0], mugAt[1], TABLE_Z_M + 0.001]);
 
     const lit = reachable || state.isHeld;
     this.mugMaterial.emissive.setHex(lit ? REACHABLE_TINT : 0x000000);
@@ -176,4 +237,31 @@ export function buildMugSceneLighting(scene: THREE.Scene): void {
   cam.left = -1.2; cam.right = 1.2; cam.top = 1.2; cam.bottom = -1.2;
   cam.near = 0.1; cam.far = 6;
   scene.add(key);
+}
+
+/** A flat ring lying on the tabletop. Drawn as a ring rather than a disc so
+ * it never hides the surface texture it is meant to be projected onto. */
+function makeMarker(color: number, radius: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.RingGeometry(radius * 0.72, radius, 32),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  // The ring is authored in the XY plane; the tabletop is the XY plane in
+  // struct_world, so orienting it the same way every other struct-authored
+  // object is oriented lays it flat.
+  orientToStruct(mesh);
+  return mesh;
+}
+
+/** struct_world -> three.js, for raw points that are not object placements.
+ * Mirrors adapter.ts's structToWebxr; kept local because this is the only
+ * place in this module that needs a bare point rather than an object move. */
+function structToWebxrPoint([x, y, z]: Vec3): [number, number, number] {
+  return [-y, z, -x];
 }

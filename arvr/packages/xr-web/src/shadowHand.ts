@@ -97,6 +97,12 @@ export class ShadowHand {
     for (const name of ALL_JOINT_NAMES) {
       const mesh = new THREE.Mesh(sphereGeometry, this.material);
       mesh.visible = false;
+      // A hand that casts no shadow gives the eye nothing to locate it with
+      // in depth. The scene is genuinely 3D and the camera genuinely
+      // perspective, but perspective alone is a weak cue for an object with
+      // no familiar size on screen -- the shadow is what tells you the hand
+      // is over the table rather than in front of it.
+      mesh.castShadow = true;
       this.joints.set(name, mesh);
       this.root.add(mesh);
     }

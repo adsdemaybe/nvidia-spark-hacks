@@ -379,6 +379,10 @@ function onHandPair(pair: HandPair): void {
     }
   }
 
+  // Feed the ground marker whichever hand is nearest the mug -- that is the
+  // one the demonstrator is aiming with.
+  mugScene.updateHand(handPosition ?? null);
+
   const now = performance.now();
   const dt = lastFrameMs === undefined ? 1 / 30 : (now - lastFrameMs) / 1000;
   lastFrameMs = now;
