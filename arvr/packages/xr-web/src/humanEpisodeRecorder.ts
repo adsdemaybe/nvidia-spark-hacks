@@ -17,7 +17,23 @@ import type { HandFrame } from "./hands";
 import { toWireHandFrame } from "./liveRetargetSession";
 
 export type HandProviderKind = "openxr" | "phone" | "mock" | "webcam";
-export type HumanEpisodeEventType = "pinch" | "release" | "contact" | "task_start" | "task_finish";
+
+/** Mirrors ar_contracts.HumanEventType. The last six are the ball-sorting
+ * vocabulary added in Round 10 -- an additive widening, so every episode
+ * recorded before it still validates. See the Python contract for why they
+ * could not be folded into the original five. */
+export type HumanEpisodeEventType =
+  | "pinch"
+  | "release"
+  | "contact"
+  | "task_start"
+  | "task_finish"
+  | "grasp_start"
+  | "grasp_end"
+  | "ball_enter_basket"
+  | "wrong_basket"
+  | "sort_complete"
+  | "tracking_lost";
 
 export interface HumanEpisodeRecorderOptions {
   taskId: string;
@@ -29,12 +45,19 @@ export interface HumanEpisodeRecorderOptions {
 export interface HumanEpisodeEvent {
   type: HumanEpisodeEventType;
   timestamp_ns: number;
+  /** Which object the event concerns. Absent for hand-only events. */
+  object_id?: string;
+  /** Which container it went into. Absent unless the event is about one. */
+  container_id?: string;
 }
 
 export interface ObjectStateCapture {
   id: string;
   position_m: [number, number, number];
   orientation_xyzw?: [number, number, number, number];
+  /** Set when object poses are recorded as a time series (the sort task),
+   * absent for a single end-of-episode snapshot (the button task). */
+  timestamp_ns?: number;
 }
 
 export interface HumanEpisodeMetadata {
@@ -115,9 +138,16 @@ export class HumanEpisodeRecorder {
     this.objectStateBuffer.push(state);
   }
 
-  markEvent(type: HumanEpisodeEventType, timestampNs: number): void {
+  markEvent(
+    type: HumanEpisodeEventType,
+    timestampNs: number,
+    about?: { objectId?: string; containerId?: string },
+  ): void {
     if (!this.recording) return;
-    this.eventBuffer.push({ type, timestamp_ns: timestampNs });
+    const event: HumanEpisodeEvent = { type, timestamp_ns: timestampNs };
+    if (about?.objectId) event.object_id = about.objectId;
+    if (about?.containerId) event.container_id = about.containerId;
+    this.eventBuffer.push(event);
   }
 
   /** Abandon the take. Nothing half-saved -- a partial demo is not data. */

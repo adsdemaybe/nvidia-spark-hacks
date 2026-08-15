@@ -28,12 +28,42 @@ from .hand_frame import HandFrame, HandSourceDevice
 from .twin_state import ObjectState
 
 HumanEpisodeStatus = Literal["recorded", "normalized", "retargeted", "verified"]
-HumanEventType = Literal["pinch", "release", "contact", "task_start", "task_finish"]
+
+# ADDITIVE CONTRACT CHANGE (needs team sign-off, see arvr/STATE.md Round 10).
+#
+# The first five values are the original vocabulary and are unchanged, so
+# every episode already recorded still validates and every existing producer
+# and consumer keeps working. The six after them are what the ball-sorting
+# task actually does, and there is no honest way to express them in the old
+# set: mapping "the red ball landed in the blue basket" onto "contact" would
+# throw away the one fact the episode exists to record. A task predicate that
+# cannot be reconstructed from the event stream is not training data.
+HumanEventType = Literal[
+    "pinch",
+    "release",
+    "contact",
+    "task_start",
+    "task_finish",
+    # Ball-sorting (Quest teleop spec sections 17, 27).
+    "grasp_start",
+    "grasp_end",
+    "ball_enter_basket",
+    "wrong_basket",
+    "sort_complete",
+    "tracking_lost",
+]
 
 
 class HumanEpisodeEvent(FrozenModel):
     type: HumanEventType
     timestamp_ns: TimestampNs
+    # Which object and container the event concerns. Optional because the
+    # original five event types are about the hand, not about a named object
+    # -- a "pinch" has nothing to name. A sorting event is meaningless
+    # without them: "ball_enter_basket" has to say which ball and which
+    # basket or the predicate cannot be rebuilt from the record.
+    object_id: str | None = None
+    container_id: str | None = None
 
 
 class HumanEpisodeMetadata(FrozenModel):

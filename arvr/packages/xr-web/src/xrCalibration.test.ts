@@ -6,9 +6,11 @@ import {
   ANCHOR_ERROR_LIMIT_M,
   CALIBRATION_ANCHORS,
   XrCalibration,
+  anchorSeparationM,
   composeQuaternions,
   invertAlignment,
   yawQuaternion,
+  type CalibrationAnchor,
 } from "./xrCalibration";
 import type { Quat, Vec3 } from "./contracts";
 
@@ -135,6 +137,42 @@ describe("XrCalibration anchor capture", () => {
     expect(cal.isCalibrated).toBe(false);
     expect(cal.anchorsCaptured).toBe(0);
     expect(cal.anchorErrorM).toBeUndefined();
+  });
+});
+
+describe("XrCalibration with scene-specific anchors", () => {
+  const CUSTOM: CalibrationAnchor[] = [
+    { structPosition: [0, 0, 0], label: "BASE", prompt: "base" },
+    { structPosition: [0.28, 0.17, 0.14], label: "RED BASKET", prompt: "red basket" },
+  ];
+
+  it("prompts for the anchors it was given, not the default ones", () => {
+    const cal = new XrCalibration(CUSTOM);
+    expect(cal.nextAnchor?.label).toBe("BASE");
+    cal.captureAnchor([0, 0, 0]);
+    expect(cal.nextAnchor?.label).toBe("RED BASKET");
+  });
+
+  it("solves against the custom anchors", () => {
+    const cal = new XrCalibration(CUSTOM);
+    for (const anchor of CUSTOM) {
+      cal.captureAnchor(structPointToWebxrRoom(anchor.structPosition, KNOWN));
+    }
+
+    expect(cal.isCalibrated).toBe(true);
+    expect(cal.anchorErrorM).toBeLessThan(1e-6);
+  });
+
+  it("reports the custom pair's real separation", () => {
+    // A scene that reused the button task's 38cm would tell the human to
+    // place two points at the wrong distance and then reject them for it.
+    expect(anchorSeparationM(CUSTOM)).toBeCloseTo(Math.hypot(0.28, 0.17, 0.14), 9);
+    expect(anchorSeparationM(CUSTOM)).not.toBeCloseTo(anchorSeparationM(), 3);
+  });
+
+  it("refuses a set that is not exactly two anchors", () => {
+    expect(() => new XrCalibration([CUSTOM[0]!])).toThrow(/exactly two/);
+    expect(() => new XrCalibration([...CUSTOM, CUSTOM[0]!])).toThrow(/exactly two/);
   });
 });
 

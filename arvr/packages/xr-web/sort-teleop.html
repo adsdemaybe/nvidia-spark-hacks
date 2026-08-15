@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STRUCT — Sort Teleop</title>
+    <style>
+      :root {
+        --bg: #14171c;
+        --panel: #1d2129;
+        --ink: #e8eaed;
+        --muted: #9aa0a6;
+        --accent: #00d4aa;
+        --warn: #ffb347;
+        --bad: #e06c75;
+        --line: #2a2f3a;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; }
+
+      .hud { position: fixed; pointer-events: none; }
+      .hud * { pointer-events: auto; }
+
+      #selectors { top: 16px; left: 16px; display: flex; gap: 10px; flex-wrap: wrap;
+        max-width: min(70vw, 700px); }
+      #selectors label { display: flex; flex-direction: column; gap: 4px; color: var(--muted);
+        font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+      #selectors select { background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+        padding: 6px 8px; border-radius: 6px; font: inherit; }
+
+      #status { top: 16px; right: 16px; text-align: right; max-width: 380px; }
+      #calibration { display: inline-block; padding: 6px 12px; border-radius: 6px;
+        border: 1px solid var(--warn); color: var(--warn); letter-spacing: .06em; }
+      #calibration[data-calibrated="true"] { border-color: var(--accent); color: var(--accent); }
+
+      #score { margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end; }
+      #score span { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line);
+        background: var(--panel); letter-spacing: .06em; font-weight: 600; }
+      #score .red { border-color: var(--bad); color: var(--bad); }
+      #score .blue { border-color: #61afef; color: #61afef; }
+      #score .done { border-color: var(--accent); color: var(--accent); }
+
+      #readout { margin-top: 10px; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 6px; padding: 10px 12px; color: var(--muted); text-align: left;
+        white-space: pre-wrap; overflow-wrap: anywhere; }
+
+      #controls { bottom: 20px; left: 16px; display: flex; gap: 6px; align-items: center;
+        max-width: min(70vw, 700px); flex-wrap: wrap; }
+      #controls button {
+        background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+        padding: 9px 16px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600;
+      }
+      #controls button:disabled { opacity: .35; cursor: default; }
+      #controls .rec { border-color: var(--bad); color: var(--bad); }
+      #controls .accepted { border-color: var(--accent); color: var(--accent); }
+
+      #webcam-panel { bottom: 20px; right: 16px; display: none; flex-direction: column;
+        gap: 6px; align-items: flex-end; }
+      #webcam-panel.active { display: flex; }
+      #webcam-panel video { width: 320px; max-width: 32vw; border-radius: 6px;
+        border: 1px solid var(--line); background: #000; transform: scaleX(-1); }
+      #webcam-panel .label { font-size: 11px; letter-spacing: .06em; color: var(--muted);
+        text-transform: uppercase; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div class="hud" id="selectors"></div>
+
+    <div class="hud" id="status">
+      <span id="calibration" data-calibrated="false">NOT CALIBRATED</span>
+      <div id="score"></div>
+      <div id="readout">loading…</div>
+    </div>
+
+    <div class="hud" id="controls"></div>
+
+    <div class="hud" id="webcam-panel">
+      <span class="label">webcam</span>
+    </div>
+
+    <script type="module" src="/src/sortTeleopMain.ts"></script>
+  </body>
+</html>

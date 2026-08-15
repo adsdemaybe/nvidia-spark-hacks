@@ -12,8 +12,11 @@ import pytest
 from ar_contracts import (
     AssetPart,
     HandFrame,
+    HumanEpisodeEvent,
     HumanEpisodeMetadata,
     InteractableAsset,
+    InteractionPhase,
+    ObjectState,
     RobotEpisodeMetadata,
     VerificationChecks,
 )
@@ -186,3 +189,81 @@ def test_robot_episode_metadata_round_trips_with_full_provenance():
     again = RobotEpisodeMetadata.model_validate_json(metadata.model_dump_json())
     assert again == metadata
     assert again.asset_ids == ("button_01",)
+
+
+# ---------------------------------------------------------------------------
+# Round 10's additive contract extensions (ball sorting).
+#
+# These exist to prove the additions are additive. Every one of them is a
+# widened Literal or a new optional field, so the gate they have to pass is
+# not "the new thing works" but "nothing that validated before stopped
+# validating".
+# ---------------------------------------------------------------------------
+
+
+def test_original_human_event_vocabulary_still_validates():
+    for event_type in ("pinch", "release", "contact", "task_start", "task_finish"):
+        event = HumanEpisodeEvent.model_validate(
+            {"type": event_type, "timestamp_ns": 1_700_000_000_000_000_000}
+        )
+        assert event.type == event_type
+        # The new fields are optional and stay absent for hand-only events.
+        assert event.object_id is None
+        assert event.container_id is None
+
+
+def test_sorting_events_carry_the_object_and_container_they_concern():
+    event = HumanEpisodeEvent.model_validate(
+        {
+            "type": "ball_enter_basket",
+            "timestamp_ns": 1_700_000_000_000_000_000,
+            "object_id": "red_ball_0",
+            "container_id": "red_basket",
+        }
+    )
+    assert event.object_id == "red_ball_0"
+    assert event.container_id == "red_basket"
+    assert HumanEpisodeEvent.model_validate_json(event.model_dump_json()) == event
+
+
+def test_unknown_human_event_type_is_still_rejected():
+    with pytest.raises(ValidationError):
+        HumanEpisodeEvent.model_validate({"type": "teleported", "timestamp_ns": 1})
+
+
+def test_object_state_without_a_timestamp_still_validates():
+    state = ObjectState.model_validate({"id": "bin", "position_m": [0.6, -0.7, 0.0]})
+    assert state.timestamp_ns is None
+    assert state.orientation_xyzw == (0.0, 0.0, 0.0, 1.0)
+
+
+def test_object_state_carries_a_timestamp_when_recorded_as_a_time_series():
+    state = ObjectState.model_validate(
+        {
+            "id": "red_ball_0",
+            "position_m": [0.19, 0.07, 0.17],
+            "timestamp_ns": 1_700_000_000_000_000_000,
+        }
+    )
+    assert state.timestamp_ns == 1_700_000_000_000_000_000
+    assert ObjectState.model_validate_json(state.model_dump_json()) == state
+
+
+def test_original_interaction_phases_still_validate():
+    for phase_type in ("approach", "contact", "press", "pull", "retract", "grasp", "release"):
+        phase = InteractionPhase.model_validate({"type": phase_type})
+        assert phase.type == phase_type
+        assert phase.timestamp_ns is None
+
+
+def test_pick_and_place_phases_validate():
+    for phase_type in ("lift", "transport", "place"):
+        phase = InteractionPhase.model_validate(
+            {"type": phase_type, "timestamp_ns": 1_700_000_000_000_000_000}
+        )
+        assert phase.type == phase_type
+
+
+def test_unknown_interaction_phase_is_still_rejected():
+    with pytest.raises(ValidationError):
+        InteractionPhase.model_validate({"type": "juggle"})

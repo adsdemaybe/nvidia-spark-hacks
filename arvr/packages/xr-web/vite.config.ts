@@ -27,6 +27,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         probe: resolve(__dirname, "probe.html"),
         spatialTeach: resolve(__dirname, "spatial-teach.html"),
+        sortTeleop: resolve(__dirname, "sort-teleop.html"),
       },
     },
   },

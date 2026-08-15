@@ -54,6 +54,16 @@ class ObjectState(FrozenModel):
     # orientation (e.g. a bin) shouldn't force a producer to invent one.
     # Reconciled during the arvr/arxr consolidation (see STATE.md).
     orientation_xyzw: OrientationXYZW = IDENTITY_QUATERNION
+    # ADDITIVE CONTRACT CHANGE (needs team sign-off, see STATE.md Round 10).
+    #
+    # Optional and defaulted, so every existing producer is unaffected: inside
+    # a TwinState the enclosing state already carries the timestamp and this
+    # stays None. A HumanEpisode is different — its object_states are a time
+    # series, one sample per frame, and a policy cannot be learned from
+    # object poses that cannot be lined up with the hand frames that moved
+    # them. Sorting six balls is the first task that records object motion at
+    # all, which is why this was not needed before.
+    timestamp_ns: TimestampNs | None = None
 
 
 class TaskState(FrozenModel):

@@ -13,8 +13,17 @@ from typing import Literal
 
 from .common import SCHEMA_VERSION, FrozenModel, SchemaVersion
 
+# ADDITIVE CONTRACT CHANGE (needs team sign-off, see arvr/STATE.md Round 10).
+#
+# The original seven are unchanged. "lift", "transport" and "place" are the
+# phases a pick-and-place demonstration actually has, and the button task
+# never needed them because pressing a button involves no carrying. Folding
+# a transport into "approach" would make the object-relative trajectory --
+# the thing that makes a demonstration reusable under a different scene
+# layout -- unrecoverable from the IR.
 InteractionPhaseType = Literal[
     "approach", "contact", "press", "pull", "retract", "grasp", "release",
+    "lift", "transport", "place",
 ]
 
 
@@ -23,6 +32,10 @@ class InteractionPhase(FrozenModel):
     target_position_m: tuple[float, float, float] | None = None
     axis: tuple[float, float, float] | None = None
     distance_m: float | None = None
+    # When this phase began, so the IR can be lined up against the raw
+    # HumanEpisode it was derived from. Optional: the button task's IR is a
+    # plan (approach here, press this far), not a timeline.
+    timestamp_ns: int | None = None
 
 
 class InteractionIR(FrozenModel):

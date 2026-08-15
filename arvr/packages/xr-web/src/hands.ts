@@ -194,8 +194,12 @@ export class PinchLatch {
     return this.engaged;
   }
 
-  /** True exactly on the frame the pinch closes. A lost hand releases. */
-  update(hand: HandFrame | null): boolean {
+  /** True exactly on the frame the pinch closes. A lost hand releases.
+   *
+   * Takes anything carrying a gripper reading, not a full `HandFrame`, so
+   * the same latch works on an already-converted struct_world frame without
+   * a second copy of the hysteresis. */
+  update(hand: { gripper: number } | null): boolean {
     if (!hand) {
       this.engaged = false;
       return false;

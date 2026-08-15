@@ -87,13 +87,24 @@ export const CALIBRATION_ANCHORS: readonly CalibrationAnchor[] = [
   },
 ];
 
-/** How far apart the two anchors really are, in meters. Surfaced so the HUD
- * can tell the human the distance to aim for instead of making them guess. */
-export const ANCHOR_SEPARATION_M = Math.hypot(
-  CALIBRATION_ANCHORS[1]!.structPosition[0] - CALIBRATION_ANCHORS[0]!.structPosition[0],
-  CALIBRATION_ANCHORS[1]!.structPosition[1] - CALIBRATION_ANCHORS[0]!.structPosition[1],
-  CALIBRATION_ANCHORS[1]!.structPosition[2] - CALIBRATION_ANCHORS[0]!.structPosition[2],
-);
+/** How far apart a pair of anchors really are, in meters. Surfaced so the
+ * HUD can tell the human the distance to aim for instead of making them
+ * guess -- and so a scene that defines its own anchors gets the right
+ * number rather than the button task's. */
+export function anchorSeparationM(
+  anchors: readonly CalibrationAnchor[] = CALIBRATION_ANCHORS,
+): number {
+  const [a, b] = anchors;
+  if (!a || !b) throw new Error("calibration needs exactly two anchors");
+  return Math.hypot(
+    b.structPosition[0] - a.structPosition[0],
+    b.structPosition[1] - a.structPosition[1],
+    b.structPosition[2] - a.structPosition[2],
+  );
+}
+
+/** The button task's own separation, kept as a constant for its call sites. */
+export const ANCHOR_SEPARATION_M = anchorSeparationM(CALIBRATION_ANCHORS);
 
 /** Where three.js should put the scene root, in WebXR space. */
 export interface ScenePlacement {
@@ -112,13 +123,22 @@ export class XrCalibration {
   alignment: Alignment | undefined;
   anchorErrorM: number | undefined;
 
+  /** Which two points this scene calibrates against. Defaults to the button
+   * task's; the sort scene passes its own, because the landmarks a human can
+   * point at differ per scene while the solve does not. */
+  constructor(readonly anchors: readonly CalibrationAnchor[] = CALIBRATION_ANCHORS) {
+    if (anchors.length !== 2) {
+      throw new Error(`calibration needs exactly two anchors, got ${anchors.length}`);
+    }
+  }
+
   get anchorsCaptured(): number {
     return this.captured.length;
   }
 
   /** The anchor the human should place next, or undefined when done. */
   get nextAnchor(): CalibrationAnchor | undefined {
-    return CALIBRATION_ANCHORS[this.captured.length];
+    return this.anchors[this.captured.length];
   }
 
   /** Both anchors placed AND the layout actually matches the robot's scale. */
@@ -129,9 +149,9 @@ export class XrCalibration {
   /** Record one pinch. Extra captures past the last anchor are ignored, so a
    * doubled pinch event cannot silently reopen a finished calibration. */
   captureAnchor(webxrPosition: Vec3): void {
-    if (this.captured.length >= CALIBRATION_ANCHORS.length) return;
+    if (this.captured.length >= this.anchors.length) return;
     this.captured.push([...webxrPosition] as Vec3);
-    if (this.captured.length === CALIBRATION_ANCHORS.length) this.solve();
+    if (this.captured.length === this.anchors.length) this.solve();
   }
 
   reset(): void {
@@ -141,7 +161,7 @@ export class XrCalibration {
   }
 
   private solve(): void {
-    const anchors: Anchor[] = CALIBRATION_ANCHORS.map((anchor, i) => ({
+    const anchors: Anchor[] = this.anchors.map((anchor, i) => ({
       structPosition: anchor.structPosition,
       // The pinch arrives in WebXR space; alignment.ts works in the Z-up
       // struct convention, so convert before solving rather than teaching
