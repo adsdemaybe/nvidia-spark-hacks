@@ -30,7 +30,7 @@ export const LAYOUT: Record<string, Vec3> = {
   table: [0.4, 0.0, 0.0],
   cube: [0.3, 0.1, 0.78],
   bin: [0.6, -0.7, 0.0],
-  robot: [-0.5, 0.0, 0.0],
+  robot: [0.15, -0.7, 0.0], // matches ROBOT_BASE in arxr-sim/scene_mjcf.py
 };
 
 const PALETTE: Record<string, number> = {

@@ -37,29 +37,51 @@ def scene_from_path(path: str) -> str | None:
     return None
 
 
-async def publish(connection, hz: float) -> None:
+async def publish(connection, hz: float, source_kind: str = "fixture") -> None:
     scene_id = scene_from_path(connection.request.path)
     if scene_id is None:
         await connection.close(code=4004, reason="expected /twin/{scene_id}")
         return
 
-    source = MockTwinSource(scene_id=scene_id, hz=hz)
     period = 1.0 / hz
-    log.info("client attached to scene %s at %.1f Hz", scene_id, hz)
+    log.info("client attached to scene %s at %.1f Hz (%s)", scene_id, hz, source_kind)
+
+    if source_kind == "mujoco":
+        # Imported lazily: arxr-sim pulls in MuJoCo, and the fixture path must
+        # stay usable on a machine that cannot install it.
+        from arxr.sim.director import SweepDirector
+        from arxr.sim.twin import MujocoTwinSource
+
+        sim = MujocoTwinSource(scene_id=scene_id, control_hz=hz)
+        director = SweepDirector()
+        emit = _mujoco_emitter(sim, director, hz)
+    else:
+        fixture = MockTwinSource(scene_id=scene_id, hz=hz)
+        emit = lambda tick: fixture.at_tick(tick)  # noqa: E731
 
     tick = 0
     try:
         while True:
-            await connection.send(source.at_tick(tick).model_dump_json())
+            await connection.send(emit(tick).model_dump_json())
             tick += 1
             await asyncio.sleep(period)
     except websockets.ConnectionClosed:
         log.info("client detached from scene %s after %d frames", scene_id, tick)
 
 
-async def serve(host: str, port: int, hz: float) -> None:
-    async with websockets.serve(lambda c: publish(c, hz), host, port):
-        log.info("struct-ar-twin (mock) on ws://%s:%d/twin/{scene_id}", host, port)
+def _mujoco_emitter(sim, director, hz: float):
+    def emit(tick: int):
+        sim.command(director.targets_at(tick / hz))
+        return sim.step()
+
+    return emit
+
+
+async def serve(host: str, port: int, hz: float, source_kind: str) -> None:
+    async with websockets.serve(lambda c: publish(c, hz, source_kind), host, port):
+        log.info(
+            "struct-ar-twin (%s) on ws://%s:%d/twin/{scene_id}", source_kind, host, port
+        )
         await asyncio.Future()  # run until cancelled
 
 
@@ -69,11 +91,15 @@ def main() -> None:
                         help=f"publish rate (default {DEFAULT_HZ}; spec suggests 20-60)")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--source", choices=("fixture", "mujoco"), default="fixture",
+        help="fixture replays canned frames; mujoco runs local rigid-body physics",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(serve(args.host, args.port, args.hz))
+        asyncio.run(serve(args.host, args.port, args.hz, args.source))
 
 
 if __name__ == "__main__":

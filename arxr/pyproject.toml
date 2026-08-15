@@ -5,6 +5,7 @@ description = "STRUCT AR/XR spatial layer: place, teach, replay, follow, test, c
 requires-python = ">=3.11"
 dependencies = [
     "arxr-core",
+    "arxr-sim",
 ]
 
 [tool.uv.workspace]
@@ -15,6 +16,7 @@ exclude = ["packages/xr-web"]
 
 [tool.uv.sources]
 arxr-core = { workspace = true }
+arxr-sim = { workspace = true }
 
 [dependency-groups]
 dev = [
