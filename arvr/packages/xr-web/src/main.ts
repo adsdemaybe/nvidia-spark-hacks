@@ -50,6 +50,11 @@ type Mode = (typeof MODES)[number];
 // server for REST (episodes/scenes/corrections) and the twin stream.
 const API_BASE = "http://127.0.0.1:8000";
 const TWIN_WS = "ws://127.0.0.1:8000/twin/demo_room";
+// packages/isaac-bridge/run_twin_server.py, reached through a local SSH
+// tunnel to the Spark (see STATE.md) -- not through ar_backend, since
+// isaac-bridge is a standalone process for now (see its README's "Known
+// gaps"). Same wire shape as TWIN_WS's ar_sim-backed stream either way.
+const ISAAC_TWIN_WS = "ws://127.0.0.1:8766/twin/demo_room";
 const FIXTURE_TWIN = `${FIXTURES_BASE}fake_twin_state.jsonl`;
 
 const app = document.getElementById("app")!;
@@ -464,6 +469,7 @@ function renderControls(): void {
     add("+0.25 m", () => { followDistance += 0.25; });
   } else if (mode === "TWIN") {
     add("LIVE SERVER", () => void connectTwin("live"));
+    add("ISAAC LIVE", () => void connectTwin("isaac"));
     add("FIXTURE STREAM", () => void connectTwin("fixture"));
     if (anchorStep === "idle") {
       add("SET ANCHORS", () => {
@@ -493,12 +499,12 @@ function renderControls(): void {
 }
 
 // -------------------------------------------------------------------- twin --
-async function connectTwin(kind: "live" | "fixture"): Promise<void> {
+async function connectTwin(kind: "live" | "isaac" | "fixture"): Promise<void> {
   provider?.stop();
   provider =
-    kind === "live"
-      ? new WebSocketTwinStateProvider(TWIN_WS)
-      : await MockTwinStateProvider.load(FIXTURE_TWIN);
+    kind === "live" ? new WebSocketTwinStateProvider(TWIN_WS)
+    : kind === "isaac" ? new WebSocketTwinStateProvider(ISAAC_TWIN_WS, "LIVE SIMULATION STATE — ISAAC SIM")
+    : await MockTwinStateProvider.load(FIXTURE_TWIN);
 
   provider.start(
     (state) => { latestTwin = state; },

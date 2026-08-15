@@ -77,6 +77,8 @@ from isaacsim.core.api.objects import DynamicCuboid  # noqa: E402
 DEFAULT_SCENE_ID = "demo_room"
 NUM_JOINTS = 6
 IDLE_JOINTS = tuple(0.0 for _ in range(NUM_JOINTS))
+CUBE_SPAWN_POSITION = np.array([0.3, 0.1, 0.7])
+RESET_EVERY_S = 4.0
 
 world = World(physics_dt=1.0 / args.hz, rendering_dt=1.0 / args.hz)
 world.scene.add_default_ground_plane()
@@ -87,7 +89,7 @@ cube = world.scene.add(
     DynamicCuboid(
         prim_path="/World/cube_01",
         name="cube_01",
-        position=np.array([0.3, 0.1, 0.7]),
+        position=CUBE_SPAWN_POSITION,
         scale=np.array([0.08, 0.08, 0.08]),
         color=np.array([0.2, 0.6, 1.0]),
     ),
@@ -141,8 +143,17 @@ async def handler(websocket) -> None:
 
 async def sim_loop(hz: float, max_frames: int) -> None:
     period = 1.0 / hz
+    reset_every_frames = max(1, round(RESET_EVERY_S * hz))
     frame = 0
     while max_frames == 0 or frame < max_frames:
+        if frame > 0 and frame % reset_every_frames == 0:
+            # Drop it again -- so LIVE viewing shows repeated real falls
+            # instead of one fall followed by a static settled cube, same
+            # "loop so the demo runs indefinitely" idea as ar_sim's /twin
+            # route (see ../ar-backend/src/ar_backend/twin.py).
+            cube.set_world_pose(position=CUBE_SPAWN_POSITION)
+            cube.set_linear_velocity(np.zeros(3))
+            cube.set_angular_velocity(np.zeros(3))
         world.step(render=False)
         if clients:
             payload = real_state(DEFAULT_SCENE_ID).model_dump_json()

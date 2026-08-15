@@ -84,13 +84,16 @@ export class WebSocketTwinStateProvider implements TwinStateProvider {
   private socket: WebSocket | undefined;
   private onProvenance: ProvenanceListener | undefined;
 
-  constructor(private readonly url: string) {}
+  constructor(
+    private readonly url: string,
+    private readonly connectedLabel = "LIVE SIMULATION STATE",
+  ) {}
 
   start(onState: TwinListener, onProvenance?: ProvenanceListener): void {
     this.onProvenance = onProvenance;
     this.socket = new WebSocket(this.url);
 
-    this.socket.onopen = () => this.setProvenance("LIVE SIMULATION STATE", true, true);
+    this.socket.onopen = () => this.setProvenance(this.connectedLabel, true, true);
     this.socket.onclose = () => this.setProvenance("SIMULATION DISCONNECTED", true, false);
     this.socket.onerror = () => this.setProvenance("SIMULATION UNREACHABLE", true, false);
     this.socket.onmessage = (event) => {
