@@ -9,12 +9,16 @@ against the ABCs re-exported here.
 from .asset_provider import AssetProvider
 from .fixture_asset_provider import FixtureAssetProvider, UnknownAssetError
 from .fixture_robot_provider import FixtureRobotProvider, UnknownRobotError
+from .hand_provider import HandProvider
+from .mock_hand_provider import MockHandProvider
 from .robot_provider import RobotProvider, get_configured_robot_provider
 
 __all__ = [
     "AssetProvider",
     "FixtureAssetProvider",
     "FixtureRobotProvider",
+    "HandProvider",
+    "MockHandProvider",
     "RobotProvider",
     "UnknownAssetError",
     "UnknownRobotError",
