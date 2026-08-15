@@ -271,9 +271,19 @@ export function deriveBoardReport(circuitJson: El[], opts: DeriveOptions = {}): 
       connector_edges.push({
         ref,
         edge,
-        // Position along the wall the connector sits on.
-        x_mm: edge === "north" || edge === "south" ? x : y,
-        y_mm: edge === "north" || edge === "south" ? y : x,
+        // Plain board coordinates. These used to be swapped for east/west so that
+        // x_mm always held "position along the wall", but the CAD side reads the
+        // pair as literal board coordinates (`cad_api.geometry.port_cutouts_for`
+        // adds off_x to x_mm and off_y to y_mm), so the swap put every east/west
+        // cutout at the connector's x on the y axis. On rover-power that placed
+        // J1's opening 2.5mm *below* the cavity floor plane, outside the solid:
+        // the boolean subtracted nothing and the connector stayed walled in.
+        // check_fit cannot see it — it compares edge, width and height, never
+        // position — so the two sides agreed on a cutout that did not exist.
+        x_mm: x,
+        y_mm: y,
+        // The opening's width is measured along the wall, so it is the footprint
+        // extent parallel to that wall: X for north/south, Y for east/west.
         width_mm: edge === "north" || edge === "south" ? fw : fd,
         height_mm: heightMm,
         needs_cutout: true,
