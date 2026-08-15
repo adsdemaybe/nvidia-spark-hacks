@@ -1,5 +1,18 @@
 # Resume state — 2026-08-14
 
+## ⚠ PLAN V2 IS CANONICAL (2026-08-15)
+
+docs/PLAN.md was rewritten for the v2 architecture agreed with the user:
+base-room-first (no splat-shell holes — rooms are derived from parameters),
+LiDAR-less depth-consensus scale (Depth Pro, spread-gated), ensemble roomgen
+(SpatialLM topology → RANSAC per-wall refit → evidence gates), TRELLIS →
+omni.kit.asset_converter → clamped LLM-PhysX asset chain, NuRec demoted to
+eval-twin-only, render_mode="synthetic" default. New milestones M6–M11 in
+PLAN.md §5 — M6 is still the open settle bug below; M7 (depth_anchor) and
+M8/M9 (roomgen ensemble) are the new build fronts. Reference repos:
+nerfstudio-project/gsplat, NVIDIA-Omniverse/usd-convert-gsplat.
+
+
 ## Where the build is
 
 Full pipeline implemented end-to-end (no stubs left except GPU backends):
