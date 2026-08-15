@@ -34,7 +34,7 @@ const TOOL_TINT = 0xe06c75;
  * rotation, so a caller can still orient the whole segment (the shoulder
  * column points along +Z) without the two rotations fighting.
  */
-function segment(length: number, radius: number, color: number): THREE.Mesh {
+export function segment(length: number, radius: number, color: number): THREE.Mesh {
   const geometry = new THREE.CylinderGeometry(radius, radius, length, 18);
   geometry.translate(0, length / 2, 0); // grow from the origin, not about it
   geometry.rotateZ(-Math.PI / 2); // +Y -> +X
@@ -46,7 +46,7 @@ function segment(length: number, radius: number, color: number): THREE.Mesh {
   return mesh;
 }
 
-function knuckle(radius: number): THREE.Mesh {
+export function knuckle(radius: number): THREE.Mesh {
   return new THREE.Mesh(
     new THREE.SphereGeometry(radius, 16, 12),
     new THREE.MeshStandardMaterial({ color: JOINT_TINT, roughness: 0.5, metalness: 0.3 }),
