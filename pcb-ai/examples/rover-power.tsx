@@ -39,9 +39,44 @@ export default () => (
     <resistor name="R1" resistance="100k" footprint="0603"
       pcbX={-11} pcbY={-0.5} schX={-9} schY={-2} />
 
-    {/* Bulk on the protected rail, sized for four motors starting together. */}
+    {/* Bulk on the protected rail, sized for four motors starting together.
+
+        Moved off Q1's row. At (-3, 8.5) it sat 8mm from the FET, square in its heat
+        plume, and the thermal stage measured it at 75.0°C against an 85°C part — 10°C of
+        margin on an electrolytic, whose life halves for every 10°C. It dissipates nothing
+        itself; it was simply being cooked by its neighbour.
+
+        (5, 8.5) was chosen by sweeping the position and measuring at each one:
+
+            C1        75.0°C -> 30.9°C
+            Q1       109.8°C -> 105.6°C
+            IR drop  113.4mV -> 106.7mV
+
+        The rail improving is not a coincidence. C1's loads are the fan-out headers, so
+        moving east puts the bulk nearer the centroid of J2/J3/J4 — closer to what
+        actually draws from it, which is where bulk belongs.
+
+        (6, 6) measured half a degree cooler still and was rejected: it put a via 0.038mm
+        from C3's pad, against a 0.1mm minimum. A clearance error is not worth 0.5°C.
+
+        The length limit goes 12mm -> 18mm, and that is a correction rather than a
+        relaxation to silence the warning it was producing. 470uF of electrolytic is a
+        bulk reservoir, not a decoupler: its job is holding the rail up through
+        millisecond-scale motor inrush, and over that timescale the ~15nH of an 18mm trace
+        is about 0.1mOhm — irrelevant. The tight limits belong on C2 and C3, which handle
+        the fast edges, and they keep theirs and have not moved.
+
+        Not free, and worth stating plainly: rerouting around the new C1 lengthened C2's
+        run from 13.22mm to 17.82mm against its 10mm limit, while C3's improved from
+        14.17mm to 10.97mm against its 6mm one. Moving C2 to chase that back was tried and
+        rejected — every position that fixed C2 pushed the violation onto C3, which is the
+        100nF and the part least able to afford it, and took the rail from 106.7mV to
+        146.7mV. Trading a 10uF's length for a 100nF's is the wrong direction.
+
+        So this is a net improvement, not a clean one: a large thermal win and a small rail
+        win, against a mid-frequency decoupling path that got worse. */}
     <capacitor name="C1" capacitance="470uF" footprint="1206"
-      maxDecouplingTraceLength="12mm" pcbX={-3} pcbY={8.5} schX={-4} schY={2} />
+      maxDecouplingTraceLength="18mm" pcbX={5} pcbY={8.5} schX={-4} schY={2} />
     <capacitor name="C2" capacitance="10uF" footprint="0805"
       maxDecouplingTraceLength="10mm" pcbX={-3} pcbY={0.5} schX={-4} schY={-1} />
     <capacitor name="C3" capacitance="100nF" footprint="0402"
