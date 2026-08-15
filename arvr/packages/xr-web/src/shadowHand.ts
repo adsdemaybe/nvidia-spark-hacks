@@ -14,7 +14,7 @@
  */
 
 import * as THREE from "three";
-import { HAND_JOINTS, PALM_JOINT, type HandFrame } from "./hands";
+import { HAND_JOINTS, PALM_JOINT, type HandFrame, type HandPair } from "./hands";
 
 /** Parent-chain adjacency, one entry per bone segment. Built explicitly
  * rather than derived from HAND_JOINTS's ordering, so the topology is
@@ -139,5 +139,44 @@ export class ShadowHand {
     const attribute = this.bones.geometry.getAttribute("position") as THREE.BufferAttribute;
     attribute.needsUpdate = true;
     this.bones.geometry.setDrawRange(0, segments.length * 2);
+  }
+}
+
+/**
+ * Both shadow hands, for the room-scale demo where the human manipulates
+ * with two hands rather than teleoperating one arm.
+ *
+ * Composed of two independent `ShadowHand`s rather than generalized into one
+ * class that draws N hands, because everything a single hand owns -- its
+ * joint meshes, its bone buffer, the material whose color says which hand
+ * this is -- is per-hand state that a shared implementation would have to
+ * index by handedness anyway. Two instances get that separation from the
+ * language for free, and leave `ShadowHand` exactly as the teleop pages
+ * (spatialTeachMain.ts, sortTeleopMain.ts) already use it.
+ */
+export class ShadowHands {
+  readonly root = new THREE.Group();
+  readonly left = new ShadowHand();
+  readonly right = new ShadowHand();
+
+  constructor() {
+    this.root.add(this.left.root);
+    this.root.add(this.right.root);
+  }
+
+  /**
+   * Show this frame's hands. A null slot hides that hand alone, so one hand
+   * leaving the tracking volume never blanks the other -- the failure a
+   * single visibility flag over both hands would produce, and the one a
+   * two-handed demo hits constantly as hands cross the FoV edge.
+   *
+   * The pair is passed straight through with each slot going to the matching
+   * instance and no re-inspection of `handedness`. `readBothHands` already
+   * guarantees slot and frame agree, so re-deriving the routing here would
+   * add a second place for the two to drift apart rather than a safeguard.
+   */
+  update(hands: HandPair): void {
+    this.left.update(hands.left);
+    this.right.update(hands.right);
   }
 }

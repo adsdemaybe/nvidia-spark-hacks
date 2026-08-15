@@ -11,6 +11,7 @@ import {
   pinchPoint,
   pokePoint,
   preferredInputSource,
+  readBothHands,
   wristTarget,
   type HandFrame,
   type JointPose,
@@ -103,6 +104,166 @@ describe("preferredInputSource", () => {
   it("returns undefined when nothing is tracked", () => {
     expect(preferredInputSource(session([]))).toBeUndefined();
     expect(preferredInputSource(session([inputSource("right", false)]))).toBeUndefined();
+  });
+});
+
+// Faking WebXR hand input takes three cooperating pieces: an XRHand whose
+// `get(name)` hands back a joint space, an XRFrame that turns a joint space
+// back into a pose, and a tag carried between them. The tag is what makes a
+// swap detectable -- each fake hand stamps its own `originX` onto every
+// joint it produces, so a pose's X coordinate says which input source it
+// came from and no amount of correct-looking `handedness` fields can hide a
+// hand landing in the wrong slot.
+type FakeJointSpace = { joint: string; originX: number };
+
+/** A hand whose joints all resolve, offset in X by `originX`. */
+function trackedHand(handedness: "left" | "right", originX: number): XRInputSource {
+  const hand = { get: (joint: string): FakeJointSpace => ({ joint, originX }) };
+  return { handedness, hand } as unknown as XRInputSource;
+}
+
+/** A hand input source the runtime granted but is not currently resolving
+ * joints for -- an occluded or out-of-view hand, which is the common case
+ * mid-session, not an exotic one. */
+function untrackedHand(handedness: "left" | "right"): XRInputSource {
+  const hand = { get: (): undefined => undefined };
+  return { handedness, hand } as unknown as XRInputSource;
+}
+
+function xrFrame(): XRFrame {
+  const order = [...HAND_JOINTS, "palm"];
+  return {
+    getJointPose(space: FakeJointSpace) {
+      // Spreading joints along Y keeps them distinct, so the thumb/index
+      // aperture is a real nonzero distance rather than a degenerate zero.
+      const y = order.indexOf(space.joint) * 0.01;
+      return {
+        transform: {
+          position: { x: space.originX, y, z: 0 },
+          orientation: { x: 0, y: 0, z: 0, w: 1 },
+        },
+        radius: 0.008,
+      };
+    },
+  } as unknown as XRFrame;
+}
+
+const REF_SPACE = {} as XRReferenceSpace;
+const LEFT_X = -0.25;
+const RIGHT_X = 0.25;
+
+describe("readBothHands", () => {
+  it("returns both hands when both are tracked", () => {
+    const pair = readBothHands(
+      xrFrame(),
+      session([trackedHand("left", LEFT_X), trackedHand("right", RIGHT_X)]),
+      REF_SPACE,
+    );
+
+    expect(pair.left?.handedness).toBe("left");
+    expect(pair.right?.handedness).toBe("right");
+    expect(Object.keys(pair.left!.joints).length).toBeGreaterThan(0);
+    expect(Object.keys(pair.right!.joints).length).toBeGreaterThan(0);
+  });
+
+  it("does not swap left and right, in either inputSources order", () => {
+    // The highest-value assertion in this file. `handedness` alone cannot
+    // catch a swap -- it is copied off the input source, so a swapped pair
+    // still self-reports correctly. The per-source X offset can: it proves
+    // the joints in the left slot were read from the left input source.
+    const left = trackedHand("left", LEFT_X);
+    const right = trackedHand("right", RIGHT_X);
+
+    for (const sources of [
+      [left, right],
+      [right, left],
+    ]) {
+      const pair = readBothHands(xrFrame(), session(sources), REF_SPACE);
+      expect(wristTarget(pair.left!)?.position[0]).toBe(LEFT_X);
+      expect(wristTarget(pair.right!)?.position[0]).toBe(RIGHT_X);
+    }
+  });
+
+  it("returns only the left hand when only it is tracked", () => {
+    const pair = readBothHands(
+      xrFrame(),
+      session([trackedHand("left", LEFT_X)]),
+      REF_SPACE,
+    );
+
+    expect(pair.left?.handedness).toBe("left");
+    expect(wristTarget(pair.left!)?.position[0]).toBe(LEFT_X);
+    expect(pair.right).toBeNull();
+  });
+
+  it("returns only the right hand when only it is tracked", () => {
+    const pair = readBothHands(
+      xrFrame(),
+      session([trackedHand("right", RIGHT_X)]),
+      REF_SPACE,
+    );
+
+    expect(pair.right?.handedness).toBe("right");
+    expect(wristTarget(pair.right!)?.position[0]).toBe(RIGHT_X);
+    expect(pair.left).toBeNull();
+  });
+
+  it("returns nulls, never a frame of zeros, when neither hand is tracked", () => {
+    // Zeros would retarget into a real pose at the origin and would render a
+    // hand collapsed at the play-space floor -- the exact failure readHand's
+    // null contract exists to prevent, preserved across both hands.
+    expect(readBothHands(xrFrame(), session([]), REF_SPACE)).toEqual({
+      left: null,
+      right: null,
+    });
+
+    const occluded = readBothHands(
+      xrFrame(),
+      session([untrackedHand("left"), untrackedHand("right")]),
+      REF_SPACE,
+    );
+    expect(occluded).toEqual({ left: null, right: null });
+  });
+
+  it("keeps the tracked hand when the other one drops out", () => {
+    const pair = readBothHands(
+      xrFrame(),
+      session([untrackedHand("left"), trackedHand("right", RIGHT_X)]),
+      REF_SPACE,
+    );
+
+    expect(pair.left).toBeNull();
+    expect(wristTarget(pair.right!)?.position[0]).toBe(RIGHT_X);
+  });
+
+  it("ignores an input source with no hand (e.g. a tracked controller)", () => {
+    // A controller reports a handedness of its own, so an implementation
+    // that bucketed by handedness before checking for `hand` would let a
+    // held controller occupy the slot its hand belongs in.
+    const controller = inputSource("left", false);
+    const pair = readBothHands(
+      xrFrame(),
+      session([controller, trackedHand("right", RIGHT_X)]),
+      REF_SPACE,
+    );
+
+    expect(pair.left).toBeNull();
+    expect(pair.right?.handedness).toBe("right");
+  });
+
+  it("derives the same gripper reading readHand would", () => {
+    // readBothHands must be a router, not a second implementation: if it
+    // ever stopped delegating to readHand, the derived fields are where the
+    // divergence would first show up.
+    const pair = readBothHands(
+      xrFrame(),
+      session([trackedHand("right", RIGHT_X)]),
+      REF_SPACE,
+    );
+    const hand = pair.right!;
+
+    expect(hand.pinchApertureM).not.toBeNull();
+    expect(hand.gripper).toBe(gripperFromAperture(hand.pinchApertureM));
   });
 });
 

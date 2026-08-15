@@ -107,14 +107,25 @@ export interface StartedSession {
  * runtime supports it. Passing one is a request, never an assumption -- read
  * the returned `domOverlay` to find out whether it was honored.
  */
-export async function startBestSession(domOverlayRoot?: Element): Promise<StartedSession> {
+export async function startBestSession(
+  domOverlayRoot?: Element,
+  prefer: "ar" | "vr" = "ar",
+): Promise<StartedSession> {
   const xr = navigator.xr;
   if (!xr) throw new Error("WebXR unavailable");
 
   const caps = await detectCapabilities();
   if (caps.best === "flat") throw new Error("no immersive session available");
 
-  const kind = caps.best;
+  // AR-first is the master plan's locked decision for the robot work, where
+  // seeing the real desk the robot stands on is the point. A room-scale scene
+  // with its own floor and horizon wants the opposite: passthrough would show
+  // the actual room *through* a floor that is supposed to be under your feet,
+  // and on a Quest 2 that passthrough is low-resolution greyscale anyway.
+  // So the caller says which it wants, and this still degrades to whatever is
+  // actually available rather than failing.
+  const kind: Exclude<SessionKind, "flat"> =
+    prefer === "vr" ? (caps.vr ? "immersive-vr" : "immersive-ar") : caps.best;
   const init: XRSessionInit = {
     requiredFeatures: kind === "immersive-ar" ? AR_REQUIRED : VR_REQUIRED,
     optionalFeatures: kind === "immersive-ar" ? AR_OPTIONAL : VR_OPTIONAL,

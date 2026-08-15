@@ -143,6 +143,72 @@ export function readHand(
   };
 }
 
+/**
+ * Both hands for one frame, each slot null when that hand is untracked.
+ *
+ * A pair rather than an array because the two hands are not interchangeable
+ * to any caller that consumes them: a renderer colors them differently and a
+ * room-scale interaction asks "is the left hand doing X" by name. An array
+ * would push every caller into re-deriving the same `find(h => h.handedness
+ * === "left")` lookup, which is exactly where a left/right mix-up gets
+ * introduced.
+ */
+export interface HandPair {
+  left: HandFrame | null;
+  right: HandFrame | null;
+}
+
+/**
+ * Read every tracked hand for this frame, bucketed by handedness.
+ *
+ * This is the *other* half of the story `preferredInputSource` tells. That
+ * function exists because the robot-teleop path -- recorder, ArmRetargeter,
+ * LiveRetargetSession -- drives a single end-effector, so feeding it both
+ * hands would interleave unrelated targets into one buffer. That reasoning
+ * is untouched and still governs teleop. But a room-scale interaction (the
+ * ball-pit demo) has no end-effector at all: the hands are the manipulators,
+ * both of them, and dropping one is the bug rather than the fix. So this
+ * reads both and keeps them separate, instead of relaxing the single-hand
+ * rule that teleop still depends on.
+ *
+ * Each hand goes through the same `readHand` as the single-hand path, so an
+ * untracked hand stays null here for the same reason it does there: zeros
+ * would be indistinguishable from a hand resting at the origin.
+ */
+export function readBothHands(
+  frame: XRFrame,
+  session: XRSession,
+  referenceSpace: XRReferenceSpace,
+): HandPair {
+  const pair: HandPair = { left: null, right: null };
+
+  for (const source of session.inputSources) {
+    // Controllers and other non-hand input sources share `inputSources` with
+    // hands, and a controller reports a handedness too -- skipping them here
+    // rather than trusting `readHand`'s null keeps a held controller from
+    // ever occupying the slot its hand belongs in.
+    if (!source.hand) continue;
+
+    const hand = readHand(frame, source, referenceSpace);
+    if (!hand) continue;
+
+    // Bucket on the frame's own `handedness` field, never on the input
+    // source's. They are derived from the same value, but routing by the
+    // frame's field makes `pair.left.handedness === "left"` true by
+    // construction, so a slot can never disagree with the frame sitting in
+    // it -- a swap would have to be a deliberate edit, not an oversight.
+    // `readHand` maps anything not "left" to "right", so a source reporting
+    // handedness "none" lands in `right` consistently in both places.
+    if (hand.handedness === "left") {
+      pair.left ??= hand;
+    } else {
+      pair.right ??= hand;
+    }
+  }
+
+  return pair;
+}
+
 /** The 6-DoF end-effector target: the wrist pose (§8 datapipe step 1). */
 export function wristTarget(hand: HandFrame): JointPose | null {
   return hand.joints["wrist"] ?? null;

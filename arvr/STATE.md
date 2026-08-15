@@ -19,10 +19,159 @@
    `webcam` (Round 6).
 
 The old app was deliberately left running rather than torn out — see Round
-5's "why two apps" note. Combined test count: **66 passed / 12 skipped
-Python, 165/165 vitest** as of Round 9, both suites green, lint clean.
-Rounds 5-8 are on `feat/arvr-integration`; Round 9 (the headset path) is on
-`feat/openxr-hand-provider`.
+5's "why two apps" note. Combined test count: **74 passed / 12 skipped
+Python, 233/233 vitest** as of Round 10, both suites green, lint clean.
+Rounds 5-8 are on `feat/arvr-integration`; Rounds 9-10 (the headset path and
+the sorting demo) are on `feat/openxr-hand-provider`.
+
+### Round 10: red/blue ball sorting as the immersive Quest demo
+
+Branch `feat/openxr-hand-provider`, on top of Round 9. The button task is a
+good vertical slice and a bad demo: one press, nothing to carry, nothing a
+watching human can score. This round adds the task the Quest demo is
+actually for — six balls, three red and three blue, picked up by pinching
+them and dropped into matching baskets, with the SO-101 shadow following
+the same task-space intent and the whole thing recorded as a `HumanEpisode`
+and uploaded for retarget/verify exactly as before.
+
+**A second entry point (`sort-teleop.html` + `sortTeleopMain.ts`), not a
+rewrite of `spatial-teach.html`.** Same reasoning as Round 5's "why two
+apps": that page is the working, browser-verified button demo, and the
+repo's habit is to leave a working thing running rather than break it on
+the way to the next one. Both pages share every module that matters —
+`hands.ts`, `xr.ts`, `xrCalibration.ts`, `xrHud.ts`, `shadowHand.ts`,
+`shadowRobot.ts`, `liveRetargetSession.ts`, `humanEpisodeRecorder.ts`,
+`humanEpisodeUpload.ts` — so the Quest build and the webcam build differ
+only at the input layer, which is the property the spec asks for. Two
+things did have to become parameters rather than constants:
+`XrCalibration` now takes its anchor pair in the constructor (the sort
+scene has no button to point at, so it calibrates against the robot base
+and the red basket instead), and `PinchLatch.update` now accepts anything
+carrying a `gripper` reading rather than a full WebXR `HandFrame`, so the
+same hysteresis works on an already-converted struct_world frame without a
+second copy of it.
+
+**The layout is measured, not assumed.** `tools/so101_reach_envelope.py`
+(new) parses the committed real SO-101 URDF with `ElementTree`, runs
+forward kinematics over the five actuated joints, and does a position-only
+damped-least-squares solve — position-only for the same reason `IkSolver`
+is (Round 7's finding: a 5-DOF arm reaches position and an arbitrary
+orientation jointly only on a lower-dimensional manifold). It exists
+because Pinocchio is Linux-only and absent on this Windows machine, and
+"no IK available" is not a reason to place a task's objects by guessing.
+Nothing in the pipeline imports it; `IkSolver` still decides accept/reject
+at verification time.
+
+What it found, at table height z = 0.14 m (recorded in `sortLayout.ts`'s
+own docstring so it is next to the numbers it justifies):
+
+```text
+x = 0.14 .. 0.38, |y| <= 0.24   every point converges under 5mm
+x = 0.34, y = 0.34              1.4cm short
+x = 0.42, y = 0.30              5.6cm short
+x = 0.50, y = 0.00              2.1cm short
+```
+
+So the usable tabletop is about **0.48m wide by 0.24m deep**, not the
+0.60 x 0.45 the task spec suggests. 0.60 wide puts the baskets at
+y = ±0.30, already on the boundary; 0.45 deep needs x past 0.55, which the
+arm cannot reach at any orientation. The spec's own instruction is to
+validate real reach and move the objects rather than fake reachability, so
+the scene is sized to the measurement and the deviation is written down
+rather than discovered when IK starts failing mid-demo. Same reason the
+baskets are 0.15m interior rather than the spec's 0.16m (a 0.16 basket
+centered where these are puts its far corner at (0.36, 0.26), right on the
+boundary — and the robot has to follow the hand *over* the basket, not
+just to its center). Note the dense sweep the script prints covers
+|y| ≤ 0.24, while `WORKSPACE_Y_M` is ±0.26; the extra 2cm rests on the
+boundary probe at (0.34, 0.30), and `main()` as committed prints only the
+dense grid, not those three boundary points — they were run ad hoc and
+transcribed into the docstring.
+
+**Where the rules live.** The entry point renders and records; it decides
+nothing. `sortTask.ts` owns the predicate (what counts as sorted, plus a
+deliberately tiny deterministic fall-and-rest so a released ball lands
+somewhere reproducible), `grasp.ts` owns pickup (a 5cm distance test and a
+rigid carry offset stored in the hand's frame, so turning your wrist swings
+the ball around the pinch), `sortSession.ts` owns the per-frame wiring
+pinch → grasp → carry → drop → score, `teleopTarget.ts` names the
+task-space intent without doing any IK. The consequence that matters: the
+spec's own acceptance scenario — grab `red_ball_0`, carry it, release over
+`red_basket`, RED reads 1/3 — runs headlessly in vitest, along with all six
+balls sorted to completion, and the layout constraints are asserted rather
+than eyeballed (`scene layout sanity` in `sortSession.test.ts`: no two
+balls closer than a diameter, no ball overlapping a basket wall, nothing
+outside the measured workspace).
+
+**Two real bugs, both found by running the thing rather than reading it:**
+
+1. **A ball scored while being carried *through* a basket.** The
+   containment test was a volume test on the ball's position with no regard
+   for whether a hand was holding it, so carrying a ball across a basket on
+   the way somewhere else scored it on the way past — and then scored it
+   again when it finally landed, which is how `sort_complete` came to fire
+   twice. A held ball is not in a container; reaching into a basket is not
+   placing something in it. Fixed in `SortTask.settle` (`ball.held ? null :
+   containingBasket(...)`), with a test per half: not scored while carried
+   through, and the point taken back when a settled ball is lifted out again.
+2. **The basket walls had their X and Y extents swapped**, so each basket
+   rendered as two crossed sheets instead of an open box — visible in the
+   very first browser render, invisible to every test that existed.
+   struct_world X is depth and Y is width, three.js's `BoxGeometry` takes
+   (width, height, depth); getting that pair the wrong way round builds a
+   cross. In the same pass: the balls were spaced 4.5cm apart with a 6cm
+   diameter, so they started life interpenetrating, and the test that should
+   have caught it only asserted "more than one radius". Spacing is now 7cm
+   and 9cm, and the layout tests assert the real constraint.
+
+**THREE ADDITIVE CONTRACT CHANGES — flagged, not merged past review.** Each
+is a widened `Literal` or a new optional field, each is marked
+`ADDITIVE CONTRACT CHANGE (needs team sign-off)` in the Python source, and
+`tests/test_spatial_contracts.py` proves for each that the original
+vocabulary still validates and that unknown values are still rejected. Per
+this repo's own rule that contracts are frozen before features, **these
+need the team's sign-off**; they are written down here rather than treated
+as an implementation detail:
+
+1. `HumanEventType` gains `grasp_start`, `grasp_end`, `ball_enter_basket`,
+   `wrong_basket`, `sort_complete`, `tracking_lost`; `HumanEpisodeEvent`
+   gains optional `object_id` / `container_id`. Mapping "the red ball landed
+   in the blue basket" onto the old `contact` would throw away the one fact
+   the episode exists to record — a task predicate that cannot be
+   reconstructed from the event stream is not training data. The TypeScript
+   mirror in `humanEpisodeRecorder.ts` was widened to match.
+2. `InteractionPhaseType` gains `lift`, `transport`, `place`. Pressing a
+   button involves no carrying, which is why they were never needed before.
+   (`InteractionPhase` also gained an optional `timestamp_ns` in the same
+   diff — small, additive, same sign-off applies; the commit message's
+   three-item summary does not mention it.)
+3. `ObjectState` gains an optional `timestamp_ns`. Inside a `TwinState` the
+   enclosing state carries the timestamp and this stays `None`; a
+   `HumanEpisode`'s `object_states` are a time series, one sample per frame,
+   and a policy cannot be learned from object poses that cannot be lined up
+   with the hand frames that moved them. Sorting six balls is the first task
+   that records object motion at all.
+
+**Honest gaps:**
+
+- **Not verified on hardware.** No headset was attached this session either.
+  The flat/browser path was driven for real — that is what caught the
+  crossed-sheet baskets — and 233/233 vitest, typecheck, production build
+  and ruff are clean, but nobody has entered XR on a Quest, calibrated
+  against the robot base and the red basket, and sorted a ball with a
+  tracked hand. Everything Round 9's own hardware caveat says still applies
+  unchanged.
+- **The upload still carries a single goal point.** The shared `TaskSpec` is
+  a goal position, so `finishDemo` sends the red basket's center as the
+  goal — an honest projection of this task's real predicate (every ball in
+  its matching basket), not the whole of it. The full predicate lives in the
+  event stream, which is why the new event types record the objects and
+  containers they concern. Teaching the backend the richer predicate is the
+  next increment; faking it here was not.
+- **The calibration anchor separation comment says 35cm; the computed value
+  is 34.3cm** (robot base at struct origin, red basket at
+  `[0.26, 0.175, 0.14]`). `anchorSeparationM` derives it, so nothing is
+  wrong at runtime and the HUD shows 34cm — the prose rounds differently.
 
 ### Round 9: `HAND=openxr` becomes a path that can actually run on a headset
 

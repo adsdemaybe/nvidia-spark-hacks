@@ -57,6 +57,18 @@ export class GraspController {
    * wrist swings the ball around the pinch instead of leaving it behind. */
   private offsetInHand: Vec3 = [0, 0, 0];
 
+  /**
+   * How far the catch reaches.
+   *
+   * Defaults to the desk task's fingertip-pinch radius. The room-scale ball
+   * pit passes its own much larger value, because a 9cm ball is caught with a
+   * whole hand rather than pinched between two fingertips -- and a caller
+   * that highlights reachable balls using one radius while the controller
+   * catches with another produces objects that light up and then refuse to be
+   * picked up.
+   */
+  constructor(private readonly graspRadiusM: number = GRASP_RADIUS_M) {}
+
   get held(): string | null {
     return this.heldId;
   }
@@ -80,7 +92,7 @@ export class GraspController {
       return { heldId: this.heldId, ballPosition: this.carriedPosition(pinchCenter, handOrientation) };
     }
 
-    const caught = nearestWithin(pinchCenter, balls, GRASP_RADIUS_M);
+    const caught = nearestWithin(pinchCenter, balls, this.graspRadiusM);
     if (!caught) return { heldId: null, ballPosition: null };
 
     this.heldId = caught.id;

@@ -72,7 +72,13 @@ import { XrHud } from "./xrHud";
 import type { SortEvent } from "./sortTask";
 import type { Vec3 } from "./contracts";
 
-const API_BASE = `http://${location.hostname}:8000`;
+// Same origin as the page: ar_backend is proxied through the dev server
+// (see vite.config.ts). A headset loads this page over https, and an
+// absolute http://<host>:8000 would be blocked as mixed content -- which
+// looks exactly like "the robot never moves" and is invisible without a
+// console you can open inside a headset. Override with VITE_API_BASE to
+// point at a backend running somewhere else.
+const API_BASE = import.meta.env["VITE_API_BASE"] ?? "";
 
 /**
  * The two landmarks a human can actually point at in this scene.

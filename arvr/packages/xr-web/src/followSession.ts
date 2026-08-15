@@ -12,6 +12,7 @@
 
 import type { FollowState, TwinState } from "./contracts";
 import { parseTwinState } from "./contracts";
+import { websocketUrl } from "./liveRetargetSession";
 
 export type FollowSessionState = "connecting" | "open" | "closed";
 
@@ -35,9 +36,10 @@ export class FollowSession {
 
   /** Opens the socket. Safe to call once; sending before this resolves is a no-op. */
   connect(onTwinState: (state: TwinState) => void, onClose?: () => void): void {
-    const wsBase = this.apiBase.replace(/^http/, "ws");
+    // Same absolute-URL rule as the live retarget stream: a relative URL is
+    // rejected outright, and ws:// from an https page is blocked.
     this.state = "connecting";
-    this.socket = new WebSocket(`${wsBase}/xr/follow/${this.sessionId}`);
+    this.socket = new WebSocket(websocketUrl(this.apiBase, `/xr/follow/${this.sessionId}`));
     this.socket.onopen = () => { this.state = "open"; };
     this.socket.onclose = () => { this.state = "closed"; onClose?.(); };
     this.socket.onerror = () => { this.state = "closed"; };

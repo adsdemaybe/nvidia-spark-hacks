@@ -53,15 +53,13 @@ import {
 } from "./spatialTeachLayout";
 import type { Vec3 } from "./contracts";
 
-// A hardcoded 127.0.0.1 only reaches the backend when the browser runs on
-// the same machine as it. A physical headset is a separate device on the
-// LAN -- its own 127.0.0.1 means the headset itself, nothing is listening
-// there. Deriving the host from wherever the page was actually loaded from
-// (the same LAN IP the vite dev server's own HTTPS URL uses, per
-// vite.config.ts's `host: true`) makes this work from either. The backend
-// also needs to be started with --host 0.0.0.0 for a headset to reach it
-// at all (see STATE.md) -- this fixes only the client side of that.
-const API_BASE = `http://${location.hostname}:8000`;
+// Same origin as the page: ar_backend is proxied through the dev server
+// (see vite.config.ts). A headset loads this page over https, and an
+// absolute http://<host>:8000 would be blocked as mixed content -- which
+// looks exactly like "the robot never moves" and is invisible without a
+// console you can open inside a headset. Override with VITE_API_BASE to
+// point at a backend running somewhere else.
+const API_BASE = import.meta.env["VITE_API_BASE"] ?? "";
 
 // The fixture scene's struct_world placement now lives in
 // spatialTeachLayout.ts -- xrCalibration.ts needs the same numbers, because

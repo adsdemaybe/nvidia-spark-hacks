@@ -109,6 +109,21 @@ function normalize(q: Quat): Quat {
   return [q[0] / norm, q[1] / norm, q[2] / norm, q[3] / norm];
 }
 
+/**
+ * Absolute WebSocket URL for a backend path.
+ *
+ * An empty `apiBase` means "same origin as this page", which is how the
+ * client talks to a proxied backend (see vite.config.ts). `new WebSocket()`
+ * rejects a relative URL outright, so the origin has to be filled in --
+ * and it has to come from `location`, because that is what carries https ->
+ * wss. Building `ws://` from an https page is blocked by the browser exactly
+ * like mixed content is.
+ */
+export function websocketUrl(apiBase: string, path: string): string {
+  const base = apiBase || (typeof location === "undefined" ? "http://127.0.0.1" : location.origin);
+  return `${base.replace(/^http/, "ws")}${path}`;
+}
+
 export class LiveRetargetSession {
   private socket: WebSocket | undefined;
   state: LiveRetargetSessionState = "closed";
@@ -130,9 +145,8 @@ export class LiveRetargetSession {
   }
 
   connect(onShadowState: (state: RobotShadowState) => void, onClose?: () => void): void {
-    const wsBase = this.apiBase.replace(/^http/, "ws");
     this.state = "connecting";
-    this.socket = new WebSocket(`${wsBase}/spatial/live/${this.sessionId}`);
+    this.socket = new WebSocket(websocketUrl(this.apiBase, `/spatial/live/${this.sessionId}`));
     this.socket.onopen = () => { this.state = "open"; };
     this.socket.onclose = () => { this.state = "closed"; onClose?.(); };
     this.socket.onerror = () => { this.state = "closed"; };

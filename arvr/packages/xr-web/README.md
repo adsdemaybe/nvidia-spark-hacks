@@ -74,6 +74,91 @@ Calibration is what makes any of this mean something: without it the
 headset's tracking origin is treated as the robot's base, and the SO-101's
 ~35cm of reach is asked to cover ~1.3m. See `xrCalibration.ts`.
 
+## Sort Teleop (`sort-teleop.html`) — red/blue ball sorting
+
+The demo task the Quest build is actually for: six balls, three red and
+three blue, picked up by pinching them and dropped into matching baskets,
+while the SO-101 shadow follows the same task-space intent and the run is
+recorded as a `HumanEpisode` and uploaded for retarget/verify. `RESET BALLS`
+puts everything back, so it can be run repeatedly without a reload.
+
+It is a **second entry point, not a replacement** for `spatial-teach.html`.
+That page is the working button demo; this one shares every module that
+matters with it (`hands.ts`, `xr.ts`, `xrCalibration.ts`, `xrHud.ts`,
+`shadowHand.ts`, `shadowRobot.ts`, the recorder and the upload path), so the
+two differ in the task and the scene, not in the plumbing. The rules live
+outside the entry point — `sortTask.ts` (what counts as sorted), `grasp.ts`
+(what counts as picked up), `sortSession.ts` (the per-frame wiring) — and
+run headlessly under vitest with no headset, no GPU and no backend.
+
+**Running it.** Same server, one different page:
+
+```bash
+npm run dev        # then open /sort-teleop.html
+```
+
+On a headset, everything in the section above applies unchanged — the HTTPS
+requirement, `probe.html` first, binding the backend to `0.0.0.0`, and
+turning hand tracking on in the headset's own settings. Nothing about the
+networking differs; only the URL does. `HAND` offers `MOCK` always,
+`WEBCAM` when the browser exposes `navigator.mediaDevices`, and `OPENXR`
+only when `detectCapabilities()` reports an immersive session is available.
+
+**The scene**, all in struct_world (Z-up, meters), with the robot base at
+the origin and +X pointing away from it:
+
+```text
+tabletop   z = 0.14, x = 0.14 .. 0.38, y = -0.26 .. +0.26
+baskets    red  (0.26, +0.175)   blue (0.26, -0.175)
+           0.15m interior, 0.07m walls
+balls      six, radius 0.03, in a 3x2 block down the center at
+           x = 0.17 / 0.24 / 0.31, y = ±0.045, colors interleaved
+```
+
+Those numbers are measured, not chosen: `tools/so101_reach_envelope.py`
+runs FK plus a position-only IK solve off the committed SO-101 URDF and puts
+the usable tabletop at roughly 0.48m x 0.24m — smaller than the task spec's
+0.60 x 0.45, which the arm cannot cover. `sortLayout.ts` carries the
+residuals and the reasoning; don't retune the layout without re-running the
+tool.
+
+**Controls.** The DOM bar and the in-scene HUD render from one
+`controlSpecs()` list, so they always offer the same actions — click them
+flat, poke them with a fingertip in XR:
+
+```text
+ENTER XR      -> immersive session starts (HAND=OPENXR only)
+PINCH x2      -> place the ROBOT BASE, then the RED BASKET, in your room
+                 (~34cm apart -- that is this scene's own geometry; the HUD
+                  shows the measured error and rejects a bad layout)
+START DEMO    -> begins recording; the score readout goes live
+FINISH        -> ends the episode and uploads it; the verdict appears
+RESET BALLS   -> puts all six balls back (only outside a demo)
+RECALIBRATE   -> in XR: throws the anchors away and re-places the workspace
+EXIT XR       -> leaves the session
+```
+
+Flat on a desktop there is a `CALIBRATE` button instead of the two pinches.
+It is the same honest stand-in `spatial-teach.html` uses off-headset — it
+marks the scene calibrated so the rest of the flow is drivable, and it
+solves nothing. The real two-anchor solve only happens in XR.
+
+To pick a ball up, pinch within 5cm of its center — slightly more than its
+own 3cm radius, because hand tracking is good to about a centimeter and a
+ball visibly between your fingers should not refuse to be caught. A ball the
+pinch would catch lights up before you close on it. A ball is scored only
+once it is *released* inside a basket's interior volume: carrying one
+through a basket on the way past does not count. The readout shows
+`RED n/3` / `BLUE n/3` and `SORTED ✓` when every ball is home.
+
+The uploaded episode carries the red basket as its goal point, because the
+shared `TaskSpec` is a single goal — the real predicate (every ball in its
+matching basket) lives in the recorded event stream. See STATE.md Round 10.
+
+**Not run on a headset yet.** Same caveat as the section above: the flat
+browser path has been driven for real, the task and grasp rules are
+unit-tested, and nothing here has been through a Quest.
+
 ## Wiring to the backend
 
 - **TWIN mode** connects to `ar_backend`'s `WS /twin/{scene_id}` (see
