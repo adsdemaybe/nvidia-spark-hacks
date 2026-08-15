@@ -78,6 +78,17 @@ const shadowRobot = new ShadowRobot();
 shadowRobot.placeBase(ROBOT_BASE_STRUCT);
 scene.add(shadowRobot.root);
 
+// A plain stand under the button -- Milestone 1 has no scene manifest / room
+// reconstruction (fixture scene only, spec section 41), so without this the
+// button asset just hangs in empty space at its world height with nothing
+// visually supporting it. A visual-only prop, not a modeled InteractableAsset.
+const stand = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.05, 0.06, ASSET_WORLD_POSITION[2], 16),
+  new THREE.MeshStandardMaterial({ color: 0x4b5263, roughness: 0.8, metalness: 0.1 }),
+);
+placeAtStruct(stand, [ASSET_WORLD_POSITION[0], ASSET_WORLD_POSITION[1], ASSET_WORLD_POSITION[2] / 2]);
+scene.add(stand);
+
 void new GLTFLoader().loadAsync("/spatial-training/assets/button/asset.glb").then((gltf) => {
   gltf.scene.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
@@ -249,6 +260,40 @@ function onShadowState(state: RobotShadowState): void {
   renderReadout();
 }
 
+/** Live retarget (shadow robot IK) and hand tracking are independent
+ * subsystems -- one failing to start (e.g. the live-session WebSocket) must
+ * never prevent the other from running. An earlier version awaited the
+ * live session before starting the mock hand loop, so a single fetch
+ * failure there silently stalled the whole demo (FRAMES stuck at 0,
+ * caught by actually clicking through the UI, not by a unit test). */
+async function startLiveSession(): Promise<void> {
+  try {
+    liveSession = await LiveRetargetSession.start(API_BASE, robotSelect.value);
+    liveSession.connect(onShadowState);
+  } catch (error) {
+    console.warn("live retarget session unavailable -- shadow robot IK will not update:", error);
+  }
+}
+
+async function startHandTracking(): Promise<void> {
+  if (handProviderKind === "openxr") {
+    try {
+      const started = await startBestSession();
+      await renderer.xr.setSession(started.session);
+      xrReferenceSpace = renderer.xr.getReferenceSpace() ?? undefined;
+      readoutEl.textContent = describeSession(started.kind, started.handTracking);
+      renderer.xr.addEventListener("sessionend", () => {
+        xrReferenceSpace = undefined;
+      });
+      return;
+    } catch (error) {
+      console.warn("XR session unavailable, falling back to mock hand:", error);
+    }
+  }
+  mockProvider = await MockHandProvider.load("/spatial-training/hand/mock_episode.jsonl");
+  mockProvider.start((hand) => onHandFrame(hand));
+}
+
 async function startDemo(): Promise<void> {
   recorder = new HumanEpisodeRecorder({
     taskId: "press_button", assetId: assetSelect.value, handProvider: handSelect.value as "mock" | "openxr",
@@ -259,27 +304,7 @@ async function startDemo(): Promise<void> {
   latestVerdict = undefined;
   renderControls();
 
-  liveSession = await LiveRetargetSession.start(API_BASE, robotSelect.value);
-  liveSession.connect(onShadowState);
-
-  if (handProviderKind === "mock") {
-    mockProvider = await MockHandProvider.load("/spatial-training/hand/mock_episode.jsonl");
-    mockProvider.start((hand) => onHandFrame(hand));
-  } else {
-    try {
-      const started = await startBestSession();
-      await renderer.xr.setSession(started.session);
-      xrReferenceSpace = renderer.xr.getReferenceSpace() ?? undefined;
-      readoutEl.textContent = describeSession(started.kind, started.handTracking);
-      renderer.xr.addEventListener("sessionend", () => {
-        xrReferenceSpace = undefined;
-      });
-    } catch (error) {
-      console.warn("XR session unavailable, falling back to mock hand:", error);
-      mockProvider = await MockHandProvider.load("/spatial-training/hand/mock_episode.jsonl");
-      mockProvider.start((hand) => onHandFrame(hand));
-    }
-  }
+  await Promise.all([startLiveSession(), startHandTracking()]);
 }
 
 async function finishDemo(): Promise<void> {

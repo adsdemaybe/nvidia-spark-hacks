@@ -91,14 +91,12 @@ part of this milestone.
   trusting it live. CALIBRATE is the same "no real AR anchor system yet"
   honest stand-in `main.ts`'s TEACH mode already used — not a new claim,
   just applied to the new entry point too.
-- **The one thing this session could not verify**: the entry point's actual
-  interactive click-through in a real browser (CALIBRATE → START DEMO →
-  watching the shadow hand/robot animate → FINISH). Typecheck, 81/81
-  vitest (including targeted logic tests for the shadow hand/robot,
-  coordinate conversions, and recorder), and a clean production build all
-  pass; the backend it talks to is confirmed working via a real E2E curl
-  run all the way through export. But nobody has actually opened
-  `spatial-teach.html` in a browser and pressed the buttons yet.
+- **Now interactively confirmed**: the user opened `spatial-teach.html` in a
+  real browser and clicked through CALIBRATE → START DEMO → FINISH.
+  This caught a real bug (below) that nothing else in this session's
+  verification stack could have — a browser is the only thing that
+  actually enforces CORS; curl and this session's `tsx`-based "live
+  verification" scripts never do.
 
 **Real bugs found by actually running this, not just writing it:**
 
@@ -128,6 +126,24 @@ part of this milestone.
    early draft (once for tracking error, again for `ncon`) — consolidated
    to one `replay_pose()` call per frame; it already runs `mj_forward`, so
    contact state is current right after.
+6. **`ar_backend` had no CORS middleware at all** — every plain `fetch()`
+   from the browser (xr-web's dev server on one origin, the backend on
+   another) was silently rejected client-side, curl/server logs showing
+   nothing wrong because the server-side response was perfectly fine; the
+   browser blocks the *client* from reading it. Only surfaced when the
+   user actually clicked through the real UI: `startDemo()` awaited the
+   live-retarget-session fetch before starting the mock hand loop, so the
+   silent rejection stalled the whole demo (`FRAMES` stuck at 0, shadow
+   robot frozen at its all-zero joint pose — a fully straight ~1m arm
+   sticking out sideways, which is what "weird long arm" turned out to
+   be, not a geometry bug). Two fixes: `CORSMiddleware` added to
+   `app.py` (wildcard origins — a local hackathon dev server, no
+   cookies/auth to leak), and `spatialTeachMain.ts`'s live-session and
+   hand-tracking startup decoupled via `Promise.all` so one failing can
+   never again silently stall the other. This likely affected every
+   browser-based `fetch()` call in the *old* app too (episode upload,
+   corrections, follow) — nothing in that app had been driven from a real
+   browser tab before either; only `tsx`/curl, which don't enforce CORS.
 
 **Known gaps, not silently skipped:**
 

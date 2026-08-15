@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .assets import build_router as build_assets_router
 from .corrections import build_router as build_corrections_router
@@ -42,6 +43,21 @@ def create_app(
     dataset_root = dataset_root or DEFAULT_DATASET_ROOT
 
     app = FastAPI(title="struct-ar-api", version="0.1.0")
+    # xr-web's dev server (vite --host) runs on a different origin
+    # (https://localhost:5273+, falls back to the next free port -- e.g.
+    # 5274 when something else is already holding 5273) than this backend
+    # (http://127.0.0.1:8000). Every plain fetch() call from the browser is
+    # therefore cross-origin and gets silently rejected client-side without
+    # this -- found by actually clicking through spatial-teach.html in a
+    # real browser (curl/tsx-based "live verification" never catches this;
+    # neither enforces CORS the way a browser does). Wildcard is fine here:
+    # a local hackathon dev server, no cookies/auth to leak.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     episode_store = EpisodeStore()
     correction_store = CorrectionStore()
     follow_store = FollowSessionStore()
