@@ -5,10 +5,22 @@ import {
   PINCH_OPEN_M,
   distance,
   gripperFromAperture,
+  preferredInputSource,
   wristTarget,
   type HandFrame,
   type JointPose,
 } from "./hands";
+
+function inputSource(handedness: "left" | "right", hasHand = true): XRInputSource {
+  return {
+    handedness,
+    hand: hasHand ? ({} as XRHand) : undefined,
+  } as unknown as XRInputSource;
+}
+
+function session(sources: XRInputSource[]): XRSession {
+  return { inputSources: sources } as unknown as XRSession;
+}
 
 const joint = (p: [number, number, number]): JointPose => ({
   position: p,
@@ -60,6 +72,32 @@ describe("gripperFromAperture", () => {
 describe("distance", () => {
   it("measures between joint positions", () => {
     expect(distance(joint([0, 0, 0]), joint([0, 0, 0.03]))).toBeCloseTo(0.03, 12);
+  });
+});
+
+describe("preferredInputSource", () => {
+  it("prefers the right hand when both are tracked", () => {
+    const left = inputSource("left");
+    const right = inputSource("right");
+    expect(preferredInputSource(session([left, right]))).toBe(right);
+    // Order in inputSources shouldn't matter.
+    expect(preferredInputSource(session([right, left]))).toBe(right);
+  });
+
+  it("falls back to the left hand when only it is tracked", () => {
+    const left = inputSource("left");
+    expect(preferredInputSource(session([left]))).toBe(left);
+  });
+
+  it("ignores input sources with no hand (e.g. a tracked controller)", () => {
+    const controller = inputSource("right", false);
+    const hand = inputSource("left");
+    expect(preferredInputSource(session([controller, hand]))).toBe(hand);
+  });
+
+  it("returns undefined when nothing is tracked", () => {
+    expect(preferredInputSource(session([]))).toBeUndefined();
+    expect(preferredInputSource(session([inputSource("right", false)]))).toBeUndefined();
   });
 });
 

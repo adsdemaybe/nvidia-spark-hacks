@@ -76,6 +76,27 @@ export function distance(a: JointPose, b: JointPose): number {
 }
 
 /**
+ * Which tracked hand should drive the arm, when a session tracks more than
+ * one at once. The whole downstream pipeline (recorder, ArmRetargeter,
+ * LiveRetargetSession) assumes a single hand drives one end-effector --
+ * spec section 26's ordinary ArmRetargeter, not a two-handed one. Calling
+ * back once per tracked hand instead of picking one would interleave
+ * left+right frames into one buffer and send the server alternating,
+ * unrelated targets every other frame -- a real bug a WebXR session
+ * exercises by default whenever both hands are in view, not a hypothetical.
+ * Prefers right (matches the mock fixture's own handedness).
+ */
+export function preferredInputSource(session: XRSession): XRInputSource | undefined {
+  let fallback: XRInputSource | undefined;
+  for (const source of session.inputSources) {
+    if (!source.hand) continue;
+    if (source.handedness === "right") return source;
+    fallback ??= source;
+  }
+  return fallback;
+}
+
+/**
  * Read one hand for this frame.
  *
  * Returns null when the hand is not being tracked at all -- an untracked hand

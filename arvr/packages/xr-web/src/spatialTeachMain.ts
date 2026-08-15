@@ -14,7 +14,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { readHand, wristTarget, type HandFrame } from "./hands";
+import { preferredInputSource, readHand, wristTarget, type HandFrame } from "./hands";
 import { describe as describeSession, detectCapabilities, startBestSession } from "./xr";
 import { HumanEpisodeRecorder } from "./humanEpisodeRecorder";
 import { uploadHumanEpisode, type SpatialEpisodeVerdict } from "./humanEpisodeUpload";
@@ -25,7 +25,15 @@ import { ShadowRobot } from "./shadowRobot";
 import { buildEnvironment, placeAtStruct } from "./scene";
 import type { Vec3 } from "./contracts";
 
-const API_BASE = "http://127.0.0.1:8000";
+// A hardcoded 127.0.0.1 only reaches the backend when the browser runs on
+// the same machine as it. A physical headset is a separate device on the
+// LAN -- its own 127.0.0.1 means the headset itself, nothing is listening
+// there. Deriving the host from wherever the page was actually loaded from
+// (the same LAN IP the vite dev server's own HTTPS URL uses, per
+// vite.config.ts's `host: true`) makes this work from either. The backend
+// also needs to be started with --host 0.0.0.0 for a headset to reach it
+// at all (see STATE.md) -- this fixes only the client side of that.
+const API_BASE = `http://${location.hostname}:8000`;
 
 // Fixed struct_world placement for Milestone 1's single fixture asset/robot
 // -- no scene manifest / room reconstruction in this milestone (spec
@@ -313,6 +321,9 @@ async function finishDemo(): Promise<void> {
   mockProvider = undefined;
   liveSession?.stop();
   liveSession = undefined;
+  // Without this, FINISH on a real headset leaves the user stuck inside the
+  // XR view -- nothing else in this flow ever calls session.end().
+  void renderer.xr.getSession()?.end();
   verdictPending = true;
   renderControls();
 
@@ -349,12 +360,8 @@ renderer.xr.addEventListener("sessionstart", () => {
     orbit.update();
     if (frame && xrReferenceSpace && handProviderKind === "openxr") {
       const session = renderer.xr.getSession();
-      for (const source of session?.inputSources ?? []) {
-        if (source.hand) {
-          const hand = readHand(frame, source, xrReferenceSpace);
-          onHandFrame(hand);
-        }
-      }
+      const source = session ? preferredInputSource(session) : undefined;
+      onHandFrame(source ? readHand(frame, source, xrReferenceSpace) : null);
     }
     renderer.render(scene, camera);
   });
