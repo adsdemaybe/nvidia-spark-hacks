@@ -13,6 +13,31 @@
   ],
   "robots": [
     {
+      "id": "hand",
+      "name": "Tendon-driven hand",
+      "description": "Three boards: a palm controller, a five-channel servo driver, and one tactile sensor per fingertip (five fitted).",
+      "boards": [
+        {
+          "run": "hand-controller",
+          "role": "Palm controller",
+          "count": 1,
+          "note": "STM32F103 + 3V3 regulation; five PWM out, five analog in"
+        },
+        {
+          "run": "hand-driver",
+          "role": "Finger servo driver",
+          "count": 1,
+          "note": "five 3-pin servo headers, bulk for five servos starting together"
+        },
+        {
+          "run": "hand-fingertip",
+          "role": "Fingertip force sensor",
+          "count": 5,
+          "note": "FSR divider buffered by a unity-gain follower \u2014 one per finger"
+        }
+      ]
+    },
+    {
       "id": "rover",
       "name": "4-wheel rover",
       "description": "Four boards: power distribution, two identical motor drivers, a controller, and a status indicator.",

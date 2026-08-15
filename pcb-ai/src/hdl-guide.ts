@@ -99,6 +99,41 @@ A trace joins two endpoints. Each is either \`.<ref> > .<port>\` or \`net.<NAME>
     <trace from=".R1 > .pin2" to=".D1 > .anode" />
     <trace from=".U1 > .VCC"  to="net.V3V3" />
 
+### Servo and actuator headers — pin order is not a style choice
+
+A hobby servo takes a 3-pin header and the order is fixed by the connector it plugs into:
+
+    pin 1  SIGNAL      pin 2  V+ (battery)      pin 3  GND
+
+Every common brand (Futaba, JR, HiTec, and the JST-style clones) uses that order. Reversing
+V+ and GND does not produce a board that works slightly worse — it destroys the servo the
+moment it is plugged in, and the board that did it will pass every gate here, because
+nothing in a netlist knows which pin a plug expects. State the order explicitly with
+\`pinLabels\` so the intent is reviewable:
+
+    <net name="VBAT" /><net name="GND" /><net name="PWM1" />
+    <pinheader name="J2" pinCount={3} footprint="pinrow3" pitch="2.54mm"
+      pinLabels={{ 1: "SIG", 2: "V+", 3: "GND" }} />
+    <trace from=".J2 > .pin1" to="net.PWM1" />
+    <trace from=".J2 > .pin2" to="net.VBAT" />
+    <trace from=".J2 > .pin3" to="net.GND" />
+
+Two more things a servo board gets wrong if nobody says them:
+
+- **A servo is a load, not a part you place.** It hangs off the header on a cable. Put the
+  header on the board; do not try to give the servo a footprint.
+- **Size the copper for stall, not for motion.** A small hobby servo draws a few hundred mA
+  moving and roughly a whole amp stalled, and a hand stalls every time it grips something.
+  Five of them share one input trace.
+
+### One row per physical part
+
+A board with N identical channels has N parts, not one part with a range in its name.
+\`J2-J6\` is not a reference designator; it is five connectors written as though they were
+one, and everything downstream reads it as one — placement rules naming \`J3\` match nothing,
+the netlist has one connector where the board has five, and the BOM undercounts by four.
+Write \`J2\`, \`J3\`, \`J4\`, \`J5\`, \`J6\`, each with its own footprint and its own position.
+
 ### Prefer <pinheader> to <connector>, and mind the prop types
 
 Both exist, but \`pinheader\` is the one with a stable footprint story. Its pin count is

@@ -81,8 +81,63 @@ export async function selectParts(args: {
   // each field; it cannot tell that `opposite_edges` was given three components, or
   // that `why` says "board edge". Catching it here costs milliseconds — catching it at
   // L3' costs a compile, a route and a solve first.
-  const ruleProblems = validateRules(plan.placement_rules ?? [])
+  const ruleProblems = [...validateRules(plan.placement_rules ?? []), ...validateRefs(plan)]
   return { plan, ruleProblems }
+}
+
+/**
+ * Every `ref` names exactly one physical part.
+ *
+ * A multi-channel board makes a model want to write `J2-J6` or `Q1..Q5` in one row, and
+ * `ref: z.string()` accepts it happily. Nothing downstream does: a placement rule about
+ * "J3" matches nothing, the netlist has one connector where the board has five, and the
+ * BOM undercounts. The first board this was tried on -- a five-finger servo driver --
+ * collapsed fifteen parts into three rows exactly this way.
+ *
+ * A hand is the shape that induces it: five identical channels is the normal case, not
+ * the exotic one. So the check is not "reject a weird string", it is "say what to write
+ * instead", because the model's instinct is reasonable and only the notation is wrong.
+ */
+export function validateRefs(plan: PartsPlan): string[] {
+  const problems: string[] = []
+  const seen = new Map<string, number>()
+
+  for (const part of plan.parts ?? []) {
+    const ref = (part.ref ?? "").trim()
+    if (!ref) {
+      problems.push(`a part has no ref (${part.role ?? part.value ?? "unnamed"})`)
+      continue
+    }
+    // en-dash, em-dash, hyphen, "to", ".." and "," all show up in practice.
+    const range = ref.match(/^([A-Za-z]+)\s*([0-9]+)\s*(?:[-\u2010-\u2015]|\.\.|,|\bto\b)\s*(?:[A-Za-z]+)?\s*([0-9]+)$/)
+    if (range) {
+      const [, prefix, from, to] = range
+      const a = Number(from)
+      const b = Number(to)
+      const expanded = a <= b && b - a < 64
+        ? Array.from({ length: b - a + 1 }, (_, i) => `${prefix}${a + i}`).join(", ")
+        : `${prefix}${a}, ${prefix}${a + 1}, ...`
+      problems.push(
+        `part ref "${ref}" is a range, not a reference designator. One row per physical ` +
+          `part: write ${expanded} as separate entries, each with its own footprint and ` +
+          `placement. A rule naming "${prefix}${a + 1}" matches nothing while this row exists.`,
+      )
+      continue
+    }
+    if (!/^[A-Za-z]{1,3}[0-9]+$/.test(ref)) {
+      problems.push(
+        `part ref "${ref}" is not a reference designator. Expected letters then digits, ` +
+          `e.g. R1, C12, U3, J5.`,
+      )
+      continue
+    }
+    seen.set(ref, (seen.get(ref) ?? 0) + 1)
+  }
+
+  for (const [ref, n] of seen) {
+    if (n > 1) problems.push(`ref "${ref}" is used by ${n} parts; each must be unique.`)
+  }
+  return problems
 }
 
 /** Render the plan for the prompts that consume it. */
