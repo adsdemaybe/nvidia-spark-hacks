@@ -21,6 +21,14 @@
 # room for the CAD work and Isaac Sim that share this machine. The upstream GB10-specific
 # quant warns that 0.93 "leaves very little system headroom" — on a shared box, don't.
 #
+# Tool calling is on because agents need it. Without --enable-auto-tool-choice and a
+# parser, vLLM rejects any request carrying `tools` with HTTP 400 -- "auto tool choice
+# requires --enable-auto-tool-choice and --tool-call-parser to be set". That surfaced as
+# OpenShell's agent failing with "provider rejected the request schema or tool payload",
+# which sounds like a gateway or schema fault and is really a missing server flag. The
+# parser is `qwen3_coder`, which ships with vLLM specifically for this model family and
+# matches the <tool_call> tags in its own chat template.
+#
 # --max-model-len 32768 rather than the model's native 262144: the KV cache is what the
 # remaining memory buys, and the pipeline's longest prompt is well under 32k (plan §8.8).
 #
@@ -55,6 +63,8 @@ docker run -d --name "$CONTAINER" \
   "$IMAGE" \
   vllm serve "$MODEL_DIR" \
     --served-model-name "$NAME" qwen3.8-27b \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
     --port "$PORT" \
     --max-model-len "$MAXLEN" \
     --gpu-memory-utilization "$UTIL" \
