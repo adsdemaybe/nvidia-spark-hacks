@@ -234,6 +234,57 @@ runs/<name>/
 
 ---
 
+## The service — calling pcb-ai from anything
+
+`cad-generation/api` serves the CAD half at `/cad/…`; this is the PCB half at `/pcb/…`.
+Dependency-free `node:http`, so it starts in a second and adds no supply chain.
+
+```bash
+npx tsx src/service/server.ts --port 8300 --fab-profile flight_controller.kicad_pro
+```
+
+| Endpoint | Does |
+|---|---|
+| `GET /health` | liveness, active fab profile, route list |
+| `POST /pcb/designs` | register HDL → compiles, returns `design_id` + `board_report` |
+| `GET /pcb/designs/:id/board_report` | outline, mounting holes, heightmap, connector edges, hotspots |
+| `GET /pcb/designs/:id/assumptions` | every derived value with its provenance, risky ones flagged |
+| `POST /pcb/designs/:id/check_fit` | measured violations against an `enclosure_report` |
+| `POST /pcb/designs/:id/replace_within` | **re-place inside a CAD envelope** — the other half of §6 |
+| `POST /pcb/designs/:id/analyse` | L6/L7/L8/L3′ reports on demand |
+| `POST /pcb/designs/:id/artifacts` | build KiCad project + GLB |
+| `GET /pcb/designs/:id/artifact/:name` | fetch one |
+
+**`replace_within` is the piece that was missing.** `src/cad/client.ts` drives the
+negotiation and said so itself: *"pcb-ai does not implement this yet. Until it does,
+negotiate() runs one round and reports non-convergence honestly rather than pretending to
+converge."* One round is a handshake — the enclosure asks the board to shrink and nothing
+on this side can answer.
+
+Answering means rewriting the `<board>` outline and **rebuilding**, because placement,
+routing and the report all follow from the outline. It never nudges Circuit JSON
+directly: a board whose outline changed but whose routing did not is a picture of a
+board, not a board.
+
+It only shrinks — an envelope is a ceiling, not a target — and it can legitimately fail:
+
+```
+ok: false
+applied: ["board width 80mm -> 70mm", "board height 62mm -> 55mm"]
+reason: 70 error(s) after re-placement (32x pcb_port_not_connected_error,
+        32x pcb_trace_missing_error, 3x pcb_placement_error,
+        2x pcb_component_outside_board_error, 1x pcb_autorouting_error).
+        First: Plated hole pcb_plated_hole_0 violates copper-to-board-edge
+        clearance (measured 0.000mm, required 0.200mm)
+```
+
+That is a `200`, not a `500` — "this envelope cannot be satisfied" is a well-formed
+answer the negotiator must be able to read, and §6 says a non-converged pair is reported
+as such rather than papered over. A refusal that says *why*, by error class, is the
+difference between the CAD side relaxing the right constraint and guessing.
+
+---
+
 ## Known limits
 
 - **Only `.op` SPICE claims exist.** `ripple`, `frequency`, `edge`, `startup` need
