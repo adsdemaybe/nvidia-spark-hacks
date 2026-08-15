@@ -285,6 +285,54 @@ difference between the CAD side relaxing the right constraint and guessing.
 
 ---
 
+## The §6 negotiation, both halves live
+
+```bash
+# CAD side (once)
+cd cad-generation
+python3 -m venv .venv && .venv/bin/pip install fastapi uvicorn numpy build123d
+.venv/bin/pip install --no-deps -e ./engine -e ./api
+.venv/bin/python -m uvicorn cad_api.service:app --port 8400
+
+# PCB side drives the loop
+npx tsx tools/negotiate.ts examples/rover-fixed.tsx --fab-profile flight_controller.kicad_pro
+```
+
+`build123d` **does** install on aarch64 (0.11.1 with `cadquery-ocp-novtk`), so the CAD
+engine runs on the Spark. Install `engine` and `api` with `--no-deps`: the engine
+declares `anthropic` and `openai`, which the service never touches.
+
+First live run of the loop:
+
+```
+compiling the board … 36 parts
+  36 risky assumption(s) feeding the enclosure
+cad  http://127.0.0.1:8400 — generators: bracket, enclosure_shell, plate, tube
+
+PCB<->CAD: CONVERGED — fit on the first attempt; no negotiation was needed
+  round 1: cavity 83.0x65.0x15.9mm  violations=1 (blocking 0)
+      [minor] board_not_mechanically_secured  measured=0 limit=1
+```
+
+Two things worth reading in that.
+
+**It converged without negotiating**, because CAD sized the cavity *around* the board
+rather than imposing an envelope — so `replace_within` was never called. The half that
+was missing is in place and exercised directly, but the loop has not yet been driven to
+a round where CAD pushes back. A board that must fit a fixed enclosure is the case that
+tests it.
+
+**The one violation is real**: the rover declares no mounting holes, so nothing secures
+it inside the shell. Minor by severity, but it is a genuine mechanical gap that no PCB
+gate would ever raise — which is the argument for the loop existing.
+
+**36 risky assumptions feed the enclosure.** Component heights are `ASSUMED` from
+footprint class, and the lid is designed against them. An assumed height that is wrong
+produces a lid that fits in the report and not on the bench; `assumptions.json` records
+each one with its provenance.
+
+---
+
 ## Known limits
 
 - **Only `.op` SPICE claims exist.** `ripple`, `frequency`, `edge`, `startup` need
