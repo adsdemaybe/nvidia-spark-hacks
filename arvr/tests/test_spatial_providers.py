@@ -87,3 +87,19 @@ def test_asset_glb_path_resolves_to_a_real_file():
 def test_unknown_asset_id_raises():
     with pytest.raises(UnknownAssetError):
         FixtureAssetProvider().get_asset_bundle("not_a_real_asset")
+
+
+def test_fixture_asset_provider_loads_cube():
+    asset = FixtureAssetProvider().get_asset_bundle("cube_01")
+    part = asset.parts["cube"]
+    assert part.interaction == "grasp"
+
+
+def test_fixture_asset_provider_loads_drawer():
+    asset = FixtureAssetProvider().get_asset_bundle("drawer_01")
+    handle = asset.parts["handle"]
+    drawer = asset.parts["drawer"]
+    assert handle.interaction == "grasp"
+    assert drawer.interaction == "pull"
+    assert drawer.joint_type == "prismatic"
+    assert drawer.limit_m == (0.0, 0.08)

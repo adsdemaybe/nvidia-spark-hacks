@@ -49,6 +49,14 @@ class FinishRequest(BaseModel):
     asset_world_pose: Pose
     goal_position_m: tuple[float, float, float]
     goal_tolerance_m: float = 0.05
+    # Grasp-and-place / pull task predicates (Track C) -- see
+    # ar_contracts.simulation_provider.TaskSpec's own docstring for exactly
+    # what these check and why. None (the default) keeps the original
+    # single-goal "reach" predicate exercised unchanged.
+    object_position_m: tuple[float, float, float] | None = None
+    object_capture_radius_m: float = 0.05
+    pull_axis: tuple[float, float, float] | None = None
+    pull_distance_m: float | None = None
 
 
 class HumanEpisodeStatusResponse(BaseModel):
@@ -127,7 +135,14 @@ def build_router(store: HumanEpisodeStore, dataset_root: Path) -> APIRouter:
         )
         robot_bundle = FixtureRobotProvider().get_robot_bundle(req.robot_id)
         asset_bundle = FixtureAssetProvider().get_asset_bundle(record.asset_id)
-        task = TaskSpec(goal_position_m=req.goal_position_m, tolerance_m=req.goal_tolerance_m)
+        task = TaskSpec(
+            goal_position_m=req.goal_position_m,
+            tolerance_m=req.goal_tolerance_m,
+            object_position_m=req.object_position_m,
+            object_capture_radius_m=req.object_capture_radius_m,
+            pull_axis=req.pull_axis,
+            pull_distance_m=req.pull_distance_m,
+        )
 
         result = run_spatial_episode(
             human_episode,

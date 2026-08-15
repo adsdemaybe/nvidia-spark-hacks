@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "drawer_01",
+  "parts": {
+    "handle": {
+      "interaction": "grasp",
+      "local_origin_m": [
+        0.0,
+        0.0,
+        0.025
+      ]
+    },
+    "drawer": {
+      "interaction": "pull",
+      "joint_type": "prismatic",
+      "axis": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "limit_m": [
+        0.0,
+        0.08
+      ]
+    }
+  }
+}
