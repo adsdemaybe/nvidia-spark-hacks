@@ -277,6 +277,51 @@ const unitStrings = {
 }
 
 /** rule: chips must declare power/ground intent so the compiler can check the rails. */
+/**
+ * `pinLabels` on a pinheader/jumper must be an object keyed by pin number, not an array.
+ *
+ * This rule exists because the loop could not converge without it, and the reason is
+ * uncomfortable: **the tscircuit docs are wrong here.** `pinheader.mdx` shows
+ * `pinLabels={["VCC", "GND", ...]}`, the compiler rejects exactly that with
+ * `Invalid props for pinheader "J1": pinLabels ({"0":{"_errors":["Invalid"]}...)`, and the
+ * object form compiles clean. Measured all three ways on a two-pin header: array -> 3
+ * errors and 0 parts, object -> 0 errors, omitted -> 0 errors.
+ *
+ * That made it unfixable by the design loop rather than merely wrong. The designer reads
+ * the retrieved documentation and writes the array form; the compiler rejects it; the
+ * reviewer reads the same documentation and its work order says, in as many words,
+ * `pinLabels=["3.3V","GND"]`; the model applies that faithfully; the error is
+ * byte-identical next iteration. Four rounds of an agreeing, confident, wrong loop.
+ *
+ * Catching it at lint puts a correct instruction in front of both agents before compile
+ * ever runs, which is the only place in the chain that outranks the upstream docs.
+ */
+const pinheaderPinLabels = {
+  meta: {
+    type: "problem",
+    docs: { description: "pinheader/jumper pinLabels must be keyed by pin number" },
+    messages: {
+      array:
+        '<{{el}} {{name}}> passes pinLabels as an array. That is what the tscircuit docs show and the compiler rejects it — pin keys are 1-based, so index 0 is invalid. Use an object keyed by pin number: pinLabels={{ 1: "3.3V", 2: "GND" }}. Omitting pinLabels also compiles.',
+    },
+  },
+  create: (ctx) => ({
+    JSXOpeningElement(node) {
+      const el = getJsxName(node)
+      if (el !== "pinheader" && el !== "jumper") return
+      const attr = getAttr(node, "pinLabels")
+      if (!attr) return
+      const expr = attr.value && attr.value.type === "JSXExpressionContainer"
+        ? attr.value.expression
+        : null
+      if (expr && expr.type === "ArrayExpression") {
+        const name = literalOf(getAttr(node, "name")) ?? "?"
+        ctx.report({ node, messageId: "array", data: { el, name: `name="${name}"` } })
+      }
+    },
+  }),
+}
+
 const chipPinAttributes = {
   meta: {
     type: "suggestion",
@@ -331,6 +376,7 @@ export default {
     "no-pcb-rotation": noPcbRotation,
     "unit-strings": unitStrings,
     "chip-pin-attributes": chipPinAttributes,
+    "pinheader-pin-labels": pinheaderPinLabels,
     "unique-names": uniqueNames,
   },
 }

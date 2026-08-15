@@ -19,6 +19,10 @@ export default [
       "pcb/unit-strings": "error",
       "pcb/unique-names": "error",
       "pcb/chip-pin-attributes": "warn",
+      // "error", not "warn": the array form does not degrade the board, it deletes the
+      // component. A rejected pinheader takes its pins with it, so every trace referencing
+      // them fails too and autorouting never runs.
+      "pcb/pinheader-pin-labels": "error",
     },
   },
   {
