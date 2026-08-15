@@ -35,7 +35,7 @@ what the chief concluded.
 | **L1** compile | Does it produce a netlist and geometry? | `@tscircuit/eval` → Circuit JSON | no `_error` elements |
 | **L3** place | Do parts fit without colliding? | `pcbPack` + overlap/edge checks | measured −33% area at Jaccard 1.000 |
 | **L4** route | Is every net connected? | capacity-autorouter | 100% routed |
-| **L5** DRC | Is the geometry legal? | tscircuit DRC | zero errors |
+| **L5** DRC ×2 | Is the geometry legal? | tscircuit DRC **and** `kicad-cli pcb drc` (`src/kicad/`) | both clean, disagreements filed as pipeline bugs |
 | **L6** physics | Does the copper survive the current? | own PCG solvers: thermal, IR drop, current density, IPC-2221 (`src/physics/`) | no hard failure vs budgets |
 | **L7** SPICE | **Does the circuit work?** | ngspice (`src/spice/`) | every claim passes **and** every rail is covered |
 | **L8** DFM | **Can this fab build it?** | rules read from a real `.kicad_pro` (`src/dfm/`) | zero errors at the profile's own severities |
@@ -297,11 +297,13 @@ difference between the CAD side relaxing the right constraint and guessing.
   pins. (The 9.0 PPA is amd64-only — 8 is both the newest available here and the one
   path B wants.) `tools/bench.ts` still reports the lane `BLOCKED` until the netlist
   bridge exists.
-- **kicad-cli cannot read our own KiCad output.** `circuit-json-to-kicad` emits file
-  format 20250114 (KiCad 9); the vendored v8 refuses it. So the principle-4
-  second-opinion DRC/ERC is blocked by *format*, not by availability. Closing it needs a
-  target-version option upstream, an older converter release, or an amd64 box running
-  KiCad 9.
+- **The second-opinion DRC disagrees with ours, substantially.** KiCad 9 reports 46
+  errors on a rover that tscircuit's DRC passes clean: 23 `clearance`, 23
+  `hole_clearance`. It independently confirms two things L8 already measured (54
+  under-height silkscreen texts, a hole-to-hole gap), which is what makes the 46
+  credible. Under principle 4 a disagreement of this size is a pipeline bug to be
+  investigated, not a number to paste into a report — nobody has yet worked out which
+  engine is right.
 - **The designer loop has not completed a full revision end to end** against a real
   model. Its pieces are unit-tested; the round trip is not proven.
 - Gerbers are produced but a human should review before money is spent.
