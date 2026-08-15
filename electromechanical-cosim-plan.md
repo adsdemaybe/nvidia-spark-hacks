@@ -293,7 +293,7 @@ is deterministic, and it belongs in code rather than in an agent's judgement.
 
 | Step | What | Depends on |
 |---|---|---|
-| **M1** | `.tran` in L7 + the motor model, standalone: drive a PWM into a DC motor model at fixed ω, get current and torque | existing `src/spice/` |
+| **M1** ✅ | `.tran` + the motor model, standalone — **done and validated**, see below | existing `src/spice/` |
 | **M2** | `cosim/` — bus, schema, clock barrier, recorder; a loopback test with two fake participants | pyzmq |
 | **M3** | MJCF/URDF emission from Robot IR + meshes; one joint driven by a constant torque in MuJoCo | cad-generation, mujoco |
 | **M4** | Close the loop: SPICE ↔ bus ↔ MuJoCo on one joint, with back-EMF | M1–M3 |
@@ -302,6 +302,51 @@ is deterministic, and it belongs in code rather than in an agent's judgement.
 
 M1 and M2 are independent and can go in parallel. **M4 is where the risk is** — that is
 where coupling stability shows up.
+
+### 9.1 M1, done (2026-08-15)
+
+`pcb-ai/src/spice/motor.ts` + `transient.ts`, driven by `tools/motor-sim.ts`. Validated
+by behaviour rather than by a single number, because one operating point cannot show
+whether a model is a motor:
+
+| duty (stalled) | I avg | | ω rad/s (full duty) | I avg | output torque |
+|---|---|---|---|---|---|
+| 10% | 0.052 A | | 0 | 1.510 A | 831 mN·m |
+| 25% | 0.325 A | | 336 | 1.133 A | 623 mN·m |
+| 50% | 0.758 A | | 673 | 0.755 A | 415 mN·m |
+| 75% | 1.156 A | | 1009 | 0.378 A | 208 mN·m |
+| 100% | 1.510 A | | 1278 | 0.076 A | 42 mN·m |
+
+Current tracks duty; current falls linearly with speed as back-EMF rises — the textbook
+torque-speed curve, and the proof that §4.1's coupling term is wired the right way round.
+100% duty gives exactly 7.4 / (0.12 + 0.72 + 0.05 + 4.0) = 1.513 A, which is the
+arithmetic done independently.
+
+The stall sweep is the one that justifies the gate: the 775-class motor draws **4.65 A**
+through a DRV8833 rated 1.5 A per channel. Note it is *not* its intrinsic 10.6 A stall —
+the bridge, copper and supply impedance are in series with the winding, so the delivered
+figure is lower. Both numbers are true and answer different questions; the catalogue now
+says which is which.
+
+**Three bugs found getting here, all worth recording:**
+
+1. **The parser dropped every measurement.** `print` puts the value at the end of the
+   line; `.meas` follows it with `from= … to= …`. The regex anchored to end-of-line, so
+   every transient silently returned nothing — which reads as "the simulation found
+   nothing" rather than "the parser did not look".
+2. **The measurement window was shorter than the physics.** Sizing the span at 8 PWM
+   cycles seemed obviously right: at 20 kHz that is 400 µs, while this motor's L/R is
+   375 µs, so the winding current was still on its first ramp when the window closed. A
+   1.5 A stall reported as 0.001 A. The span must cover the *slower* of the two time
+   constants.
+3. **No freewheel path — the model was unphysical, not merely inaccurate.** When the
+   bridge opens, the winding insists on maintaining its current; with nowhere to go the
+   solver drove the node hugely negative and the average collapsed. The giveaway was that
+   100% duty (which never switches) was exactly right while every switching case was
+   wrong. A real H-bridge always has this path: the opposite FET's body diode.
+
+Bug 3 is the one to remember. Bugs 1 and 2 produce obviously-wrong numbers; bug 3
+produced *plausible* small numbers, and a duty sweep is what exposed it.
 
 ---
 

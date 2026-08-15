@@ -161,9 +161,16 @@ function firstError(stderr: string, stdout: string): string | undefined {
  */
 function parsePrints(stdout: string): Map<string, number> {
   const values = new Map<string, number>()
-  // Names include element-parameter references like `@rr2[i]`, which start with `@` and
-  // carry brackets — the form every branch-current print uses.
-  const line = /^\s*([a-zA-Z_@][\w().@#$[\]+-]*)\s*=\s*(-?[\d.]+(?:[eE][+-]?\d+)?)\s*$/gm
+  // Two output shapes, and the second cost a debugging session:
+  //
+  //   `print`  ->  `v(vout) = 3.700000e+00`                     (value ends the line)
+  //   `.meas`  ->  `i_avg = -1.37e-03 from= 1.6e-04 to= 4.0e-04` (value does not)
+  //
+  // Anchoring to end-of-line silently drops every measurement, which reads as "the
+  // simulation returned nothing" rather than "the parser did not look". So the value is
+  // only required to be followed by whitespace or the end of the line.
+  const line =
+    /^\s*([a-zA-Z_@][\w().@#$[\]+-]*)\s*=\s*(-?[\d.]+(?:[eE][+-]?\d+)?)(?=\s|$)/gm
   let m: RegExpExecArray | null
   while ((m = line.exec(stdout))) {
     values.set(m[1].toLowerCase(), Number(m[2]))
