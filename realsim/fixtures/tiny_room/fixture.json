@@ -1,6 +1,0 @@
-{
-  "description": "Synthetic tiny_room fixture: 3.0x2.4 m room, 2.3 m walls, z-up, floor at z=0; table + monitor + mug + book; box-room lidar mesh in the same frame; 45 sharp fake-orbit frames at 480x360.",
-  "seed": 20260814,
-  "stub_psnr": 31.5,
-  "stub_ssim": 0.93
-}
