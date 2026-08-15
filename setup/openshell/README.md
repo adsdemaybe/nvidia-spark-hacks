@@ -25,77 +25,65 @@ the deterministic harness rather than by a model's opinion.
 
 ## Current state on this box
 
-Run `./configure.sh` for a live check. As of the last run:
+Run `./configure.sh` for a live check.
 
-- **Sandbox `my-assistant`** — stopped. It had accumulated **4917 restarts** in a
-  crashloop: it cannot fetch its policy without the gateway, so it exits and restarts
-  forever, burning CPU. Stopping it preserved the workspace.
-- **Gateway** — not running. Registered at `https://127.0.0.1:17670`.
-- **Inference route** — `vllm-local / nvidia/Qwen3.6-35B-A3B-NVFP4` at
-  `http://host.openshell.internal:8000/v1`. **Both halves are wrong for this box**:
-  nothing listens on 8000, and that model is not on disk here. The right values are port
-  **8100** and model **`qwen3-coder-next`** (see `../serve_coder_next.sh`).
+**Working:**
 
-## The port collision, which is the actual blocker
+- **Gateway: running and Connected** on `https://127.0.0.1:17670`. It had been dead since
+  July. It runs from `~/.local/state/nemoclaw/openshell-docker-gateway-17670/`, which also
+  holds its PKI.
+- **Provider `vllm-local`** created on the gateway (`type: openai`,
+  `endpoint=http://host.openshell.internal:8100/v1`).
+- **Gateway inference route** set to `vllm-local / qwen3-coder-next`.
+- **The 4917-restart crashloop is stopped.** The sandbox cannot fetch a policy without a
+  gateway, so it exited and restarted forever.
 
-The gateway was registered on `127.0.0.1:8080`. So is the CAD viewer:
+**Blocked, and it needs a decision that is not mine to make:**
 
-```
-python -m cad_api.viewer designs/so101_arm.ir.json --port 8080
-```
-
-The viewer had held it for ~4 hours, so the gateway could never bind, so the sandbox could
-never fetch a policy, so it crashlooped. `openshell status` reports this as
-`tls handshake eof`, which reads like a certificate problem and is really *"something else
-is listening here"* — worth knowing, because it sends you to the wrong place entirely.
-
-The registration has been moved to **17670**, the gateway's own default, which is free.
-
-## Finishing the setup
-
-The gateway runs **as a Docker container**, not as a host process — `--local` means "a
-local mTLS gateway running in Docker on this machine". The certificates in
-`~/.config/openshell/gateways/*/mtls/` are *client* certs (`CN=openshell-client`); there
-is no server cert on the host and no gateway image pulled yet. So the gateway cannot be
-started by hand, and the supported path is:
+The sandbox rebuild fails its container-DNS preflight — Docker containers on this host
+cannot resolve `registry.npmjs.org`, which the agent install needs. The documented fix is
+to add a `dns` entry to `/etc/docker/daemon.json` and **restart the Docker daemon**. That
+restarts every container on this box: `coder-next-vllm` (the model everything is currently
+using) and whatever the CAD session has running. So it is a maintenance-window change, not
+a background one.
 
 ```bash
-nemoclaw onboard --resume        # brings up the Docker gateway and reconciles config
+# after the daemon restart, and with the model server back up:
+NEMOCLAW_SKIP_HOST_DNS_PREFLIGHT=1 nemoclaw my-assistant rebuild --yes
 ```
 
-**Not run automatically.** It pulls images and can rebuild the sandbox image, which is a
-heavy, visible change to someone else's assistant on a shared machine.
+`NEMOCLAW_SKIP_HOST_DNS_PREFLIGHT=1` is needed because the *host* preflight also resolves
+`integrate.api.nvidia.com`, which is irrelevant to a box doing only local inference. The
+container-DNS check is separate and is the one that actually blocks.
 
-After it is up:
+### Secondary agents
 
-```bash
-./configure.sh                   # verifies, then applies the inference route
-```
+`--agents <agents.yaml>` declares secondary OpenClaw agents and is **baked into the
+sandbox image at onboard time**, so it is downstream of the same blocker. Nothing to
+configure until the rebuild succeeds.
 
-which is equivalent to:
+Worth separating, because the words collide: the *PCB pipeline's own* agents — parts,
+designer, physicist, layout, spec, chief — are unrelated to OpenShell and are working.
+A full run exercises all six.
 
-```bash
-nemoclaw inference set --provider compatible-endpoint \
-    --model qwen3-coder-next \
-    --endpoint-url http://host.openshell.internal:8100/v1 \
-    --inference-api openai-completions \
-    --credential-env COMPATIBLE_API_KEY \
-    --sandbox my-assistant
-```
+### Things that cost a cycle each
 
-Three flag details that cost a cycle each, recorded so they do not cost another:
-
-- `--endpoint-url` is rejected for the `vllm-local` provider; it is only accepted for
-  `compatible-endpoint`.
-- `--credential-env` for `compatible-endpoint` **must** be `COMPATIBLE_API_KEY`.
-- `host.openshell.internal` is how the sandbox reaches a host port. `localhost` inside the
-  sandbox is the sandbox.
-
-And one on registration: `openshell gateway add` takes the **endpoint** as its positional
-argument, with `--name` for the name. `openshell gateway add nemoclaw …` registers a
-gateway whose hostname is literally `nemoclaw`. Plain `--gateway-endpoint https://…`
-without `--local` is treated as a *cloud* gateway and opens a browser for OIDC; when that
-times out it removes the registration it was adding.
+- `NEMOCLAW_GATEWAY_PORT=<n>` does not move the existing gateway; it **registers a second
+  one** named `nemoclaw-<n>` and makes it active. The sandbox is recorded against
+  `nemoclaw`, so the rebuild then reports "cannot determine the recorded inference
+  provider and model" — which sounds like missing config and is really a gateway-name
+  mismatch. Remove the duplicate with `openshell gateway remove nemoclaw-<n>`.
+- After `nemoclaw onboard` starts a gateway it generates a **fresh PKI**. Client certs
+  from a previous gateway then fail with `invalid peer certificate: BadSignature`. Copy
+  the matching ones:
+  `~/.local/state/nemoclaw/openshell-docker-gateway-<port>/tls/client/{tls.crt,tls.key}`
+  and `tls/ca.crt` → `~/.config/openshell/gateways/<name>/mtls/`.
+- `openshell inference set` verifies against the provider by default. For a local endpoint
+  whose credential is a placeholder, pass `--no-verify` or it tries `api.openai.com` and
+  reports an OpenAI auth error.
+- `nemoclaw onboard --non-interactive` always selects the NVIDIA cloud provider and
+  demands `NVIDIA_INFERENCE_API_KEY`. There is no provider flag. Choosing local inference
+  requires the interactive flow.
 
 ## Ports
 
@@ -106,5 +94,5 @@ times out it removes the registration it was adding.
 | 8210 | CAD API |
 | 8220 | docs RAG |
 | 8500 | PCB viewer UI |
-| 17670 | OpenShell gateway (registered; not yet running) |
+| 17670 | OpenShell gateway — **running, Connected** |
 | 18790 | `my-assistant` dashboard |
