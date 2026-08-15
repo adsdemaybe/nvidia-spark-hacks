@@ -195,11 +195,20 @@ async function summarise(name: string): Promise<BoardSummary | null> {
   return s
 }
 
+/**
+ * Directories under `runs/` that hold tool state rather than a board.
+ *
+ * `designs/` is the service's registry, `motor-sim/` and `cosim/` are simulation scratch,
+ * `negotiate/` is the CAD loop's working area. They have no circuit.json at the top level
+ * and would otherwise appear as empty, confusing cards.
+ */
+const NOT_BOARDS = new Set(["designs", "motor-sim", "cosim", "negotiate", "kicad-drc", "bench"])
+
 async function listBoards(): Promise<BoardSummary[]> {
   let names: string[] = []
   try {
     names = (await fs.readdir(ROOT, { withFileTypes: true }))
-      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !NOT_BOARDS.has(e.name))
       .map((e) => e.name)
   } catch {
     return []

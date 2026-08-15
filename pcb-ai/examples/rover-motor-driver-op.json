@@ -18,7 +18,7 @@
     {
       "pin": "U1.VM",
       "net": "VBAT",
-      "current_a": 1.2
+      "current_a": 0.92
     },
     {
       "pin": "R1.pin2",
@@ -29,15 +29,16 @@
   "dissipation": [
     {
       "component": "U1",
-      "power_w": 0.52,
+      "power_w": 0.3,
       "max_temp_c": 150
     }
   ],
   "assumptions": [
-    "two motors per board at 600mA continuous, ASSUMED not stalled",
+    "600mA is the per-motor current while driving (confirmed by the transient sim: an N20 draws ~0.6A at working speed on a 7.4V rail, 1.51A stalled)",
+    "0.46A RMS per motor ASSUMED over a 60% drive duty cycle \u2014 a rover accelerates, coasts and turns rather than driving flat out",
     "DRV8833 R_ds(on) 360 mOhm per leg, 720 mOhm per channel \u2014 datasheet typical",
-    "dissipation 2 x I^2 R = 2 x 0.6^2 x 0.72 = 0.52W. An earlier 1.04W double-counted the channels",
-    "3V3 arrives from the controller board over the logic header",
-    "TSSOP-16 with no thermal pad \u2014 the real DRV8833 is a PowerPAD part, and this footprint is not"
+    "dissipation 2 x I_rms^2 x R = 2 x 0.46^2 x 0.72 = 0.30W",
+    "THERMAL LIMIT OF THIS FOOTPRINT: measured 190 degC/W with tssop16's 6.96mm2 of pad copper and no thermal pad. At the full 0.52W continuous this package reaches 124 degC. The real DRV8833 is HTSSOP-16 with a PowerPAD and thermal vias; footprinter cannot express that pad, so this board is only valid at the duty cycle above. A continuous-duty build needs the PowerPAD part.",
+    "3V3 arrives from the controller board over the logic header"
   ]
 }

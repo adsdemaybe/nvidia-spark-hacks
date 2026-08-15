@@ -9,6 +9,11 @@
  * J1  VBAT + GND from the power board       J2  4 logic inputs from the controller
  * J3  motor A out                           J4  motor B out
  *
+ * minTraceWidth is 0.25mm, not the 0.15mm default: at 920mA IPC-2221 wants 0.18mm of
+ * 1oz external copper, and the default was under it. The physics stage said so in those
+ * words — "920.0mA through 0.15mm -> 26.0C rise ** needs 0.18mm **" — which is the kind
+ * of finding that is invisible until something measures it and then obvious.
+ *
  * The decoupling here is the part that matters. A DRV8833 switching 600 mA per channel
  * at 20 kHz asks for its current in microsecond-scale steps, and the copper back to the
  * power board is an inductor at that timescale. C1 supplies those edges locally; without
@@ -18,7 +23,7 @@
 // edges were hanging 0.04mm off the board. Small enough that the placement check let it
 // through, and still a board whose copper runs to the router bit.
 export default () => (
-  <board width="38mm" height="28mm" pcbPack pcbPackGap="1.8mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
+  <board width="38mm" height="28mm" pcbPack pcbPackGap="1.8mm" minTraceWidth="0.25mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
     <net name="VBAT" />
     <net name="V3V3" />
     <net name="GND" />
