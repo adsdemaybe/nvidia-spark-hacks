@@ -82,7 +82,7 @@ def load_step_path(path) -> "object":
     return import_step(str(path))
 
 
-def load_step(relative: str, *, sha256: str | None = None):
+def load_step(relative: str, *, sha256: str | None = None, mating: bool = False):
     """Import a vendored STEP file as a build123d solid.
 
     Cached, because importing a real STEP takes on the order of a second and
@@ -92,8 +92,21 @@ def load_step(relative: str, *, sha256: str | None = None):
     `sha256`, when given, is verified. Omitting it is allowed and means the
     asset is unpinned: the IR then names a file rather than a specific robot,
     and two evaluations of the "same" design can differ.
+
+    `mating=True` declares that the caller is about to cut, fuse or intersect
+    against this solid. §5 forbids that for vendor CAD, and the refusal happens
+    here rather than in a review comment — a model ingested by
+    `engine.sourcing.models` carries a `visual_only` tag and this raises
+    `VisualOnlyError` for it. Assets with no ingest sidecar are allowed through,
+    because most of `vendor/` predates the pipeline and breaking existing designs
+    to enforce a rule on files nobody claimed were vendor CAD would be the wrong
+    trade.
     """
     path = resolve_asset(relative)
+    if mating:
+        from engine.sourcing.models import require_matable
+
+        require_matable(path)
     if sha256 is not None:
         actual = sha256_of(path)
         if actual != sha256:

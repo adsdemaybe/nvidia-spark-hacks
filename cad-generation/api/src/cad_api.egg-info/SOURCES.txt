@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+src/cad_api/__init__.py
+src/cad_api/assembly.py
+src/cad_api/contracts.py
+src/cad_api/enclosure.py
+src/cad_api/fit.py
+src/cad_api/geometry.py
+src/cad_api/service.py
+src/cad_api.egg-info/PKG-INFO
+src/cad_api.egg-info/SOURCES.txt
+src/cad_api.egg-info/dependency_links.txt
+src/cad_api.egg-info/entry_points.txt
+src/cad_api.egg-info/requires.txt
+src/cad_api.egg-info/top_level.txt
+tests/test_fit.py
+tests/test_service.py

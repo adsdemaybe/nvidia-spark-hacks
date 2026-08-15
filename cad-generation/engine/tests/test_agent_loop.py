@@ -81,3 +81,50 @@ def test_proposal_validates_a_full_robot_ir_round_trip():
     reloaded = Proposal.model_validate(payload)
     assert reloaded.robot.name == ir.name
     assert reloaded.robot.content_hash() == ir.content_hash()
+
+
+def test_endpoint_that_ignores_structured_output_fails_nameably(monkeypatch):
+    """A server that accepts `response_format` and ignores it must be named, not
+    silently retried until the iteration budget runs out.
+
+    llama.cpp does exactly this, and so does vLLM built without a guided-decoding
+    backend. Prose cannot come out of a constrained decode, so the first
+    non-`{` reply is a fact about the endpoint, not an answer the model can
+    revise. Left to the reject path it burned every iteration re-asking a server
+    that would never comply and returned an empty list, which is also what a
+    model that simply designs badly returns.
+    """
+    import engine.agent_loop as agent_loop
+
+    class _Message:
+        tool_calls = None
+        content = "Sure! Here is a rover design in JSON: {\"links\": ..."
+
+    class _Response:
+        choices = [type("C", (), {"message": _Message(), "finish_reason": "stop"})()]
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    return _Response()
+
+    import openai
+
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: _FakeClient())
+
+    with pytest.raises(RuntimeError) as excinfo:
+        agent_loop.run_design_loop(
+            "a rover",
+            max_tier=0,
+            max_iterations=1,
+            provider="qwen",
+            model="whatever",
+            base_url="http://127.0.0.1:9999/v1",
+        )
+    msg = str(excinfo.value)
+    assert "ignored response_format" in msg
+    assert "structured outputs" in msg
+    assert "http://127.0.0.1:9999/v1" in msg
+    assert "Here is a rover design" in msg  # what it said instead

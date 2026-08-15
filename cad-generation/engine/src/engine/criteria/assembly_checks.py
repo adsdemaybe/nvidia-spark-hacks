@@ -69,6 +69,14 @@ _ROUND_TOLERANCE = 0.01
 
 _GROUND_EPSILON = 1e-3  # 1 mm — same ground band static_margin uses
 
+# Engineering policy, both of them, and both stated here rather than inferred.
+# `_DRIVE_TRAVEL_MIN` is deliberately the same 40 mm `tier2_sim._DRIVE_MIN_TRAVEL`
+# uses: a tier-0 criterion that predicted a *different* number than the tier it
+# is standing in for would be a second opinion, not an early warning.
+_DRIVE_TRAVEL_MIN = 0.04  # m of wheel travel available before the limit
+_ARTICULATION_MIN = 0.10  # rad (~5.7 deg) — below this a revolute joint is fixed
+
+
 
 def _world_bbox(transform: np.ndarray, mp: MassProperties) -> tuple[np.ndarray, np.ndarray]:
     lo, hi = mp.bbox_min.as_tuple(), mp.bbox_max.as_tuple()
@@ -317,6 +325,99 @@ def _wheel_axis_aligned(
                     f"{joint.id} spins about {(joint_axis / np.linalg.norm(joint_axis)).round(3).tolist()}"
                     + (" — aligned" if sine <= _AXIS_SINE_MAX
                        else f" — {np.degrees(np.arcsin(min(sine, 1.0))):.0f} degrees apart; it would tumble, not roll")
+                ),
+            )
+        )
+    return results
+
+
+@register("joint_can_move", tier=0)
+def _joint_can_move(
+    ir: RobotIR, mass_props: dict[str, MassProperties]
+) -> list[CriterionResult]:
+    """A joint that declares a range too small to use is not a joint.
+
+    This is the failure `ir.JointLimits` already documents, moved from tier 2 to
+    tier 0. The rover's drive joints carried +/-pi with the provenance note
+    "continuous rotation": every static criterion passed, MuJoCo was compiled,
+    two seconds of torque were simulated, and the rover drove 34 mm before
+    welding solid against the limit. Seconds per candidate to learn something a
+    subtraction knows.
+
+    The two cases are different questions, so they get different measurements:
+
+    - A **wheel** — a revolute joint whose subtree reaches the ground — must turn
+      without end, so *any* bound on one is the defect. The verdict is
+      categorical rather than a threshold on the range, because the arithmetic
+      that looks like it should work does not: the first version of this
+      criterion computed `(upper - lower) * radius` and passed the historical
+      rover at 283 mm of predicted travel while tier 2 measured 34 mm. Two
+      reasons, and both survive fixing the obvious one. Home is the *midpoint* of
+      the limits, so only half the span is available in the driving direction;
+      and the rolled arc is an upper bound on how far the body actually goes,
+      because the sim spends part of the run accelerating and slipping. A tier-0
+      criterion that guesses at a tier-2 number is a second opinion, and a wrong
+      one. The magnitude still reports the arc the bound leaves, labelled as the
+      optimistic bound it is.
+    - An **arm** joint is legitimately bounded, so the only question is whether
+      the bound leaves room to articulate. `_ARTICULATION_MIN` is a floor, not an
+      opinion about the design: below it the joint is a fixed joint that costs an
+      actuator.
+
+    Unbounded joints pass by construction — that is what unbounded means — and
+    fixed joints are not asked, since the IR forbids them limits at all.
+    """
+    results: list[CriterionResult] = []
+    home = configured_frames(ir)
+    wheel_radius = {j.id: r for j, r in _ground_contact_joints(ir, mass_props, home)}
+
+    for joint in ir.joints:
+        if joint.kind == "fixed":
+            continue
+        limits = joint.limits
+        if limits is None or not limits.bounded:
+            continue  # continuous: no limit to hit
+
+        span = float(limits.upper.value - limits.lower.value)
+        radius = wheel_radius.get(joint.id)
+
+        if radius is not None:
+            # Half the span: home is the midpoint of the limits, so that is what
+            # is left in the driving direction. Still an upper bound on distance
+            # travelled, not a prediction of it.
+            arc = (span / 2.0) * radius
+            results.append(
+                CriterionResult(
+                    name=f"joint_can_move[{joint.id}]",
+                    magnitude=arc / _DRIVE_TRAVEL_MIN,
+                    passed=False,
+                    unit="arc_ratio",
+                    detail=(
+                        f"{joint.id} carries a ground-contact wheel and declares limits "
+                        f"({span:.3f}rad). A driven wheel must turn without end: leave "
+                        f"lower/upper unset, which is how the IR says 'continuous'. From "
+                        f"home at the midpoint it has {arc * 1000:.0f}mm of arc before the "
+                        f"limit welds it — an optimistic bound, since the measured rover "
+                        f"managed 34mm where this arithmetic said 141mm"
+                    ),
+                )
+            )
+            continue
+
+        results.append(
+            CriterionResult(
+                name=f"joint_can_move[{joint.id}]",
+                magnitude=span / _ARTICULATION_MIN - 1.0,
+                passed=bool(span >= _ARTICULATION_MIN),
+                unit="range_ratio",
+                detail=(
+                    f"{joint.id} ({joint.kind}) has a range of {span:.4f}"
+                    f"{limits.upper.unit} "
+                    + (f"({np.degrees(span):.1f} degrees) " if limits.upper.unit == "rad" else "")
+                    + f"against a {_ARTICULATION_MIN:.2f} minimum"
+                    + ("" if span >= _ARTICULATION_MIN
+                       else " — it cannot articulate, so it is a fixed joint carrying the cost "
+                            "of an actuator")
                 ),
             )
         )

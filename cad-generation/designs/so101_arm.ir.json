@@ -1,0 +1,1144 @@
+{
+  "id": "12338db8-7166-4666-9000-7798b084bd24",
+  "name": "so101_arm",
+  "root_link": "base_link",
+  "links": [
+    {
+      "id": "base_link",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Base_motor_holder_SO101.step",
+          "sha256": "f13462eea875727ae7cec7d190c59642444b9076c76cf2423bbe3c5b6c469587",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.00636471,
+          "y": -0.0000994414,
+          "z": -0.0024
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": -1.67685e-15,
+          "z": 1.5708
+        }
+      }
+    },
+    {
+      "id": "base_link__base_so101_v2",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Base_SO101.step",
+          "sha256": "95209ec6a3ca06b1ec084f72d9c73324bdcf9d0e17213ef293f45f95a3993288",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.00636471,
+          "y": -8.97657e-9,
+          "z": -0.0024
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": -2.78073e-29,
+          "z": 1.5708
+        }
+      }
+    },
+    {
+      "id": "base_link__servo",
+      "geometry": {
+        "generator": "component",
+        "params": {
+          "part": {
+            "kind": "catalogue",
+            "value": "feetech_sts3215_12v",
+            "catalogue": "servos"
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0263353,
+          "y": -8.97657e-9,
+          "z": 0.02659999932050705
+        },
+        "rotation": {
+          "x": -8.21148e-16,
+          "y": 7.84513e-18,
+          "z": 1.249e-15
+        }
+      }
+    },
+    {
+      "id": "base_link__waveshare_mounting_plate_so101_v2",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/WaveShare_Mounting_Plate_SO101.step",
+          "sha256": "16510f5aedf04186d34aa279207d0d354d4b08c1d179a46a9974b1430d0702f8",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.0309827,
+          "y": -0.000199441,
+          "z": 0.0474
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": -1.35493e-14,
+          "z": 1.5708
+        }
+      }
+    },
+    {
+      "id": "shoulder_link",
+      "geometry": {
+        "generator": "component",
+        "params": {
+          "part": {
+            "kind": "catalogue",
+            "value": "feetech_sts3215_12v",
+            "catalogue": "servos"
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.0303992,
+          "y": 0.000422241,
+          "z": -0.05880000067949295
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 1.5708,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "shoulder_link__motor_holder_so101_base_v1",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Motor_holder_SO101_Base.step",
+          "sha256": "fb2ef4603324ddea53ab655f6ecd48c7f5a72dd7603e57e92c60c0a8e67a9083",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.0675992,
+          "y": -0.000177759,
+          "z": 0.0158499
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": -1.5708,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "shoulder_link__rotation_pitch_so101_v1",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Rotation_Pitch_SO101.step",
+          "sha256": "a392681efb05bf4009c17115a9b3e37bbee9d2fcfe25e2066b11b95aaa380915",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0122008,
+          "y": 0.0000222413,
+          "z": 0.0464
+        },
+        "rotation": {
+          "x": -1.5708,
+          "y": 2.35221e-33,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "upper_arm_link",
+      "geometry": {
+        "generator": "component",
+        "params": {
+          "part": {
+            "kind": "catalogue",
+            "value": "feetech_sts3215_12v",
+            "catalogue": "servos"
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.11257,
+          "y": -0.0155,
+          "z": 0.0015999993205070492
+        },
+        "rotation": {
+          "x": -3.14159,
+          "y": -5.27356e-16,
+          "z": -1.5708
+        }
+      }
+    },
+    {
+      "id": "upper_arm_link__upper_arm_so101_v1",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Upper_arm_SO101.step",
+          "sha256": "efa19a6dd2ccb459248500c76629cfa840630e7e15d9e146394d31da1525dd61",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.065085,
+          "y": 0.012,
+          "z": 0.0182
+        },
+        "rotation": {
+          "x": 3.14159,
+          "y": -0.0,
+          "z": -1.30911e-30
+        }
+      }
+    },
+    {
+      "id": "lower_arm_link",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Under_arm_SO101.step",
+          "sha256": "677a1a57efeddc439d97ebdc309b1c2853cfcb83f14c7d695c312fcf13a89713",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.0648499,
+          "y": -0.032,
+          "z": 0.0182
+        },
+        "rotation": {
+          "x": 3.14159,
+          "y": -0.0,
+          "z": 6.67202e-31
+        }
+      }
+    },
+    {
+      "id": "lower_arm_link__motor_holder_so101_wrist_v1",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Motor_holder_SO101_Wrist.step",
+          "sha256": "e58d86502535a5a4936677e9d934f1bda9417e83f7480f475061728c146739c4",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.0648499,
+          "y": -0.032,
+          "z": 0.018
+        },
+        "rotation": {
+          "x": -3.14159,
+          "y": -2.55351e-15,
+          "z": -1.83387e-30
+        }
+      }
+    },
+    {
+      "id": "lower_arm_link__servo",
+      "geometry": {
+        "generator": "component",
+        "params": {
+          "part": {
+            "kind": "catalogue",
+            "value": "feetech_sts3215_12v",
+            "catalogue": "servos"
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.1224,
+          "y": 0.0052,
+          "z": 0.0015999993205070492
+        },
+        "rotation": {
+          "x": -3.14159,
+          "y": -7.88861e-31,
+          "z": -3.14159
+        }
+      }
+    },
+    {
+      "id": "wrist_link",
+      "geometry": {
+        "generator": "component",
+        "params": {
+          "part": {
+            "kind": "catalogue",
+            "value": "feetech_sts3215_12v",
+            "catalogue": "servos"
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 8.32667e-17,
+          "y": -0.0424,
+          "z": 0.013499999320507047
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 1.5708,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wrist_link__wrist_roll_pitch_so101_v2",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Wrist_Roll_Pitch_SO101.step",
+          "sha256": "39c5e78647d471ab4e4328ec6d00f06ad90dc48a0b1ffe4baf1a951c1304f74b",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": -0.028,
+          "z": 0.0181
+        },
+        "rotation": {
+          "x": -1.5708,
+          "y": -1.5708,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "gripper_link",
+      "geometry": {
+        "generator": "component",
+        "params": {
+          "part": {
+            "kind": "catalogue",
+            "value": "feetech_sts3215_12v",
+            "catalogue": "servos"
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0077,
+          "y": 0.0001,
+          "z": -0.040500000679492956
+        },
+        "rotation": {
+          "x": -1.5708,
+          "y": -5.19179e-17,
+          "z": -1.66533e-16
+        }
+      }
+    },
+    {
+      "id": "gripper_link__wrist_roll_follower_so101_v1",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Wrist_Roll_Follower_SO101.step",
+          "sha256": "b7f9d59f7991f425fff784eab07f0bf65471903dd6d6177e7cb109bebcd02b35",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 8.32667e-17,
+          "y": -0.000218214,
+          "z": 0.000949706
+        },
+        "rotation": {
+          "x": -3.14159,
+          "y": -5.55112e-17,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "moving_jaw_so101_v1_link",
+      "geometry": {
+        "generator": "step_part",
+        "params": {
+          "asset": "so101/step/Moving_Jaw_SO101.step",
+          "sha256": "dff53ace072470c9a6c84dbb68dd84f9fd0959429f181905d9d05fe3007549b5",
+          "collision": "bbox"
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "pla",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -5.55112e-17,
+          "y": -5.55112e-17,
+          "z": 0.0189
+        },
+        "rotation": {
+          "x": 9.53145e-17,
+          "y": 6.93889e-18,
+          "z": 1.24077e-24
+        }
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "base_link__base_so101_v2__fixed",
+      "kind": "fixed",
+      "parent": "base_link",
+      "child": "base_link__base_so101_v2",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "base_link__servo__fixed",
+      "kind": "fixed",
+      "parent": "base_link",
+      "child": "base_link__servo",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "base_link__waveshare_mounting_plate_so101_v2__fixed",
+      "kind": "fixed",
+      "parent": "base_link",
+      "child": "base_link__waveshare_mounting_plate_so101_v2",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "shoulder_link__motor_holder_so101_base_v1__fixed",
+      "kind": "fixed",
+      "parent": "shoulder_link",
+      "child": "shoulder_link__motor_holder_so101_base_v1",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "shoulder_link__rotation_pitch_so101_v1__fixed",
+      "kind": "fixed",
+      "parent": "shoulder_link",
+      "child": "shoulder_link__rotation_pitch_so101_v1",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "upper_arm_link__upper_arm_so101_v1__fixed",
+      "kind": "fixed",
+      "parent": "upper_arm_link",
+      "child": "upper_arm_link__upper_arm_so101_v1",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "lower_arm_link__motor_holder_so101_wrist_v1__fixed",
+      "kind": "fixed",
+      "parent": "lower_arm_link",
+      "child": "lower_arm_link__motor_holder_so101_wrist_v1",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "lower_arm_link__servo__fixed",
+      "kind": "fixed",
+      "parent": "lower_arm_link",
+      "child": "lower_arm_link__servo",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "wrist_link__wrist_roll_pitch_so101_v2__fixed",
+      "kind": "fixed",
+      "parent": "wrist_link",
+      "child": "wrist_link__wrist_roll_pitch_so101_v2",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "gripper_link__wrist_roll_follower_so101_v1__fixed",
+      "kind": "fixed",
+      "parent": "gripper_link",
+      "child": "gripper_link__wrist_roll_follower_so101_v1",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "gripper",
+      "kind": "revolute",
+      "parent": "gripper_link",
+      "child": "moving_jaw_so101_v1_link",
+      "origin": {
+        "position": {
+          "x": 0.0202,
+          "y": 0.0188,
+          "z": -0.0234
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": -5.24284e-8,
+          "z": -1.41553e-15
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": {
+        "lower": {
+          "value": -0.174533,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "upper": {
+          "value": 1.74533,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "effort": {
+          "value": 10.0,
+          "unit": "N*m",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published effort limit"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published velocity limit"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "feetech_sts3215_12v",
+        "catalogue": "servos"
+      }
+    },
+    {
+      "id": "wrist_roll",
+      "kind": "revolute",
+      "parent": "wrist_link",
+      "child": "gripper_link",
+      "origin": {
+        "position": {
+          "x": 5.55112e-17,
+          "y": -0.0611,
+          "z": 0.0181
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 0.0486795,
+          "z": 3.14159
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": {
+        "lower": {
+          "value": -2.74385,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "upper": {
+          "value": 2.84121,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "effort": {
+          "value": 10.0,
+          "unit": "N*m",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published effort limit"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published velocity limit"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "feetech_sts3215_12v",
+        "catalogue": "servos"
+      }
+    },
+    {
+      "id": "wrist_flex",
+      "kind": "revolute",
+      "parent": "lower_arm_link",
+      "child": "wrist_link",
+      "origin": {
+        "position": {
+          "x": -0.1349,
+          "y": 0.0052,
+          "z": 3.62355e-17
+        },
+        "rotation": {
+          "x": 4.02456e-15,
+          "y": 8.67362e-16,
+          "z": -1.5708
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": {
+        "lower": {
+          "value": -1.65806,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "upper": {
+          "value": 1.65806,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "effort": {
+          "value": 10.0,
+          "unit": "N*m",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published effort limit"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published velocity limit"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "feetech_sts3215_12v",
+        "catalogue": "servos"
+      }
+    },
+    {
+      "id": "elbow_flex",
+      "kind": "revolute",
+      "parent": "upper_arm_link",
+      "child": "lower_arm_link",
+      "origin": {
+        "position": {
+          "x": -0.11257,
+          "y": -0.028,
+          "z": 1.73763e-16
+        },
+        "rotation": {
+          "x": -3.63608e-16,
+          "y": 8.74301e-16,
+          "z": 1.5708
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": {
+        "lower": {
+          "value": -1.69,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "upper": {
+          "value": 1.69,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "effort": {
+          "value": 10.0,
+          "unit": "N*m",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published effort limit"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published velocity limit"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "feetech_sts3215_12v",
+        "catalogue": "servos"
+      }
+    },
+    {
+      "id": "shoulder_lift",
+      "kind": "revolute",
+      "parent": "shoulder_link",
+      "child": "upper_arm_link",
+      "origin": {
+        "position": {
+          "x": -0.0303992,
+          "y": -0.0182778,
+          "z": -0.0542
+        },
+        "rotation": {
+          "x": -1.5708,
+          "y": -1.5708,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": {
+        "lower": {
+          "value": -1.74533,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "upper": {
+          "value": 1.74533,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "effort": {
+          "value": 10.0,
+          "unit": "N*m",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published effort limit"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published velocity limit"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "feetech_sts3215_12v",
+        "catalogue": "servos"
+      }
+    },
+    {
+      "id": "shoulder_pan",
+      "kind": "revolute",
+      "parent": "base_link",
+      "child": "shoulder_link",
+      "origin": {
+        "position": {
+          "x": 0.0388353,
+          "y": -8.97657e-9,
+          "z": 0.0624
+        },
+        "rotation": {
+          "x": 3.14159,
+          "y": 4.18253e-17,
+          "z": -3.14159
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": {
+        "lower": {
+          "value": -1.91986,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "upper": {
+          "value": 1.91986,
+          "unit": "rad",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published joint range"
+          }
+        },
+        "effort": {
+          "value": 10.0,
+          "unit": "N*m",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published effort limit"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "MEASURED",
+            "source": "vendor/so101/sim/so101_new_calib.urdf",
+            "note": "published velocity limit"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "feetech_sts3215_12v",
+        "catalogue": "servos"
+      }
+    }
+  ],
+  "base": "fixed"
+}

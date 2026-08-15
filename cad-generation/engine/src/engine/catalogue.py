@@ -79,6 +79,77 @@ def _q(value: float, unit: str, prov: Provenance) -> Quantity:
 # --- spec shapes --------------------------------------------------------
 
 
+class DistributorIds(BaseModel):
+    """Where a part is bought, keyed the way each distributor keys it.
+
+    §7.4: one catalogue serves both this platform and `pcb-ai`'s parts agent.
+    That only works if a part carries the identifiers *both* sides select on,
+    and LCSC is the load-bearing one — it decides JLC assembly eligibility, so
+    a part that is `basic` and a part that is `extended` differ by setup cost
+    per board even when they are electrically identical. Two catalogues would
+    drift; drift means the robot budgets a motor the board cannot drive (§2).
+    """
+
+    mpn: str = ""
+    manufacturer: str = ""
+    lcsc: str = ""
+    digikey: str = ""
+    mouser: str = ""
+    # "basic" | "extended" | "" (unknown). Not a bool: "not in the library at
+    # all" and "in the library at extended-part cost" are different answers and
+    # the BOM stage needs to tell them apart.
+    jlc_assembly: str = ""
+    lifecycle: str = ""  # "active" | "nrnd" | "obsolete" | ""
+
+
+class TorqueSpeedCurve(BaseModel):
+    """Torque against shaft speed, at one stated voltage.
+
+    §3 (v3): torque available is `curve(voltage_at_motor) x ratio x eta`. A
+    single `stall_torque` scalar cannot express that, and using it as though it
+    were available at every speed is how a design passes the torque budget and
+    then stalls halfway through the motion — the motor had 0.4 N*m at zero rpm
+    and 0.12 N*m where it actually had to work.
+
+    Points are `(omega_rad_s, torque_nm)`, ascending in omega. Stored as a table
+    rather than fitted, because §6.1 stores extracted curves as point tables with
+    the source figure hashed alongside — a fit would launder the datasheet
+    figure into a number nobody can check against it.
+    """
+
+    voltage: Quantity  # the V the curve was measured at
+    points: list[tuple[float, float]]
+    provenance: Provenance
+
+    @property
+    def stall(self) -> float:
+        return self.points[0][1]
+
+    @property
+    def no_load_speed(self) -> float:
+        return self.points[-1][0]
+
+    def torque_at(self, omega_rad_s: float) -> float:
+        """Linear interpolation between points, clamped at both ends.
+
+        Clamped rather than extrapolated: past the last point the real curve
+        goes to zero and a linear extrapolation goes negative, which reads as a
+        motor that drives the load backwards.
+        """
+        pts = self.points
+        w = abs(omega_rad_s)
+        if w <= pts[0][0]:
+            return pts[0][1]
+        if w >= pts[-1][0]:
+            return pts[-1][1]
+        for (w0, t0), (w1, t1) in zip(pts, pts[1:]):
+            if w0 <= w <= w1:
+                span = w1 - w0
+                f = (w - w0) / span if span else 0.0
+                return t0 + f * (t1 - t0)
+        return pts[-1][1]  # pragma: no cover - unreachable given the guards
+
+
 class BodySize(BaseModel):
     """Outside dimensions of a purchased part's body, in metres.
 
@@ -129,6 +200,13 @@ class MotorSpec(BaseModel):
     # Body envelope, for lumping the part onto a link as a real solid rather
     # than a point. See `BodySize` and the `component` geometry generator.
     body_size: "BodySize | None" = None
+    # The voltage `stall_torque` and `no_load_speed` were measured at. Without
+    # it the pair is uninterpretable at any other rail voltage, so the §3
+    # actuator model refuses to scale a motor that does not state one rather
+    # than assuming the number is voltage-independent.
+    rated_voltage: Quantity | None = None
+    torque_speed: TorqueSpeedCurve | None = None
+    distributor: DistributorIds | None = None
 
 
 class GearboxSpec(BaseModel):
@@ -158,6 +236,78 @@ class DriverSpec(BaseModel):
     manufacturer: str = ""
     part_number: str = ""
     datasheet_url: str = ""
+
+
+class BatterySpec(BaseModel):
+    """A pack, with the three numbers the tier-0 energy criterion needs.
+
+    Capacity alone answers "how long"; C-rating answers "can it deliver the
+    stall current at all"; internal resistance answers "what voltage does the
+    motor actually see" — and the third is the one that gets left out, which is
+    why a design sized on nominal 12 V discovers 9.8 V at the terminals when
+    four joints start together. §3's actuator model reads all three.
+    """
+
+    key: str
+    chemistry: str  # "LiPo" | "Li-ion" | "LiFePO4" | "NiMH"
+    nominal_voltage: Quantity  # V
+    capacity: Quantity  # Ah
+    cells_series: int
+    continuous_c_rating: float  # multiples of capacity, e.g. 25 => 25C
+    mass: Quantity  # kg
+    internal_resistance: Quantity | None = None  # ohm, whole pack
+    # Below this the pack is empty for design purposes. Running a LiPo flat
+    # damages it, so usable energy is not nameplate energy — typically 80%.
+    usable_fraction: float = 0.8
+    body_size: BodySize | None = None
+    part_number: str = ""
+    manufacturer: str = ""
+    datasheet_url: str = ""
+    distributor: DistributorIds | None = None
+
+    @property
+    def peak_current(self) -> float:
+        """Amps the pack is rated to deliver continuously (C-rating x capacity)."""
+        return self.continuous_c_rating * self.capacity.value
+
+
+class McuSpec(BaseModel):
+    """The controller. Shared with `pcb-ai`'s parts agent (§7.4).
+
+    Carries the numbers the robot side budgets against — supply rail and active
+    current — not the ones only the board cares about (package, pin count),
+    which stay on the PCB side of the contract.
+    """
+
+    key: str
+    core: str
+    clock: Quantity  # Hz
+    supply_voltage: Quantity  # V
+    active_current: Quantity  # A, typical at clock
+    flash: Quantity | None = None  # bytes
+    ram: Quantity | None = None  # bytes
+    gpio_count: int = 0
+    part_number: str = ""
+    manufacturer: str = ""
+    datasheet_url: str = ""
+    distributor: DistributorIds | None = None
+
+
+class EncoderSpec(BaseModel):
+    """Joint feedback. Sized here because it is a load on a rail and a mass on
+    a link, and selected here because `pcb-ai` places the same part."""
+
+    key: str
+    kind: str  # "magnetic absolute" | "optical incremental" | "potentiometer"
+    resolution: Quantity  # counts/rev (dimensionless count) or bits
+    supply_voltage: Quantity  # V
+    supply_current: Quantity  # A
+    interface: str = ""  # "I2C" | "SPI" | "ABI quadrature" | "analog"
+    mass: Quantity | None = None
+    part_number: str = ""
+    manufacturer: str = ""
+    datasheet_url: str = ""
+    distributor: DistributorIds | None = None
 
 
 class MaterialSpec(BaseModel):
@@ -314,6 +464,7 @@ SERVOS = Catalogue(
             mass=_q(0.055, "kg", _confirmed(_ROBOTSHOP_STS3215, "55 +/- 1 g")),
             gear_ratio=345.0,
             protocol="TTL half-duplex serial",
+            rated_voltage=_q(12.0, "V", _confirmed(_ROBOTSHOP_STS3215, "the voltage the torque and speed above were measured at")),
             body_size=BodySize(
                 length=_q(0.0452, "m", _confirmed(_ROBOTSHOP_STS3215, "45.2 mm body length")),
                 width=_q(0.0247, "m", _confirmed(_ROBOTSHOP_STS3215, "24.7 mm body width")),
@@ -333,6 +484,7 @@ SERVOS = Catalogue(
             mass=_q(0.055, "kg", _inferred(_SEEED_ST3215_7V4, "same body as STS3215")),
             gear_ratio=345.0,
             protocol="TTL half-duplex serial",
+            rated_voltage=_q(7.4, "V", _confirmed(_SEEED_ST3215_7V4, "the voltage the torque above was measured at")),
         ),
         "dynamixel_xl430_w250": MotorSpec(
             key="dynamixel_xl430_w250",
@@ -345,6 +497,7 @@ SERVOS = Catalogue(
             mass=_q(0.0572, "kg", _confirmed(_ROBOTIS_XL430, "57.2 g")),
             gear_ratio=258.5,
             protocol="TTL half-duplex serial",
+            rated_voltage=_q(12.0, "V", _confirmed(_ROBOTIS_XL430, "the voltage the torque and speed above were measured at")),
         ),
         "dynamixel_xm430_w350": MotorSpec(
             key="dynamixel_xm430_w350",
@@ -360,6 +513,7 @@ SERVOS = Catalogue(
             mass=_q(0.082, "kg", _confirmed(_ROBOTIS_XM430, "82 g")),
             gear_ratio=353.5,
             protocol="TTL half-duplex serial",
+            rated_voltage=_q(12.0, "V", _confirmed(_ROBOTIS_XM430, "the voltage the torque and speed above were measured at")),
         ),
         "towerpro_mg996r": MotorSpec(
             key="towerpro_mg996r",
@@ -374,6 +528,7 @@ SERVOS = Catalogue(
             mass=_q(0.055, "kg", _confirmed(_MG996R, "55 g")),
             gear_ratio=1.0,
             protocol="PWM",
+            rated_voltage=_q(6.0, "V", _confirmed(_MG996R, "the voltage the torque and speed above were measured at")),
         ),
     },
 )
@@ -415,6 +570,206 @@ MOTOR_DRIVERS = Catalogue(
             voltage_max=_q(29.0, "V", _inferred("Trinamic TMC2209 product page", "")),
             microstepping="up to 1/256 interpolated",
             interface="STEP/DIR + UART",
+        ),
+    },
+)
+
+# --- batteries ----------------------------------------------------------
+#
+# Every entry below is INFERRED, and that is not modesty. §12 non-negotiable #9
+# says a number enters the catalogue only through the sourcing pipeline with a
+# citation; these were transcribed from vendor listings, which is the practice
+# that rule exists to end. They are seeds that make the energy tier runnable,
+# they carry the URL they came from, and `engine.sourcing` is what replaces them
+# with librarian-extracted, human-confirmed values. `unsourced_entries()` below
+# lists exactly which ones still need that pass, so the debt is enumerable
+# rather than remembered.
+
+_TURNIGY_3S = "https://hobbyking.com/en_us/turnigy-2200mah-3s-25c-lipo-pack.html"
+_TURNIGY_4S = "https://hobbyking.com/en_us/turnigy-5000mah-4s-50c-lipo-pack.html"
+_SAMSUNG_35E = "https://www.samsungsdi.com/lithium-ion-battery/index.html"
+
+BATTERIES = Catalogue(
+    "batteries",
+    {
+        "lipo_3s_2200mah_25c": BatterySpec(
+            key="lipo_3s_2200mah_25c",
+            chemistry="LiPo",
+            part_number="T2200.3S.25",
+            manufacturer="Turnigy (HobbyKing)",
+            datasheet_url=_TURNIGY_3S,
+            nominal_voltage=_q(11.1, "V", _inferred(_TURNIGY_3S, "3 cells x 3.7 V nominal")),
+            capacity=_q(2.2, "A*h", _inferred(_TURNIGY_3S, "2200 mAh nameplate")),
+            cells_series=3,
+            continuous_c_rating=25.0,
+            mass=_q(0.188, "kg", _inferred(_TURNIGY_3S, "188 g listed pack weight")),
+            internal_resistance=_q(
+                0.030, "ohm",
+                _assumed("~10 mohm/cell for a 25C hobby LiPo; not a vendor figure — "
+                         "this is the number the sag term is most sensitive to"),
+            ),
+            distributor=DistributorIds(mpn="T2200.3S.25", manufacturer="Turnigy"),
+        ),
+        "lipo_4s_5000mah_50c": BatterySpec(
+            key="lipo_4s_5000mah_50c",
+            chemistry="LiPo",
+            part_number="T5000.4S.50",
+            manufacturer="Turnigy (HobbyKing)",
+            datasheet_url=_TURNIGY_4S,
+            nominal_voltage=_q(14.8, "V", _inferred(_TURNIGY_4S, "4 cells x 3.7 V nominal")),
+            capacity=_q(5.0, "A*h", _inferred(_TURNIGY_4S, "5000 mAh nameplate")),
+            cells_series=4,
+            continuous_c_rating=50.0,
+            mass=_q(0.528, "kg", _inferred(_TURNIGY_4S, "528 g listed pack weight")),
+            internal_resistance=_q(
+                0.012, "ohm", _assumed("~3 mohm/cell for a 50C pack; not a vendor figure")
+            ),
+            distributor=DistributorIds(mpn="T5000.4S.50", manufacturer="Turnigy"),
+        ),
+        # The pack shape that actually turns up on a rover: cylindrical cells,
+        # low C, high energy. Included because its C-rating is the binding
+        # constraint rather than its capacity — a 20 A pack driving four stalling
+        # steppers fails `peak_draw_within_c_rating` while looking generous on
+        # runtime, and that trade is invisible if the catalogue only stocks LiPo.
+        "liion_18650_3s2p_7ah": BatterySpec(
+            key="liion_18650_3s2p_7ah",
+            chemistry="Li-ion",
+            part_number="INR18650-35E (3S2P pack)",
+            manufacturer="Samsung SDI (cells)",
+            datasheet_url=_SAMSUNG_35E,
+            nominal_voltage=_q(10.8, "V", _inferred(_SAMSUNG_35E, "3 cells x 3.6 V nominal")),
+            capacity=_q(6.8, "A*h", _inferred(_SAMSUNG_35E, "2 x 3.4 Ah rated (3.5 Ah typical)")),
+            cells_series=3,
+            continuous_c_rating=2.94,  # 2 x 10 A continuous / 6.8 Ah
+            mass=_q(0.36, "kg", _inferred(_SAMSUNG_35E, "6 x 50 g cells + holder and wiring")),
+            internal_resistance=_q(
+                0.070, "ohm", _assumed("~45 mohm/cell, 3S2P => 3/2 x 45 mohm; not a vendor figure")
+            ),
+            usable_fraction=0.9,
+            distributor=DistributorIds(mpn="INR18650-35E", manufacturer="Samsung SDI"),
+        ),
+    },
+)
+
+# --- MCUs ---------------------------------------------------------------
+
+_STM32F103 = "https://www.st.com/en/microcontrollers-microprocessors/stm32f103c8.html"
+_RP2040 = "https://www.raspberrypi.com/documentation/microcontrollers/rp2040.html"
+_ESP32_WROOM = "https://www.espressif.com/en/products/modules/esp32"
+_ATMEGA328P = "https://www.microchip.com/en-us/product/atmega328p"
+
+MCUS = Catalogue(
+    "mcus",
+    {
+        "stm32f103c8t6": McuSpec(
+            key="stm32f103c8t6",
+            core="Arm Cortex-M3",
+            part_number="STM32F103C8T6",
+            manufacturer="STMicroelectronics",
+            datasheet_url=_STM32F103,
+            clock=_q(72e6, "Hz", _inferred(_STM32F103, "72 MHz maximum")),
+            supply_voltage=_q(3.3, "V", _inferred(_STM32F103, "2.0-3.6 V operating range")),
+            active_current=_q(0.050, "A", _inferred(_STM32F103, "~50 mA at 72 MHz, peripherals on")),
+            flash=_q(65536, "byte", _inferred(_STM32F103, "64 KB")),
+            ram=_q(20480, "byte", _inferred(_STM32F103, "20 KB")),
+            gpio_count=37,
+            distributor=DistributorIds(mpn="STM32F103C8T6", manufacturer="STMicroelectronics"),
+        ),
+        "rp2040": McuSpec(
+            key="rp2040",
+            core="dual Arm Cortex-M0+",
+            part_number="RP2040",
+            manufacturer="Raspberry Pi",
+            datasheet_url=_RP2040,
+            clock=_q(133e6, "Hz", _inferred(_RP2040, "133 MHz stock maximum")),
+            supply_voltage=_q(3.3, "V", _inferred(_RP2040, "IO supply; core is 1.1 V from the internal LDO")),
+            active_current=_q(0.030, "A", _inferred(_RP2040, "~30 mA both cores busy; no external flash")),
+            ram=_q(270336, "byte", _inferred(_RP2040, "264 KB on-chip SRAM")),
+            gpio_count=30,
+            distributor=DistributorIds(mpn="RP2040", manufacturer="Raspberry Pi"),
+        ),
+        "esp32_wroom_32e": McuSpec(
+            key="esp32_wroom_32e",
+            core="Xtensa LX6 dual",
+            part_number="ESP32-WROOM-32E",
+            manufacturer="Espressif Systems",
+            datasheet_url=_ESP32_WROOM,
+            clock=_q(240e6, "Hz", _inferred(_ESP32_WROOM, "240 MHz maximum")),
+            supply_voltage=_q(3.3, "V", _inferred(_ESP32_WROOM, "3.0-3.6 V")),
+            # The number that matters for rail sizing is not the average. A Wi-Fi
+            # TX burst is several hundred mA against a ~80 mA idle, and a rail
+            # budgeted on the average browns out the MCU mid-transmit.
+            active_current=_q(
+                0.240, "A",
+                _inferred(_ESP32_WROOM, "Wi-Fi TX peak, not the ~80 mA compute-only average"),
+            ),
+            flash=_q(4194304, "byte", _inferred(_ESP32_WROOM, "4 MB SPI flash in-module")),
+            ram=_q(532480, "byte", _inferred(_ESP32_WROOM, "520 KB SRAM")),
+            gpio_count=34,
+            distributor=DistributorIds(mpn="ESP32-WROOM-32E", manufacturer="Espressif Systems"),
+        ),
+        "atmega328p_au": McuSpec(
+            key="atmega328p_au",
+            core="AVR 8-bit",
+            part_number="ATMEGA328P-AU",
+            manufacturer="Microchip Technology",
+            datasheet_url=_ATMEGA328P,
+            clock=_q(16e6, "Hz", _inferred(_ATMEGA328P, "16 MHz at 5 V")),
+            supply_voltage=_q(5.0, "V", _inferred(_ATMEGA328P, "1.8-5.5 V; 16 MHz needs >=4.5 V")),
+            active_current=_q(0.009, "A", _inferred(_ATMEGA328P, "~9 mA active at 16 MHz, 5 V")),
+            flash=_q(32768, "byte", _inferred(_ATMEGA328P, "32 KB")),
+            ram=_q(2048, "byte", _inferred(_ATMEGA328P, "2 KB")),
+            gpio_count=23,
+            distributor=DistributorIds(mpn="ATMEGA328P-AU", manufacturer="Microchip Technology"),
+        ),
+    },
+)
+
+# --- encoders -----------------------------------------------------------
+
+_AS5600 = "https://ams.com/as5600"
+_AS5048A = "https://ams.com/as5048a"
+_AMT102 = "https://www.cuidevices.com/product/motion/rotary-encoders/incremental/modular/amt10-series"
+
+ENCODERS = Catalogue(
+    "encoders",
+    {
+        "as5600": EncoderSpec(
+            key="as5600",
+            kind="magnetic absolute",
+            part_number="AS5600-ASOM",
+            manufacturer="ams-OSRAM",
+            datasheet_url=_AS5600,
+            resolution=_q(4096, "count", _inferred(_AS5600, "12-bit absolute over one turn")),
+            supply_voltage=_q(3.3, "V", _inferred(_AS5600, "3.3 V or 5 V variants")),
+            supply_current=_q(0.0065, "A", _inferred(_AS5600, "6.5 mA typical")),
+            interface="I2C",
+            distributor=DistributorIds(mpn="AS5600-ASOM", manufacturer="ams-OSRAM"),
+        ),
+        "as5048a": EncoderSpec(
+            key="as5048a",
+            kind="magnetic absolute",
+            part_number="AS5048A-HTSP-500",
+            manufacturer="ams-OSRAM",
+            datasheet_url=_AS5048A,
+            resolution=_q(16384, "count", _inferred(_AS5048A, "14-bit absolute over one turn")),
+            supply_voltage=_q(3.3, "V", _inferred(_AS5048A, "3.3 V or 5 V")),
+            supply_current=_q(0.015, "A", _inferred(_AS5048A, "~15 mA typical")),
+            interface="SPI",
+            distributor=DistributorIds(mpn="AS5048A-HTSP-500", manufacturer="ams-OSRAM"),
+        ),
+        "amt102_v": EncoderSpec(
+            key="amt102_v",
+            kind="optical incremental",
+            part_number="AMT102-V",
+            manufacturer="CUI Devices",
+            datasheet_url=_AMT102,
+            resolution=_q(2048, "count", _inferred(_AMT102, "PPR switch-selectable, 48-2048")),
+            supply_voltage=_q(5.0, "V", _inferred(_AMT102, "5 V")),
+            supply_current=_q(0.016, "A", _inferred(_AMT102, "~16 mA")),
+            interface="ABI quadrature",
+            mass=_q(0.017, "kg", _inferred(_AMT102, "17 g with the mounting sleeve")),
+            distributor=DistributorIds(mpn="AMT102-V", manufacturer="CUI Devices"),
         ),
     },
 )
@@ -461,13 +816,40 @@ CATALOGUES: dict[str, Catalogue] = {
     "servos": SERVOS,
     "gearboxes": GEARBOXES,
     "motor_drivers": MOTOR_DRIVERS,
+    "batteries": BATTERIES,
+    "mcus": MCUS,
+    "encoders": ENCODERS,
 }
+
+# The classes `pcb-ai`'s parts agent also selects from (§2, §7.4). Named here so
+# a test can assert the overlap exists rather than trusting a paragraph: if this
+# platform grows an `mcus` catalogue and the PCB side keeps its own, the two
+# drift, and drift means the robot budgets a motor the board cannot drive.
+SHARED_WITH_PCB: tuple[str, ...] = ("motor_drivers", "mcus", "encoders", "batteries")
 
 
 def resolve(catalogue: str, key: str) -> BaseModel:
     if catalogue not in CATALOGUES:
         raise KeyError(f"no catalogue named {catalogue!r}; known catalogues: {sorted(CATALOGUES)}")
     return CATALOGUES[catalogue][key]
+
+
+def unsourced_entries() -> list[tuple[str, str, str, str]]:
+    """Every catalogue value not yet CONFIRMED, as `(catalogue, key, field, status)`.
+
+    §12 non-negotiable #9 wants numbers to arrive through the sourcing pipeline
+    with a citation. Most of this table predates that pipeline. Rather than
+    asserting the debt is small, this enumerates it — the librarian's work queue
+    (§6.1), and the list a human works down when promoting to CONFIRMED.
+    """
+    out: list[tuple[str, str, str, str]] = []
+    for cat_name, cat in sorted(CATALOGUES.items()):
+        for key in cat.keys():
+            entry = cat[key]
+            for field, value in entry:
+                if isinstance(value, Quantity) and value.provenance.status != "CONFIRMED":
+                    out.append((cat_name, key, field, value.provenance.status))
+    return out
 
 
 def resolve_geared(motor_key: str, gearbox_key: str) -> MotorSpec:

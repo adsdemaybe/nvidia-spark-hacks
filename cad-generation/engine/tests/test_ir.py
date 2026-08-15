@@ -14,6 +14,25 @@ from engine.ir import (
 )
 
 
+def _link(link_id: str) -> Link:
+    """A minimal valid link, for topology tests that don't care about geometry."""
+    return Link(
+        id=link_id,
+        geometry=GeometrySpec(
+            generator="plate",
+            params={
+                name: Quantity(
+                    value=value,
+                    unit="m",
+                    provenance=Provenance(status="ASSUMED", source="test fixture"),
+                )
+                for name, value in (("length", 0.1), ("width", 0.05), ("thickness", 0.003))
+            },
+            material=CatalogueParam(value="pla", catalogue="materials"),
+        ),
+    )
+
+
 def test_simple_rover_validates():
     ir = simple_rover()
     assert ir.root_link == "chassis"
@@ -93,3 +112,54 @@ def test_revision_requires_author_shape():
 
     rev = Revision(design_id=uuid4(), revision_no=0, ir=ir, author="agent:claude")
     assert rev.ir_hash == ir.content_hash()
+
+
+# --- regressions: the joint graph must be a tree ---
+
+
+def test_duplicate_joint_ids_are_rejected():
+    links = [_link("a"), _link("b"), _link("c")]
+    with pytest.raises(ValidationError, match="duplicate joint ids"):
+        RobotIR(
+            name="dup", root_link="a", links=links,
+            joints=[
+                Joint(id="j1", kind="fixed", parent="a", child="b"),
+                Joint(id="j1", kind="fixed", parent="a", child="c"),
+            ],
+        )
+
+
+def test_a_link_may_have_only_one_parent_joint():
+    """Two joints claiming the same child silently last-wins in the kinematics
+    walk, so the robot evaluated is not the robot authored."""
+    links = [_link("a"), _link("b"), _link("c")]
+    with pytest.raises(ValidationError, match="at most one parent joint"):
+        RobotIR(
+            name="two-parents", root_link="a", links=links,
+            joints=[
+                Joint(id="j1", kind="fixed", parent="a", child="c"),
+                Joint(id="j2", kind="fixed", parent="b", child="c"),
+            ],
+        )
+
+
+def test_self_referencing_joint_is_rejected():
+    with pytest.raises(ValidationError, match="to itself"):
+        RobotIR(
+            name="self", root_link="a", links=[_link("a")],
+            joints=[Joint(id="j1", kind="fixed", parent="a", child="a")],
+        )
+
+
+def test_root_link_may_not_have_a_parent_joint():
+    """`a -> b` plus `b -> a` gives every link exactly one parent, so the
+    one-parent rule alone lets the cycle through. The root having a parent is
+    the tell."""
+    with pytest.raises(ValidationError, match="root has no parent"):
+        RobotIR(
+            name="cyc", root_link="a", links=[_link("a"), _link("b")],
+            joints=[
+                Joint(id="j1", kind="fixed", parent="a", child="b"),
+                Joint(id="j2", kind="fixed", parent="b", child="a"),
+            ],
+        )

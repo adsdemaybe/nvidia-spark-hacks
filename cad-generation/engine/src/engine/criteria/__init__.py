@@ -1,5 +1,6 @@
 from engine.criteria import assembly_checks  # noqa: F401  (registers tier-0 criteria)
 from engine.criteria import builtin  # noqa: F401  (registers tier-0 criteria)
+from engine.criteria import tier0_electronics  # noqa: F401  (registers tier-0 criteria)
 from engine.criteria import tier1_reach  # noqa: F401  (registers tier-1 criteria)
 from engine.criteria import tier1_statics  # noqa: F401  (registers tier-1 criteria)
 from engine.criteria import tier2_sim  # noqa: F401  (registers tier-2 criteria)

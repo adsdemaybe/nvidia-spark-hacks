@@ -1,0 +1,841 @@
+{
+  "id": "cf9e8e99-f76a-455b-bf30-b9329bdf8966",
+  "name": "rover_stub_axle_280",
+  "root_link": "chassis",
+  "links": [
+    {
+      "id": "chassis",
+      "geometry": {
+        "generator": "plate",
+        "params": {
+          "length": {
+            "value": 0.28,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "280mm deck, inside the ~300mm the intent asks for once wheels overhang"
+            }
+          },
+          "width": {
+            "value": 0.14,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "narrow enough that the wheels sit outboard of the deck"
+            }
+          },
+          "thickness": {
+            "value": 0.008,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "8mm plate, stiff enough to carry axle bending unsupported"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.14,
+          "y": 0.0,
+          "z": 0.044
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "axle_front_left",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.012,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "12mm steel stub axle"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.006,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "bored for a through-bolt"
+            }
+          },
+          "length": {
+            "value": 0.045,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "reaches from inside the deck edge out past the wheel hub"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "steel_1018",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "axle_front_right",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.012,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "12mm steel stub axle"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.006,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "bored for a through-bolt"
+            }
+          },
+          "length": {
+            "value": 0.045,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "reaches from inside the deck edge out past the wheel hub"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "steel_1018",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "axle_rear_left",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.012,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "12mm steel stub axle"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.006,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "bored for a through-bolt"
+            }
+          },
+          "length": {
+            "value": 0.045,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "reaches from inside the deck edge out past the wheel hub"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "steel_1018",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "axle_rear_right",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.012,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "12mm steel stub axle"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.006,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "bored for a through-bolt"
+            }
+          },
+          "length": {
+            "value": 0.045,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "reaches from inside the deck edge out past the wheel hub"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "steel_1018",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_front_left",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.1,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "100mm rolling diameter; radius sets the 50mm axle height"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.08,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.035,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "35mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_front_right",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.1,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "100mm rolling diameter; radius sets the 50mm axle height"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.08,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.035,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "35mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_rear_left",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.1,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "100mm rolling diameter; radius sets the 50mm axle height"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.08,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.035,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "35mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_rear_right",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.1,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "100mm rolling diameter; radius sets the 50mm axle height"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.08,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.035,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "35mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "deck_to_axle_front_left",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "axle_front_left",
+      "origin": {
+        "position": {
+          "x": 0.1,
+          "y": 0.062,
+          "z": 0.05
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "deck_to_axle_front_right",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "axle_front_right",
+      "origin": {
+        "position": {
+          "x": 0.1,
+          "y": -0.062,
+          "z": 0.05
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "deck_to_axle_rear_left",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "axle_rear_left",
+      "origin": {
+        "position": {
+          "x": -0.1,
+          "y": 0.062,
+          "z": 0.05
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "deck_to_axle_rear_right",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "axle_rear_right",
+      "origin": {
+        "position": {
+          "x": -0.1,
+          "y": -0.062,
+          "z": 0.05
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "drive_front_left",
+      "kind": "revolute",
+      "parent": "axle_front_left",
+      "child": "wheel_front_left",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.023,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": {
+          "value": -3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "upper": {
+          "value": 3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "matches the NEMA 17 holding torque below"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~0.5 m/s at a 50mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    },
+    {
+      "id": "drive_front_right",
+      "kind": "revolute",
+      "parent": "axle_front_right",
+      "child": "wheel_front_right",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": -0.023,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": {
+          "value": -3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "upper": {
+          "value": 3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "matches the NEMA 17 holding torque below"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~0.5 m/s at a 50mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    },
+    {
+      "id": "drive_rear_left",
+      "kind": "revolute",
+      "parent": "axle_rear_left",
+      "child": "wheel_rear_left",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.023,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": {
+          "value": -3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "upper": {
+          "value": 3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "matches the NEMA 17 holding torque below"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~0.5 m/s at a 50mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    },
+    {
+      "id": "drive_rear_right",
+      "kind": "revolute",
+      "parent": "axle_rear_right",
+      "child": "wheel_rear_right",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": -0.023,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": {
+          "value": -3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "upper": {
+          "value": 3.141592653589793,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "continuous rotation, centred so home is 0 rad"
+          }
+        },
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "matches the NEMA 17 holding torque below"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~0.5 m/s at a 50mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    }
+  ]
+}

@@ -21,6 +21,7 @@
  */
 
 import type {
+  BoardMass,
   BoardReport,
   ComponentHeight,
   ConnectorEdge,
@@ -59,6 +60,10 @@ export interface DeriveOptions {
   connectorRefs?: string[]
   /** Fallback height for a footprint the table doesn't know. */
   defaultHeightMm?: number
+  /** Known populated masses in grams, keyed by designator. CONFIRMED, and they
+   *  override the footprint mass table. Supply these from the BOM when it
+   *  carries per-line masses — the table is a stand-in for exactly this. */
+  massOverrides?: Record<string, number>
 }
 
 /**
@@ -98,6 +103,65 @@ const FOOTPRINT_HEIGHT_MM: Array<[RegExp, number]> = [
 ]
 
 const DEFAULT_HEIGHT_MM = 2.0
+
+/**
+ * Density of FR-4 laminate, g/cm^3. A material constant, not a board property:
+ * the substrate mass is area x thickness x this, and every term but this one
+ * comes off the routed artifact.
+ */
+const FR4_DENSITY_G_PER_CM3 = 1.85
+
+/**
+ * Typical populated masses in grams, by footprint substring — the mass twin of
+ * `FOOTPRINT_HEIGHT_MM`, and ASSUMED for exactly the same reason. Circuit JSON
+ * has no mass field any more than it has a Z axis.
+ *
+ * These matter less than the heights do, and it is worth saying why rather than
+ * treating them as equally load-bearing: a 0.5 g error on a passive is invisible
+ * next to a 12 g substrate, whereas a 4 mm height error on an electrolytic is an
+ * enclosure that does not close. The figures that do move the total are the
+ * connectors and the electrolytics, which is where the table is most specific.
+ */
+const FOOTPRINT_MASS_G: Array<[RegExp, number]> = [
+  [/^0201/i, 0.0002],
+  [/^0402/i, 0.0006],
+  [/^0603/i, 0.002],
+  [/^0805/i, 0.004],
+  [/^1206/i, 0.01],
+  [/^1210/i, 0.015],
+  [/sot-?23/i, 0.008],
+  [/sot-?223/i, 0.06],
+  [/sod-?123/i, 0.01],
+  [/qfn/i, 0.05],
+  [/dfn/i, 0.02],
+  [/soic/i, 0.15],
+  [/ssop|tssop/i, 0.06],
+  [/[tl]qfp/i, 0.35],
+  [/bga/i, 0.4],
+  [/dip(_|-)?\d*/i, 1.0],
+  [/usb.?c/i, 1.0],
+  [/usb/i, 1.8],
+  [/pinrow|header|hdr/i, 0.9],
+  [/terminal|screw/i, 2.4],
+  [/electrolytic|cap_?radial|radial/i, 2.0],
+  [/tantalum/i, 0.1],
+  [/crystal|xtal|hc49/i, 0.5],
+  [/inductor|choke/i, 0.8],
+  [/led/i, 0.005],
+  [/switch|button|tact/i, 0.35],
+  [/relay/i, 10.0],
+  [/screwterminal/i, 2.4],
+]
+
+const DEFAULT_MASS_G = 0.1
+
+function lookupMass(footprint: string | undefined): { g: number; matched: string | null } {
+  if (!footprint) return { g: DEFAULT_MASS_G, matched: null }
+  for (const [re, g] of FOOTPRINT_MASS_G) {
+    if (re.test(footprint)) return { g, matched: re.source }
+  }
+  return { g: DEFAULT_MASS_G, matched: null }
+}
 
 function lookupHeight(footprint: string | undefined): { mm: number; matched: string | null } {
   if (!footprint) return { mm: DEFAULT_HEIGHT_MM, matched: null }
@@ -208,6 +272,7 @@ export function deriveBoardReport(circuitJson: El[], opts: DeriveOptions = {}): 
   // --- components -------------------------------------------------------
   const component_heightmap: ComponentHeight[] = []
   const connector_edges: ConnectorEdge[] = []
+  const componentMasses: Array<{ x: number; y: number; g: number }> = []
   const explicitConnectors = opts.connectorRefs ? new Set(opts.connectorRefs) : null
   const fallbackHeight = opts.defaultHeightMm ?? DEFAULT_HEIGHT_MM
 
@@ -251,6 +316,38 @@ export function deriveBoardReport(circuitJson: El[], opts: DeriveOptions = {}): 
           : `no footprint match${footprint ? ` for ${footprint}` : " and no footprint recorded"}; used fallback`,
       })
     }
+
+    let massG: number
+    const massOverride = opts.massOverrides?.[ref]
+    if (massOverride !== undefined) {
+      massG = massOverride
+      assumptions.push({
+        subject: ref,
+        field: "mass_g",
+        value: massOverride,
+        unit: "g",
+        status: "CONFIRMED",
+        source: "caller-supplied massOverrides",
+        note: footprint ? `footprint ${footprint}` : "",
+      })
+    } else {
+      const { g, matched } = lookupMass(footprint)
+      massG = g
+      assumptions.push({
+        subject: ref,
+        field: "mass_g",
+        value: massG,
+        unit: "g",
+        status: "ASSUMED",
+        source: matched
+          ? `cad/board-report.ts footprint mass table (${matched})`
+          : "cad/board-report.ts default",
+        note: matched
+          ? `typical populated mass for ${footprint}`
+          : `no footprint match${footprint ? ` for ${footprint}` : " and no footprint recorded"}; used fallback`,
+      })
+    }
+    componentMasses.push({ x, y, g: massG })
 
     component_heightmap.push({
       ref,
@@ -306,8 +403,45 @@ export function deriveBoardReport(circuitJson: El[], opts: DeriveOptions = {}): 
     },
   )
 
+  // --- mass -------------------------------------------------------------
+  // Substrate first, because it is the honest half: area and thickness come off
+  // the routed outline and FR-4's density is a material constant. The board is
+  // treated as a full rectangle, which overstates a board with large cutouts —
+  // stated here rather than corrected, because Circuit JSON's outline is the
+  // bounding rectangle in the first place and a correction would be invented.
+  const areaCm2 = ((maxX - minX) * (maxY - minY)) / 100
+  const substrate_g = areaCm2 * (thickness / 10) * FR4_DENSITY_G_PER_CM3
+  assumptions.push({
+    subject: "board",
+    field: "substrate_g",
+    value: substrate_g,
+    unit: "g",
+    status: "INFERRED",
+    source: "cad/board-report.ts: outline area x thickness x FR-4 density",
+    note: `${areaCm2.toFixed(2)}cm^2 x ${thickness}mm x ${FR4_DENSITY_G_PER_CM3} g/cm^3`,
+  })
+
+  const components_g = componentMasses.reduce((sum, c) => sum + c.g, 0)
+  const total_g = substrate_g + components_g
+
+  // CoM of substrate (at the board centre) and components, mass-weighted. This
+  // is the number the robot's mass model reads; getting it wrong moves the whole
+  // robot's centre of mass by however far the heaviest connector sits off centre.
+  const momentX = substrate_g * cx + componentMasses.reduce((s, c) => s + c.g * c.x, 0)
+  const momentY = substrate_g * cy + componentMasses.reduce((s, c) => s + c.g * c.y, 0)
+  const mass: BoardMass = {
+    total_g,
+    substrate_g,
+    components_g,
+    com_mm: {
+      x_mm: total_g > 0 ? momentX / total_g : cx,
+      y_mm: total_g > 0 ? momentY / total_g : cy,
+    },
+  }
+
   const boardReport: BoardReport = {
     design_id: opts.designId ?? "",
+    mass,
     outline_mm: {
       points: [
         { x_mm: minX, y_mm: minY },

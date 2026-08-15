@@ -219,7 +219,7 @@ def _plate(params: dict, material: MaterialSpec) -> GeometryResult:
 
 
 @lru_cache(maxsize=128)
-def _step_solid(asset: str, sha256: str | None, density: float):
+def _step_solid(asset: str, sha256: str | None, density: float, mating: bool = False):
     """Import a STEP and measure it, once per (asset, density).
 
     Both halves are cached, not just the import: computing volume, centre of
@@ -230,7 +230,7 @@ def _step_solid(asset: str, sha256: str | None, density: float):
     """
     from engine.assets import load_step
 
-    part = load_step(asset, sha256=sha256)
+    part = load_step(asset, sha256=sha256, mating=mating)
     return part, _mass_properties_from_shape(part, density)
 
 
@@ -256,8 +256,13 @@ def _step_part(params: dict, material: MaterialSpec) -> GeometryResult:
     """
     asset = _require_str(params, "asset")
     sha256 = params.get("sha256")
+    # An IR that intends to cut mating features from this solid says so, and
+    # `load_step` refuses if the asset was ingested as vendor CAD (§5, §6.2).
+    # Defaulting to False keeps the common case — a purchased part carried into
+    # the assembly for its mass and its picture — working unchanged.
+    mating = str(params.get("mating", "")).lower() in ("1", "true", "yes")
     part, mass_properties = _step_solid(
-        asset, str(sha256) if sha256 else None, material.density.value
+        asset, str(sha256) if sha256 else None, material.density.value, mating
     )
 
     collision: tuple[CollisionShape, ...] = ()

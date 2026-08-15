@@ -1,0 +1,24 @@
+[project]
+name = "cad-api"
+version = "0.1.0"
+description = "STRUCT Feat 2 service surface — implements the §6 PCB<->CAD contract over the engine."
+requires-python = ">=3.11"
+dependencies = [
+    "engine",
+    "pydantic>=2.6",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.scripts]
+cad-api = "cad_api.service:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

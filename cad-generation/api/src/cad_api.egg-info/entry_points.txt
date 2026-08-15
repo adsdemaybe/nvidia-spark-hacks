@@ -1,0 +1,2 @@
+[console_scripts]
+cad-api = cad_api.service:main

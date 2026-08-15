@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: cad-api
+Version: 0.1.0
+Summary: STRUCT Feat 2 service surface — implements the §6 PCB<->CAD contract over the engine.
+Requires-Python: >=3.11
+Requires-Dist: engine
+Requires-Dist: pydantic>=2.6
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn>=0.27
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"

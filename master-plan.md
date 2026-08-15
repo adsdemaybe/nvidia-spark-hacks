@@ -17,6 +17,7 @@ execution schedule.
 | Compute | **NVIDIA DGX Spark** (GB10 Grace Blackwell, 128 GB unified, aarch64 Linux) | Isaac Sim/Lab, gsplat training, and SmolVLA fine-tuning all run locally — NVIDIA ships official DGX Spark playbooks for Isaac. Everything must build on **aarch64**; x86-only wheels are a blocker to catch at hour 0 |
 | Repo | **Monorepo**, shared infra | One compose stack, one job system, one artifact store, one provenance model |
 | PCB ↔ CAD | Each exposes an **API + MCP server**; they negotiate fit in a feedback loop | Contract in §6 |
+| Design-loop model | **Local only: Qwen3-Coder-Next on vLLM :8100.** No hosted-API provider. (2026-08-15) | `laguna` removed — its 93 GB NVFP4 floor left nothing for CAD or MuJoCo, so it is not a backup, it is a model that does not fit. `claude` removed — Claude writes this codebase **in a chat session**, where a human reads the diff before it lands; it is not a runtime dependency of a loop that runs thousands of times, and making it one would put a billed outbound call inside the inner loop and break local-first for the call that least needs to leave the box. `engine.agent_loop` raises a named error for both, rather than silently accepting the flag |
 | Base policy model | **LeRobot SmolVLA** (ACT as fallback) | Fine-tunes fast on Spark; native LeRobot dataset format is the interchange for feats 3+4 |
 | Scan capture | **Both**: iPhone LiDAR (Polycam/Scaniverse) for scaled mesh + phone video → COLMAP → gsplat for appearance | LiDAR mesh is the geometric truth; splat is the visual truth |
 | AR/VR | **WebXR**, recommended device: **Meta Quest 3** running the WebXR app in-browser. **AR-first (decision: 2026-08-14):** passthrough AR (`immersive-ar`) is the primary mode for both feats 4 and 5 — easier to demo (judges see the real room, no disorientation, hand-off in seconds); fully-immersive VR (`immersive-vr`) is the secondary mode, used only when a task needs an environment that isn't physically present | Zero install, device-agnostic, hand-tracking via WebXR Hand Input API; Quest 3 color passthrough is what makes the AR-first call viable |
@@ -124,8 +125,9 @@ v3** (F3/F4), **task.json** (F3/F4). Freeze these at hour 4 (§8).
 **Hour-0 preflight (blocker check, one script):** `uname -m` = aarch64; CUDA +
 torch on Spark; Isaac Lab playbook smoke test; gsplat compile; MuJoCo import;
 COLMAP binary; kicad-cli; Java ≥ 25 (Freerouting); ngspice; **vLLM serving
-Laguna-S-2.1-NVFP4 with a structured-output smoke test (tool call + JSON schema
-round-trip — agent loops die without this)**; Quest 3 reaches the dev server
+Qwen3-Coder-Next-NVFP4 with a structured-output smoke test (JSON schema
+round-trip — agent loops die without this; `cad_api.design.preflight` is that
+test, and with no hosted fallback it is a hard gate rather than a warning)**; Quest 3 reaches the dev server
 over LAN (HTTPS cert for WebXR!). Any failure has a named owner and a
 named fallback before work starts.
 
@@ -161,7 +163,7 @@ venue room properly.
 
 ## 4. Feat 1 — text-to-pcb (summary; full plan in `text-to-pcb-plan.md`)
 
-**Laguna agents** write the tscircuit HDL and drive the harness — they invoke
+**Qwen3-Coder-Next agents** write the tscircuit HDL and drive the harness — they invoke
 each stage, read its report, and revise; a deterministic stage ladder L0–L10
 (lint → compile → ERC → place → route → DRC×2 → physics → SPICE → DFM →
 artifacts → regression) owns every verdict. `eslint-plugin-pcb` v0.1 is already shipped and wired as L0.
@@ -178,7 +180,7 @@ rail + connectors) — so the PCB in the demo is *the robot's own board*.
 
 Robot IR (topology as data), geometry generator registry, criteria with
 mandatory metrics, coverage analysis (BLIND/FRAGILE), provenance everywhere.
-**Laguna agents** author the build123d/IR revisions and run the compile +
+**Qwen3-Coder-Next agents** author the build123d/IR revisions and run the compile +
 evaluation tiers in the LangGraph loop, iterating on compiler feedback and sim
 reports — but `evaluate()` alone returns verdicts.
 
@@ -223,7 +225,47 @@ serves `/cad/…` on aarch64 with build123d, and `tools/negotiate.ts` drives the
 run converged on an 83.0×65.0×15.9 mm cavity with one real finding — the rover declares
 no mounting holes, so nothing secures it in the shell.
 
-### 6.1 From geometric fit to physical proof
+### 6.1 The robot side of the contract, not just the enclosure side
+
+The loop above negotiates a **board against its box**. What it did not carry was
+the rest of the robot: which rail drives which motor, how much current that rail
+must deliver, what voltage arrives at the motor after the pack sags and the cable
+drops, and what the board's mass does to the centre of mass. `cad.constrain_board`
+had the geometry half of the down direction; there was no path at all for the
+electrical half.
+
+`robot-platform-tech-stack.md` §7 closes it, and the implementation is in
+`cad-generation/engine`:
+
+**Down — `engine/export/board_spec.py`.** The robot IR emits `board-spec.md` plus
+`envelope.json`. The envelope is the same `Envelope` schema `pcb.replace_within`
+already takes, so it drops into the existing loop unchanged. The spec adds what
+the enclosure negotiation never carried: rail voltages and current budgets
+computed from the actuators actually on each rail, with the margin policy stated
+separately from the number; connector placement written as `at_edge` rules
+`pcb-ai` enforces at its L3; and one fab profile chosen for the whole robot.
+`spec_hash()` covers only what the board can see, so a mechanical change does not
+trigger a respin.
+
+**Up — `engine/ingest/pcb_run.py`.** A run directory is read back and board mass,
+CoM, dissipation, outline, tallest part and gate status land in the IR as
+MEASURED-class. Board mass had to be *added* to `pcb-ai` for that claim to be
+true — `BoardMass` in both halves of the contract file, computed by
+`deriveBoardReport` from the routed outline, the stackup and the BOM.
+
+**Consequences at the robot level.** `rail_margin`, `harness_drop`,
+`board_fits_bay`, `board_thermal_budget`, `actuator_voltage_in_range` and
+`board_gate_passed` are ordinary criteria in `evaluate()`, so a board that fails
+DRC fails the robot by construction, and a rail that cannot deliver fails in
+under a millisecond at tier 0 rather than surviving to a rollout that assumed
+nominal voltage.
+
+**Sequencing** (§7.5): **I1** — emit the spec, a human runs `pcb-ai`, ingest the
+run dir. That is what works today. **I2** — subprocess plus spec-hash cache, with
+the golden round trip in CI. **I3** — the closed thermal/electrical loop, which
+is the same fixpoint §6.2 describes and shares its stop condition.
+
+### 6.2 From geometric fit to physical proof
 
 Geometry agreeing is not the robot working. A board can fit its enclosure perfectly and
 still fail to move the arm, because nothing yet checks that the current reaching the
@@ -377,7 +419,7 @@ the segmentation pipeline), Vision Pro native path.
 Five tracks, one per feat; each human directs agents within their track. Shared
 infra is a joint hour-0–4 job before feat work forks: **F1's owner stands up the
 TS workspace + MCP scaffolding; F2's owner stands up compose, `core-py`, hub API,
-and the pgvector RAG (docs corpus loaded before Laguna's first agent runs).**
+and the pgvector RAG (docs corpus loaded before the first agent run).**
 
 | Track | Owner | Scope |
 |---|---|---|
@@ -444,8 +486,8 @@ as CI; no agent merges to a contract file (humans only, post-H+4).
 | Isaac Lab install/perf on Spark eats a day | high | Use NVIDIA's dgx-spark-playbooks verbatim; MuJoCo is the full fallback sim (cut line 5 texture path still works) |
 | COLMAP/splat too slow at the venue | med | Fixture scan pre-trained before the event; venue scan is a re-run, not a first run |
 | Quest 3 WebXR needs HTTPS + same LAN | med | mkcert + local CA on the Spark at H+0; phone-hotspot LAN as backup |
-| **Spark contention**: Laguna inference + Isaac Lab RL + gsplat + SmolVLA fine-tune all on one GB10 | **high** | Schedule, don't share: Laguna serves during build hours (agent fleet), heavy training owns the GPU overnight (H+28 RL launch); cap vLLM `gpu-memory-utilization`; Claude API absorbs agent load during training windows |
-| Laguna structured-output/tool-call reliability below agent-loop needs | med | Preflight schema round-trip test; per-agent provider config falls back to Claude for designer/chief-class agents with zero code change |
+| **Spark contention**: local inference + Isaac Lab RL + gsplat + SmolVLA fine-tune all on one GB10 | **med** (was high) | Schedule, don't share: vLLM serves during build hours (agent fleet), heavy training owns the GPU overnight (H+28 RL launch); cap `gpu-memory-utilization`. Materially easier since the Coder-Next pivot — ~2 GB/token against Laguna's 93 GB floor. **The Claude-API absorption line is retired**: the design loop is local-only (see below) |
+| Local structured-output/tool-call reliability below agent-loop needs | med | Preflight schema round-trip test, run before every design run (`cad_api.design.preflight`). There is **no hosted fallback** — a failed preflight stops the run and says which endpoint ignored `response_format`, which is a fact about the server, not something more iterations fix |
 | SmolVLA fine-tune quality in 1 night | med | ACT fallback (smaller, trains faster); cut line 3 |
 | Splat segmentation is mushy | med | LiDAR-mesh bbox segmentation is the floor; splat grouping is the ceiling |
 | PCB↔CAD loop oscillates | low | 3-round hard stop + report; both check_fits deterministic |
@@ -455,7 +497,7 @@ as CI; no agent merges to a contract file (humans only, post-H+4).
 
 All eight originals are answered and folded into §0's decisions table: 5 humans
 one-per-feat; board fab ordered post-hack; F3 room-agnostic by requirement;
-Laguna primary with docs-RAG + model-agnostic Claude fallback; F3/F4 task
+local model primary with docs-RAG (Coder-Next since 2026-08-15; **no hosted fallback** — see §0); F3/F4 task
 systems separate, joined by the internal fine-tune API; LeRobot official SO-101
 URDF; pgvector on shared Postgres for RAG; feature list finalized — all five
 feats ship, hardening continues post-hack across all of them.
@@ -464,9 +506,11 @@ Still open, but they're **tests at H+0**, not decisions:
 
 1. **Splat rendering in WebXR** (F5): try a gsplat web renderer for 30 min; if
    <45 fps on Quest 3, commit to the mesh-proxy path immediately.
-2. **Laguna structured-output reliability**: the preflight schema round-trip
-   decides per-agent Laguna vs Claude assignment empirically — both sub-plans'
-   prediction-scoring machinery runs from hour 1 to keep that assignment honest.
+2. **Local structured-output reliability**: the preflight schema round-trip
+   gates every design run. With the hosted fallback retired there is no
+   assignment to decide — the question is only whether the served endpoint
+   constrains decoding, and both sub-plans' prediction-scoring machinery runs
+   from hour 1 to keep the model honest about what it claims.
 
 ---
 

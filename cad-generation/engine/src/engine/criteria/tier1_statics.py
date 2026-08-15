@@ -23,6 +23,7 @@ import numpy as np
 
 from engine.catalogue import MotorSpec, resolve as resolve_catalogue
 from engine.criteria.base import CriterionResult
+from engine.electrical import actuator_operating_point
 from engine.criteria.registry import register
 from engine.ir import RobotIR
 from engine.kinematics import (
@@ -63,7 +64,39 @@ def _joint_torque_budget(ir: RobotIR, mass_props: dict[str, MassProperties]) -> 
             torque += np.dot(np.cross(lever_arm, weight), axis_world)
 
         required = abs(float(torque))
-        available = motor.stall_torque.value
+
+        # §3 (v3): torque available is `curve(voltage_at_motor) x ratio x eta`,
+        # and `voltage_at_motor` accounts for battery sag and harness drop. When
+        # the robot has an electronics subsystem those numbers exist, and using
+        # the datasheet figure at nominal voltage instead would be the exact
+        # failure the model was added to prevent — a rail that cannot deliver
+        # passes here and stalls on the bench.
+        #
+        # Static hold, so speed is zero. This is a holding-torque check, not a
+        # motion one; the speed term arrives with trajectory criteria.
+        op = actuator_operating_point(ir, joint.id, speed_rad_s=0.0)
+        if op is not None:
+            available = op.torque_nm
+            provenance = op.provenance
+            # The first note says how the number was arrived at — interpolated
+            # from a curve, taken off a linear line, or not scaled at all. Saying
+            # "at 10.91 V" while silently reporting an unscaled datasheet figure
+            # would be worse than saying nothing: it reads as though the voltage
+            # was accounted for.
+            basis = op.notes[0] if op.notes else "no basis recorded"
+            source = (
+                f"at {op.voltage_at_motor_v:.2f}V on rail "
+                f"{ir.electronics.joint_rail[joint.id]!r} — {basis}"
+            )
+        else:
+            available = motor.stall_torque.value
+            provenance = motor.stall_torque.provenance.status
+            source = (
+                "at the catalogue's stated condition — this joint is on no rail, "
+                "so the actual voltage at the motor is unmodelled"
+                + (f" ({motor.condition})" if motor.condition else "")
+            )
+
         margin = (available - required) / available if available > 0 else _NO_TORQUE_AVAILABLE
 
         results.append(
@@ -74,8 +107,9 @@ def _joint_torque_budget(ir: RobotIR, mass_props: dict[str, MassProperties]) -> 
                 unit="ratio",
                 detail=(
                     f"required={required:.4f}N*m available={available:.4f}N*m "
-                    f"(actuator={joint.actuator.value})"
+                    f"(actuator={joint.actuator.value}, {source})"
                 ),
+                provenance=provenance,
             )
         )
     return results

@@ -76,6 +76,28 @@ export const ThermalHotspot = z.object({
   max_temp_c: z.number().nullable().default(null),
 })
 
+/**
+ * Mass and centre of mass of the populated board.
+ *
+ * The robot side (§7.3 of robot-platform-tech-stack.md) takes this as a
+ * MEASURED-class fact, replacing the ASSUMED "50 g per board" placeholder its
+ * Phase 1 starts with. It belongs here and not there: the BOM and the stackup
+ * live on this side, and a robot-side estimate would be a second opinion nobody
+ * measured.
+ *
+ * Substrate and components are reported separately because their provenance
+ * differs. The substrate is area x thickness x density, all of which the routed
+ * artifact knows. The component figure is only as good as the per-footprint mass
+ * table behind it — the same honesty problem, and the same treatment, as the
+ * component *height* table this module already carries.
+ */
+export const BoardMass = z.object({
+  total_g: z.number().nonnegative(),
+  substrate_g: z.number().nonnegative(),
+  components_g: z.number().nonnegative(),
+  com_mm: Point2,
+})
+
 export const BoardReport = z.object({
   design_id: z.string().default(""),
   outline_mm: Outline,
@@ -85,6 +107,10 @@ export const BoardReport = z.object({
   connector_edges: z.array(ConnectorEdge).default([]),
   keepouts: z.array(Keepout).default([]),
   thermal_hotspots: z.array(ThermalHotspot).default([]),
+  /** Mass of the populated board. Null when it was not computed — a board of
+   *  unknown mass and a massless board are different inputs to the robot's
+   *  centre-of-mass calculation and only one of them is possible. */
+  mass: BoardMass.nullable().default(null),
 })
 
 export const Box3 = z.object({
@@ -188,6 +214,7 @@ export type ComponentHeight = z.infer<typeof ComponentHeight>
 export type ConnectorEdge = z.infer<typeof ConnectorEdge>
 export type Keepout = z.infer<typeof Keepout>
 export type ThermalHotspot = z.infer<typeof ThermalHotspot>
+export type BoardMass = z.infer<typeof BoardMass>
 export type BoardReport = z.infer<typeof BoardReport>
 export type Box3 = z.infer<typeof Box3>
 export type Standoff = z.infer<typeof Standoff>

@@ -19,6 +19,18 @@ class CriterionResult:
     passed: bool
     unit: str
     detail: str = ""
+    # §12 non-negotiable #3: "every verdict states the worst provenance among
+    # its inputs". A PASS is only as good as its weakest number, and a report
+    # that does not say so is the one way it can mislead without containing a
+    # false value.
+    #
+    # The default is INFERRED rather than ASSUMED because it is the truth for
+    # the criteria that predate this field: they are computed from B-rep
+    # geometry and a CONFIRMED material density, and §3's table puts a tensor
+    # derived that way at exactly INFERRED. A criterion that knows better —
+    # anything reading a MEASURED board fact, or an ASSUMED friction — states
+    # its own.
+    provenance: str = "INFERRED"
 
 
 # A criterion may apply zero or more times per design (e.g. mount_fits fires

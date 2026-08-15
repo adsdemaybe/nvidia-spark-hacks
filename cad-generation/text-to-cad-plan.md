@@ -142,7 +142,24 @@ def tube(outer_d: float, wall: float, length: float) -> Part: ...
 ```
 Adding a robot type should mean adding generators and criteria — never editing
 the IR schema or the harness.
-### 2.4 Versioning
+### 2.4 The electronics subsystem
+`RobotIR.electronics` holds `Rail`, `BoardSpec`, `Harness`, a battery
+`CatalogueParam` and `joint_rail` — the mapping that makes "a motor with no
+driver rail" checkable at the robot level, before `pcb-ai` ever runs. Full
+treatment in §8.8; two schema points belong here.
+It is **optional**, and `None` means the design has not been powered yet — a real
+Phase-1 state, distinct from powered-and-empty. What is *not* legitimate is a
+half-filled subsystem, so `Electronics` refuses dangling rail and board
+references, and `RobotIR` refuses a board mounted on a link that does not exist.
+That last one is the revision failure: a link renamed, a board left pointing at
+the old name, and its measured mass silently landing nowhere instead of loudly
+missing.
+Requirements the robot owns and facts the PCB side fills live in the **same**
+nodes. `BoardSpec.max_outline` is what the bay can accept; `measured_outline` is
+what came back. Keeping them together means `board_fits_bay` reads one object
+whether or not the board has been designed, and a criterion that reads a
+not-yet-measured field returns nothing rather than passing.
+### 2.5 Versioning
 `schema_version` is checked on load. Migrations live in `ir/migrations/` and are
 applied in order. **Never mutate a stored IR in place** — every revision is a new
 row (see §6).
@@ -343,12 +360,26 @@ CREATE TABLE artifacts (
     sha256        text NOT NULL
 );
 CREATE TABLE catalogue_parts (
-    catalogue     text NOT NULL,
-    part          text NOT NULL,
+    catalogue     text NOT NULL,          -- stepper_motors|gearboxes|servos|...
+    part          text NOT NULL,          -- our stable key
+    part_number   text NOT NULL,          -- orderable MPN, e.g. '17HS4401'
+    manufacturer  text NOT NULL,
     spec          jsonb NOT NULL,         -- every field carries provenance
+    datasheet_url text,                   -- required for any CONFIRMED field
+    distributor   jsonb,                  -- cached price/stock/MOQ per source
+    fetched_at    timestamptz,            -- distributor data goes stale
     PRIMARY KEY (catalogue, part)
 );
+CREATE INDEX ON catalogue_parts (catalogue);
+-- Torque/current/speed live in `spec` as provenanced Quantities rather than
+-- columns, because the fields differ per catalogue (a driver has no torque, a
+-- battery has no shaft). Expression indexes cover the queries that matter:
+CREATE INDEX ON catalogue_parts (((spec->'holding_torque'->>'value')::float));
 ```
+**The BOM is a join, not a document.** Because every physical part in a design is
+a catalogue key, the bill of materials falls out of the IR plus this table — with
+price and stock attached — rather than being written separately and drifting from
+the design it describes. See §8.5 for what goes in it.
 **Why append-only revisions:** the agent loop's value is the *trace* — which
 change fixed which criterion, and which prediction was wrong. Overwriting
 destroys the only dataset worth having, and it is the training data for the v3
@@ -423,8 +454,301 @@ Enforcement:
 32.65 mm / shaft 20.1 mm — a short 34 mm-class motor, not the 40 mm part it
 stood in for. **Never cut a mating feature from community CAD.** Bolt patterns,
 pilot bores, and shaft diameters come from catalogue constants.
+This is no longer discipline. `engine/sourcing/models.py` tags everything it
+ingests `visual_only`, and `require_matable()` raises `VisualOnlyError` for a
+boolean against one — §8.6.4. The rule became a type error.
 Known-bad secondary sources encountered: NopSCADlib gives the Raspberry Pi 4
 mounting hole as Ø3.0; the official drawing says Ø2.7.
+---
+## 8.5 Component database — real parts, real torque numbers
+The catalogue is not a lookup table of convenience values. It is the **only**
+place a physical component may enter a design, and every number in it belongs to
+a part somebody can buy. `CatalogueParam` exists precisely so an optimizer cannot
+invent a 7.5:1 gearbox; that guarantee is worth nothing if the catalogue itself
+holds made-up torques.
+**Status.** Eight catalogues are stocked — `materials`, `stepper_motors`,
+`servos`, `gearboxes`, `motor_drivers`, `batteries`, `mcus`, `encoders` — with
+real MPNs and datasheet URLs. The last three landed with the electronics
+subsystem (§8.8): they are the parts `pcb-ai`'s parts agent also selects, and
+`catalogue.SHARED_WITH_PCB` names them so a test can assert the overlap rather
+than a paragraph claiming it. Two catalogues would drift, and drift means the
+robot budgets a motor the board cannot drive.
+The spread problem the stub caused is half solved. `joint_torque_budget` now
+chooses among three steppers and five servos rather than two entries, but every
+`stepper_motors` entry still shares a 1.7 A rated current, which is why
+`analyze_catalogue_coverage` searches *across* actuator catalogues — searching
+within one reported `rail_margin` as BLIND when it is not.
+### 8.5.1 Catalogues to stock
+| Catalogue | State | What it holds | Key spec fields |
+|---|---|---|---|
+| `stepper_motors` | 3 entries | NEMA 8/11/14/17/23 frames | holding torque, rated current/phase, step angle, body length, shaft Ø, mass, bolt circle |
+| `gearboxes` | 5 entries | planetary/spur reducers per motor frame | ratio, rated output torque, backlash (arcmin), efficiency, added length, mass |
+| `servos` | 5 entries | hobby + smart serial servos | stall torque @ voltage, rated voltage, no-load speed, protocol, mass |
+| `dc_gearmotors` | not stocked | brushed gearmotors w/ integrated reducers | stall torque, free speed, gear ratio, encoder CPR, mass |
+| `motor_drivers` | 3 entries | stepper/brushed/BLDC drivers | max current/phase, Vmot range, microstepping, interface |
+| `mcus` | 4 entries | control silicon | core, clock, logic voltage, **active current**, flash/RAM, GPIO count |
+| `encoders` | 3 entries | rotary position sensors | resolution, absolute vs incremental, interface, supply voltage/current |
+| `batteries` | 3 entries | LiPo/Li-ion packs | nominal V, capacity, C-rating, **internal resistance**, usable fraction, mass |
+| `fasteners` | not stocked | screws, standoffs, bearings | thread, length, head type, bore/OD/width |
+| `materials` | 4 entries | stock + print materials | density, yield strength |
+Three rules make this usable rather than decorative:
+- **Torque is stated with its condition.** A servo quoted "20 kg·cm" is
+  meaningless without the voltage it was measured at; a stepper's holding torque
+  is not its running torque at speed. Every torque field carries the voltage,
+  current, or RPM it applies at. A single `stall_torque` float with no condition
+  is the exact shape of a number nobody can check.
+- **Gearboxes are separate entries, not baked-in variants.** `nema17_planetary_13.73`
+  as one key hides which motor and which reducer, and makes the 5.18:1 and 27:1
+  options invisible to the optimizer. Motor × gearbox is a composition the
+  catalogue resolves, with the efficiency loss applied rather than ignored —
+  output torque is `motor_torque × ratio × efficiency`, and a planetary at
+  0.7–0.9 efficiency is the difference between a passing and failing joint.
+- **A motor states the voltage its numbers apply at, or it cannot be scaled.**
+  `rated_voltage` is what lets `engine.electrical.available_torque` re-evaluate a
+  servo at the voltage the rail actually delivers. A motor without one gets its
+  catalogue figure back unscaled and an `ASSUMED` provenance saying so, which is
+  the honest answer rather than a silently nominal one.
+The strongest available check on that last mechanism is in the catalogue itself:
+the Feetech family is stocked at 12 V (30 kgf·cm) and at 7.4 V (19 kgf·cm) from
+two different vendor pages. Scaling the 12 V entry down to 7.4 V with the model
+lands within 3% of the independently sourced 7.4 V entry. Neither number was
+fitted to the other; `test_electronics.py` pins it.
+### 8.5.2 Spec shape
+```python
+class MotorSpec(BaseModel):
+    key: str
+    part_number: str                 # "17HS4401" — orderable, not a nickname
+    manufacturer: str
+    stall_torque: Quantity           # N*m, provenance -> datasheet
+    condition: str                   # the operating point the torque applies at
+    rated_voltage: Quantity | None   # what `stall_torque` was measured at
+    torque_speed: TorqueSpeedCurve | None   # points, not a fit (§8.6)
+    rated_current: Quantity | None   # A per phase
+    stall_current: Quantity | None   # A — what the rail budget is summed from
+    voltage_min / voltage_max: Quantity | None   # the window `actuator_voltage_in_range` checks
+    mass: Quantity                   # kg — feeds mass properties
+    body_size: BodySize | None       # drives the `component` generator's inertia
+    distributor: DistributorIds | None      # mpn, lcsc, digikey, mouser, jlc_assembly
+    datasheet_url: str               # the resolvable source CI checks for
+```
+`DistributorIds` is what makes one catalogue serve both pipelines. LCSC is the
+load-bearing field: it decides JLC assembly eligibility, so a `basic` and an
+`extended` part differ in per-board setup cost even when they are electrically
+identical, and no other distributor's data carries that.
+Every `Quantity` carries `Provenance`, so a torque read off a datasheet is
+`CONFIRMED` with the URL, a value derived from a family spec is `INFERRED`, and a
+value we picked is `ASSUMED`. **A part whose torque is `ASSUMED` must never be
+proposed to a customer as a BOM line** — the report groups by status precisely so
+that is visible.
+### 8.5.3 Where the data comes from
+Superseded by §8.6. The preference order is unchanged; what changed is that it
+is now a pipeline rather than an instruction, and the debt it has not yet paid
+off is enumerable with `python -m engine.sourcing debt` (85 values today: 59
+`INFERRED`, 26 `ASSUMED`).
+### 8.5.4 Seeding, and the honest caveat about it
+Seed the catalogue from the parts this project actually uses, starting with the
+demo embodiment: the **SO-101 arm is built on Feetech STS3215 serial servos**, so
+that part and its bus driver are the first entries — the demo BOM should describe
+the robot in the demo. That is done.
+**The caveat, restated because it still applies.** Everything currently in the
+catalogue was *transcribed* from manufacturer pages and distributor listings —
+it did not come through §8.6's pipeline, and §12 non-negotiable #9 says it
+should have. Rather than assert the debt is small, `catalogue.unsourced_entries()`
+enumerates it, and the ASSUMED values are the ones to source first. The three
+battery internal resistances head that list: nothing else in the catalogue
+influences the §8.8 actuator model as much, and none of the three is a vendor
+figure.
+### 8.5.5 Selection is the harness's job, not the agent's
+The agent proposes a catalogue **key**. It does not propose a torque. Whether
+that part is adequate is decided by `joint_torque_budget` running against the
+catalogue's number, at the tier that owns it. This is the §1.1 invariant applied
+to procurement: an agent may pick the part, only the harness may say it fits.
+Once the catalogue holds a real spread, one more criterion becomes worth having —
+`actuator_headroom`, the ratio of available to required torque — so that a joint
+scraping through at 1.02× is visibly different from one at 3×. A binary
+pass/fail on torque is invisible to coverage analysis for the reason §7.2 gives.
+**Still open**, and worth being precise about why. `joint_torque_budget` reports
+`(available − required) / available`, which asymptotes to 1 as the required
+torque goes to zero. On a rover wheel at rest the static demand *is* zero, so the
+margin is 1.0 whatever motor is fitted, and the criterion is blind to the
+actuator by construction. That is physically correct — a wheel holding still
+needs no torque — and it means the static criterion is the wrong instrument for a
+wheel. `actuator_headroom` against an accelerating or grade-climbing load is the
+right one, and it is not written yet.
+---
+## 8.6 The sourcing layer — real parts, fetched not typed
+`engine/sourcing/` is the answer to "the catalogue is only as good as the table
+behind it". Four rules hold across it:
+1. **The network is touched at catalogue-build time only.** `evaluate()` and the
+   optimizer never import the package. An evaluation that depends on a
+   distributor's uptime is not an evaluation.
+2. **Offline is the default, not the fallback.** `SOURCING_ONLINE=1` opts in, so
+   the mistake of importing this on the evaluation path fails closed.
+3. **Missing keys degrade to cache-only, loudly.** Every provider accounts for
+   itself with a warning naming what it could not reach. Silence would make a
+   stale cache indistinguishable from a live fetch, which is how a discontinued
+   part sits in a BOM for a year.
+4. **An agent never types a number in.** It may *propose* a part or *request* a
+   search ("NEMA17 class, ≥0.4 N·m at speed, ≤350 g"). Fetch, parse, normalise
+   and cross-check are tools.
+### 8.6.1 Parametric data
+`providers.py` implements Nexar/Octopart, Digi-Key, Mouser and LCSC behind one
+`Provider` protocol, over `urllib` only — the package adds no dependency to a
+platform whose point is that it runs on one box. A `PartOffer` deliberately holds
+strings and prices and has no method that produces a `Quantity`: a price is a
+fact about a listing, a torque is a fact about a part, and the second one goes
+through the librarian.
+### 8.6.2 The librarian, and the human checkbox
+`librarian.py` is the leash, not the agent. An `ExtractedValue` will not
+construct without a `Citation` carrying the **sha256 of the document** — a URL
+would still resolve after a manufacturer revised the PDF in place, pointing at a
+figure that may no longer say what it said — and it checks the value's dimension
+against the field's, which is what catches a `rated_current` filled in from the
+voltage column.
+`to_quantity()` lands the value as `INFERRED`, always. `confirm()` is the only
+path to `CONFIRMED`, requires a named human, refuses any reviewer starting with
+`agent:`, and has no bulk variant. A "confirm all" button is how a hundred unread
+values become CONFIRMED in one click, and the entire value of the ladder is that
+CONFIRMED means someone looked.
+Curves are stored as point tables with the source figure hashed alongside, and
+must ascend in x — interpolation over an unsorted table returns a wrong value
+rather than failing.
+### 8.6.3 3D models, and the mass cross-check that earns the pipeline
+```
+fetch → hash → license recorded → units and axes normalized
+      → watertightness/scale sanity → mass cross-check → tag → cache
+```
+The cross-check is the step that pays for the rest: model volume × catalogue
+density against the datasheet mass, ±15%. It separates the two failure modes by
+their ratio — a factor of ~1e9 is a millimetre model read as metres, anything
+else in the wrong direction is usually a shelled body somebody exported for
+rendering. A failure quarantines the model (kept, not deleted — the evidence is
+what somebody will want to look at) and the part falls back to a parametric
+placeholder built from datasheet dimensions, so the pipeline never blocks on a
+pretty model. A model nobody cross-checked records `{"skipped": true}`, because
+"not verified" and "verified" must not look alike.
+### 8.6.4 `visual_only` as a type error
+§9.4's rule — never cut a mating feature from vendor CAD — used to be discipline.
+It is now `require_matable()`, called by any generator about to cut or fuse
+against a vendored solid, raising `VisualOnlyError` with the alternative named:
+the bolt circle is a number in the datasheet, and taking it from there is both
+correct and cheaper than selecting a face on someone else's B-rep. Everything
+ingested is tagged `visual_only=True`; there is no code path that sets it False.
+Assets with no ingest sidecar pass through, because most of `vendor/` predates
+the pipeline and breaking existing designs to enforce a rule on files nobody
+claimed were vendor CAD is the wrong trade.
+### 8.6.5 The cache
+Content-addressed by the sha256 of the bytes, not by URL. A manufacturer who
+silently replaces the STEP behind a stable URL has changed the robot, and a
+URL-keyed cache would hide it. An object edited in place is refused on read
+rather than served.
+---
+## 8.7 Units at every boundary
+`pint`, one process-wide registry, validated on `Quantity` construction. Three
+things it buys and one it does not:
+- A unit string that does not parse fails where it was written, not in a report.
+- `q.to("N*m")` replaces a `_KGCM_TO_NM` constant per module. The kg·cm/N·m
+  confusion is a factor of ~10 and has already cost this project once.
+- `expect(q, "current")` refuses a voltage where a current was wanted — the shape
+  of a datasheet transcribed from the wrong column.
+- It does **not** separate torque from energy: N·m and J are dimensionally
+  identical and no dimensional analysis can tell them apart. `test_units.py`
+  asserts that limitation so it cannot quietly be assumed away.
+---
+## 8.8 Electronics co-design
+### 8.8.1 The IR's electronics subsystem
+`RobotIR.electronics` is optional and holds `Rail`, `BoardSpec`, `Harness`, a
+battery `CatalogueParam`, and `joint_rail`. Requirements the robot owns and facts
+the PCB side fills live in the same nodes on purpose: a board fact lands where
+the robot's criteria already look, so `rail_margin` reads the same object whether
+the board has been designed yet or not.
+`None` means the design has not been powered — a real Phase-1 state, distinct
+from powered-and-empty. Every electronics criterion returns nothing for it, and
+`EvaluationReport.unmodelled` says so. That is §12 #5 one level down: a robot
+nobody powered has not passed its power checks.
+### 8.8.2 The actuator model at tier 0/1
+`engine/electrical.py` is §3's one line — `curve(voltage_at_motor) × ratio × η`,
+where `voltage_at_motor` accounts for battery sag and harness drop — and nothing
+more expensive. `cosim/` runs the real SPICE-backed version at rollout cost; the
+point here is to fail an undersized rail in under a millisecond, on every
+candidate, instead of surviving to a MuJoCo rollout that assumed nominal voltage.
+Three simplifications, each stated where it is used: one pass rather than a fixed
+point (evaluated at stall, so the sag is maximal and the torque minimal —
+conservative by construction); the gearbox is already composed into the catalogue
+entry, so multiplying by the ratio again would double-count it; and a stepper
+without a torque–speed table gets its holding torque back unscaled, because a
+stepper's fall-off with speed is a different mechanism from a brushed motor's.
+Harness resistance counts **both** conductors. Counting only the outbound leg is
+exactly half the real answer — 0.4 V on a 12 V rail with four motors, which is
+the size of error that decides whether a design passes.
+### 8.8.3 The criteria at the boundary
+| criterion | tier | magnitude | what it catches |
+|---|---|---|---|
+| `electronics_erc` | 0 | fraction of actuated joints on a rail | a motor nobody decided how to power, before anyone routes copper |
+| `rail_margin` | 0 | budget ÷ worst-case draw | the rail that cannot deliver. Moves when the motor changes — §9's test of whether the integration is real |
+| `actuator_voltage_in_range` | 0 | position in the motor's V window | a 12 V servo on a pack that sags to 9.4 V: torque, current and geometry all individually fine, and it browns out mid-motion |
+| `harness_drop` | 0 | volts at stall | the joint at the end of the long cable |
+| `board_fits_bay` | 0 | tightest clearance, mm | a routed board that outgrew its pocket, by millimetres rather than by boolean |
+| `board_thermal_budget` | 0 | dissipation ÷ what the enclosure sheds | the heat the mechanical side inherits. `ASSUMED` however MEASURED the dissipation, because both constants in it are ours |
+| `board_gate_passed` | 0 | fraction of boards through their gates | §12 #10, enforced where every other verdict is |
+| `energy_runtime`, `peak_draw_within_c_rating` | 0 | ratios | the four-minute battery, and the pack with ample capacity that cannot deliver the current |
+`actuator_voltage_in_range` exists because coverage analysis reported the rail
+voltage as **BLIND** — a ±10% perturbation moved no criterion at all, because
+nothing checked that the rail could run the motor bolted to it. §7.2's rule
+applied exactly as written: BLIND is a harness bug needing a new criterion, not
+more search.
+### 8.8.4 Coverage through the boundary
+`analyze_coverage` now also perturbs the electronics subsystem's own continuous
+variables. `analyze_catalogue_coverage` is separate, because a discrete part swap
+is not a ±10% perturbation and reporting one as the other would put a meaningless
+sensitivity next to a part number. It searches across *all* actuator catalogues:
+searching within one reported `rail_margin` as BLIND, which was a false finding,
+and a false finding is worse than a missing one because somebody acts on it.
+### 8.8.5 The `pcb-ai` seam, both directions
+Never linked. `pcb-ai` is TypeScript, this is Python, and the integration is
+files on disk — which both codebases were already built around.
+**Down** (`engine/export/board_spec.py`): `board-spec.md` plus `envelope.json`.
+The envelope is `pcb-ai`'s `Envelope` zod schema exactly, and
+`test_board_spec.py` validates it through `cad_api.contracts`, the paired half of
+that contract file, so a rename on either side breaks a test instead of producing
+an envelope `pcb-ai` silently rejects at intake. It caught a real defect on its
+first run: keepouts were being emitted as zero-area rectangles, which satisfies
+the schema's shape and reads downstream as "this board has no keepouts". They
+travel in `reason` as words now.
+The spec is written as numbered requirements, not prose, because `pcb-ai`'s
+specification reviewer is instructed to "go through the specification requirement
+by requirement" — a requirement it can quote is one it can check, and a paragraph
+is one it can agree with in general terms while the board misses it.
+`spec_hash()` is deliberately narrow: the bay envelope, the rails the board
+touches, its budgets, mounting pattern and connector rules. Not the chassis, not
+the arm. Hashing the whole IR would respin the board every time a bracket got
+2 mm longer, a respin costs minutes, and §4's "never in the inner loop" rule
+would be decorative.
+**Up** (`engine/ingest/pcb_run.py`): board mass and CoM, dissipation, outline,
+tallest part and gate status land in the IR as `MEASURED`. Nothing is adjusted or
+second-guessed — units are converted, provenance is attached, and the value goes
+where the criteria already look. Every function returns a **new** `RobotIR`;
+ingesting board facts is a revision, not an edit (§12 #8).
+The one number it computes is harness length, and only because neither side can:
+the board knows where its connector is, the robot knows where the motor is, and
+the distance exists only once both are on the table. Straight line plus 25%
+stated slack — a cable pulled taut across a joint fails on the first full-range
+motion, and a fabricated cable path would look like more than it is.
+A failing gate is recorded on the board and fails `board_gate_passed`. It is a
+criterion and not an exception on purpose: an exception can be caught by whoever
+calls the ingest, a failing criterion cannot be caught by anything, because
+`evaluate()` takes no argument about which failures to ignore.
+### 8.8.6 Board mass had to be added to `pcb-ai`
+§7.3 says board mass and CoM enter the IR as MEASURED-class — "computed by an
+independent gated pipeline from the routed artifact, not asserted by any agent".
+`pcb-ai`'s `board_report` did not carry mass, so that claim was not true and a
+robot-side estimate would have been a second opinion nobody measured.
+`BoardMass` was added to both halves of the contract in one change, and
+`deriveBoardReport` now computes substrate mass from the routed outline, the
+stackup and FR-4's density, plus components from a footprint mass table — the
+mass twin of the footprint *height* table that module already carried, ASSUMED
+for the same reason and reported separately so a caller knows which half to
+distrust. `rover-power` measures 7.9 g: 3.7 g of substrate, 4.2 g of parts.
 ---
 ## 9. Services
 ### 9.1 FastAPI
@@ -678,9 +1002,15 @@ a consequence. Gated on the actuator purchase decision in §15.
 2. **Never freehand a computed number.** Inertia tensors, CoM, torque budgets,
    margins — compute them. A prototype MJCF freehanded `diaginertia` and
    understated roll inertia by **4.8×**, making the vehicle spin implausibly.
-3. **Label provenance.** CONFIRMED ≠ INFERRED ≠ ASSUMED.
-4. **Never cut mating features from vendor CAD.**
-5. **Report what was skipped.** A tier that did not run is not a pass.
+3. **Label provenance.** CONFIRMED ≠ INFERRED ≠ ASSUMED ≠ MEASURED, and every
+   verdict states the worst provenance among its inputs. A tip-over PASS built
+   on ASSUMED friction is an ASSUMED pass, and saying so is the difference
+   between a verdict and a claim. `EvaluationReport.worst_provenance`.
+4. **Never cut mating features from vendor CAD** — enforced by the `visual_only`
+   tag (§8.6.4), not by discipline.
+5. **Report what was skipped.** A tier that did not run is not a pass, and a
+   subsystem the design does not describe is not a passing subsystem
+   (`EvaluationReport.unmodelled`).
 6. **State predictions before evaluating**, and report plainly when wrong.
 7. **The engine has no I/O.** If it imports the ORM, the design is broken.
 8. **Revisions are immutable.**
@@ -689,6 +1019,18 @@ a consequence. Gated on the actuator purchase decision in §15.
    holes and a passing geometry check. Three separate searches shipped a design
    whose motor could not be bolted on. Check that fastener patterns fall within
    the face they mount to.
+10. **A number enters the catalogue only through the sourcing pipeline with a
+   citation** — no agent, and no human in a hurry, types one in directly (§8.6).
+   The debt that predates this rule is enumerable, not asserted away:
+   `python -m engine.sourcing debt`.
+11. **A board gate failure is a robot failure.** No robot-side agent — chief
+   included — can waive a `pcb-ai` hard failure. It is the `board_gate_passed`
+   criterion rather than an exception precisely so that nothing can catch it.
+12. **A disagreement between two implementations of one number is a pipeline
+   bug, not a design finding** (§8.8, `engine/crosscheck.py`). Handing one to a
+   design agent sends it off to optimise a quantity that was never about the
+   design — and it will appear to succeed, because thinning a wall moves both
+   numbers. `EvaluationReport.verdict` returns `BLOCKED`, and the CLI exits 2.
 ---
 ## 13. Risks
 | Risk | Severity | Mitigation |

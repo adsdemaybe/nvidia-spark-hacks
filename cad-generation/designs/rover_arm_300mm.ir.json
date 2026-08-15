@@ -1,0 +1,1203 @@
+{
+  "id": "3552516f-9339-4917-b37c-01638e841e22",
+  "name": "rover_arm_300mm",
+  "root_link": "chassis",
+  "links": [
+    {
+      "id": "chassis",
+      "geometry": {
+        "generator": "plate",
+        "params": {
+          "length": {
+            "value": 0.3,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "300 mm deck"
+            }
+          },
+          "width": {
+            "value": 0.16,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "clears the wheels inboard"
+            }
+          },
+          "thickness": {
+            "value": 0.006,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "6 mm 6061 plate"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": -0.15,
+          "y": 0.0,
+          "z": 0.05
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "bracket_front_left",
+      "geometry": {
+        "generator": "bracket",
+        "params": {
+          "arm_a_length": {
+            "value": 0.04,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "flange along the chassis underside"
+            }
+          },
+          "arm_b_length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "drops to the axle"
+            }
+          },
+          "thickness": {
+            "value": 0.004,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "4 mm 6061"
+            }
+          },
+          "width": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "motor face width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 3.141592653589793,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_front_left",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.09,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "90 mm rolling diameter"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.07,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10 mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "30 mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "bracket_front_right",
+      "geometry": {
+        "generator": "bracket",
+        "params": {
+          "arm_a_length": {
+            "value": 0.04,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "flange along the chassis underside"
+            }
+          },
+          "arm_b_length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "drops to the axle"
+            }
+          },
+          "thickness": {
+            "value": 0.004,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "4 mm 6061"
+            }
+          },
+          "width": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "motor face width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 3.141592653589793,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_front_right",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.09,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "90 mm rolling diameter"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.07,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10 mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "30 mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "bracket_rear_left",
+      "geometry": {
+        "generator": "bracket",
+        "params": {
+          "arm_a_length": {
+            "value": 0.04,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "flange along the chassis underside"
+            }
+          },
+          "arm_b_length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "drops to the axle"
+            }
+          },
+          "thickness": {
+            "value": 0.004,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "4 mm 6061"
+            }
+          },
+          "width": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "motor face width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 3.141592653589793,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_rear_left",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.09,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "90 mm rolling diameter"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.07,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10 mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "30 mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "bracket_rear_right",
+      "geometry": {
+        "generator": "bracket",
+        "params": {
+          "arm_a_length": {
+            "value": 0.04,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "flange along the chassis underside"
+            }
+          },
+          "arm_b_length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "drops to the axle"
+            }
+          },
+          "thickness": {
+            "value": 0.004,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "4 mm 6061"
+            }
+          },
+          "width": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "motor face width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 3.141592653589793,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "wheel_rear_right",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.09,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "90 mm rolling diameter"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.07,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "10 mm rim wall"
+            }
+          },
+          "length": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "30 mm tread width"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "petg",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 1.5707963267948966,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "mast",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "arm mast"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.02,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "arm mast — wall"
+            }
+          },
+          "length": {
+            "value": 0.1,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "arm mast — length"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "upper_arm",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.025,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "upper arm"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.017,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "upper arm — wall"
+            }
+          },
+          "length": {
+            "value": 0.115,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "upper arm — length"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 1.5707963267948966,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "forearm",
+      "geometry": {
+        "generator": "tube",
+        "params": {
+          "outer_diameter": {
+            "value": 0.02,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "forearm"
+            }
+          },
+          "inner_diameter": {
+            "value": 0.013,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "forearm — wall"
+            }
+          },
+          "length": {
+            "value": 0.115,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "forearm — length"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 1.5707963267948966,
+          "z": 0.0
+        }
+      }
+    },
+    {
+      "id": "gripper_plate",
+      "geometry": {
+        "generator": "plate",
+        "params": {
+          "length": {
+            "value": 0.035,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "tool mounting plate"
+            }
+          },
+          "width": {
+            "value": 0.03,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "tool mounting plate"
+            }
+          },
+          "thickness": {
+            "value": 0.006,
+            "unit": "m",
+            "provenance": {
+              "status": "ASSUMED",
+              "source": "",
+              "note": "6 mm, tapped for a gripper"
+            }
+          }
+        },
+        "material": {
+          "kind": "catalogue",
+          "value": "aluminum_6061",
+          "catalogue": "materials"
+        }
+      },
+      "pose": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": -0.003
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "deck_to_bracket_front_left",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "bracket_front_left",
+      "origin": {
+        "position": {
+          "x": 0.108,
+          "y": 0.0855,
+          "z": 0.052000000000000005
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "drive_front_left",
+      "kind": "revolute",
+      "parent": "bracket_front_left",
+      "child": "wheel_front_left",
+      "origin": {
+        "position": {
+          "x": 0.0020000000000000018,
+          "y": 0.013999999999999999,
+          "z": -0.007000000000000006
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": null,
+        "upper": null,
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "NEMA 17 holding torque"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~1.6 m/s at 45 mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    },
+    {
+      "id": "deck_to_bracket_front_right",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "bracket_front_right",
+      "origin": {
+        "position": {
+          "x": 0.108,
+          "y": -0.0855,
+          "z": 0.052000000000000005
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "drive_front_right",
+      "kind": "revolute",
+      "parent": "bracket_front_right",
+      "child": "wheel_front_right",
+      "origin": {
+        "position": {
+          "x": 0.0020000000000000018,
+          "y": -0.013999999999999999,
+          "z": -0.007000000000000006
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": null,
+        "upper": null,
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "NEMA 17 holding torque"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~1.6 m/s at 45 mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    },
+    {
+      "id": "deck_to_bracket_rear_left",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "bracket_rear_left",
+      "origin": {
+        "position": {
+          "x": -0.112,
+          "y": 0.0855,
+          "z": 0.052000000000000005
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "drive_rear_left",
+      "kind": "revolute",
+      "parent": "bracket_rear_left",
+      "child": "wheel_rear_left",
+      "origin": {
+        "position": {
+          "x": 0.0020000000000000018,
+          "y": 0.013999999999999999,
+          "z": -0.007000000000000006
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": null,
+        "upper": null,
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "NEMA 17 holding torque"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~1.6 m/s at 45 mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    },
+    {
+      "id": "deck_to_bracket_rear_right",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "bracket_rear_right",
+      "origin": {
+        "position": {
+          "x": -0.112,
+          "y": -0.0855,
+          "z": 0.052000000000000005
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "drive_rear_right",
+      "kind": "revolute",
+      "parent": "bracket_rear_right",
+      "child": "wheel_rear_right",
+      "origin": {
+        "position": {
+          "x": 0.0020000000000000018,
+          "y": -0.013999999999999999,
+          "z": -0.007000000000000006
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": null,
+        "upper": null,
+        "effort": {
+          "value": 0.4,
+          "unit": "N*m",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "NEMA 17 holding torque"
+          }
+        },
+        "velocity": {
+          "value": 10.0,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "~1.6 m/s at 45 mm radius"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "nema17_17hs4401",
+        "catalogue": "stepper_motors"
+      }
+    },
+    {
+      "id": "deck_to_mast",
+      "kind": "fixed",
+      "parent": "chassis",
+      "child": "mast",
+      "origin": {
+        "position": {
+          "x": -0.02,
+          "y": 0.0,
+          "z": 0.052000000000000005
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    },
+    {
+      "id": "shoulder",
+      "kind": "revolute",
+      "parent": "mast",
+      "child": "upper_arm",
+      "origin": {
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.09799999999999999
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": {
+          "value": -1.75,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "lifts to ~100 deg above horizontal"
+          }
+        },
+        "upper": {
+          "value": 0.25,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "stops ~14 deg below horizontal, clear of the ground"
+          }
+        },
+        "effort": {
+          "value": 4.1,
+          "unit": "N*m",
+          "provenance": {
+            "status": "INFERRED",
+            "source": "catalogue:servos/dynamixel_xm430_w350",
+            "note": "servo stall torque at 12 V"
+          }
+        },
+        "velocity": {
+          "value": 4.817108735504349,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "INFERRED",
+            "source": "catalogue:servos/dynamixel_xm430_w350",
+            "note": "servo no-load speed"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "dynamixel_xm430_w350",
+        "catalogue": "servos"
+      }
+    },
+    {
+      "id": "elbow",
+      "kind": "revolute",
+      "parent": "upper_arm",
+      "child": "forearm",
+      "origin": {
+        "position": {
+          "x": 0.11,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "limits": {
+        "lower": {
+          "value": -2.4,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "folds the forearm back over the upper arm"
+          }
+        },
+        "upper": {
+          "value": 0.2,
+          "unit": "rad",
+          "provenance": {
+            "status": "ASSUMED",
+            "source": "",
+            "note": "just past straight, never folding down into the deck"
+          }
+        },
+        "effort": {
+          "value": 4.1,
+          "unit": "N*m",
+          "provenance": {
+            "status": "INFERRED",
+            "source": "catalogue:servos/dynamixel_xm430_w350",
+            "note": "servo stall torque at 12 V"
+          }
+        },
+        "velocity": {
+          "value": 4.817108735504349,
+          "unit": "rad/s",
+          "provenance": {
+            "status": "INFERRED",
+            "source": "catalogue:servos/dynamixel_xm430_w350",
+            "note": "servo no-load speed"
+          }
+        }
+      },
+      "actuator": {
+        "kind": "catalogue",
+        "value": "dynamixel_xm430_w350",
+        "catalogue": "servos"
+      }
+    },
+    {
+      "id": "wrist_to_gripper",
+      "kind": "fixed",
+      "parent": "forearm",
+      "child": "gripper_plate",
+      "origin": {
+        "position": {
+          "x": 0.11,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "axis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      },
+      "limits": null,
+      "actuator": null
+    }
+  ]
+}

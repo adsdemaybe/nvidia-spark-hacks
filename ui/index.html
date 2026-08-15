@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>STRUCT console</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --line: #262b36;
+    --text: #e6e9ef;
+    --muted: #8d95a5;
+    --accent: #6ea8fe;
+    --ok: #4ade80;
+    --down: #f87171;
+    --radius: 8px;
+    /* Split positions, driven by the drag handles. */
+    --col: 46%;
+    --row: 55%;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---- header ---------------------------------------------------- */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    flex: none;
+  }
+  .brand { font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
+  .brand span { color: var(--muted); font-weight: 400; }
+  .spacer { flex: 1; }
+
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 10px; font-size: 12px; color: var(--muted);
+    background: transparent; cursor: default;
+  }
+  .pill .port { font-variant-numeric: tabular-nums; opacity: .75; }
+
+  button.ctl {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  button.ctl:hover { color: var(--text); border-color: var(--accent); }
+  button.ctl[aria-pressed="true"] { color: var(--text); background: #1e2430; border-color: var(--accent); }
+
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.up { background: var(--ok); }
+  .dot.down { background: var(--down); }
+
+  /* ---- the three panes, together --------------------------------- */
+  main {
+    flex: 1; min-height: 0;
+    display: grid;
+    grid-template-columns: var(--col) 6px minmax(0, 1fr);
+    grid-template-rows: var(--row) 6px minmax(0, 1fr);
+  }
+  #pane-pcb    { grid-column: 1; grid-row: 1 / span 3; }
+  #pane-cad    { grid-column: 3; grid-row: 1; }
+  #pane-joints { grid-column: 3; grid-row: 3; }
+  #split-col   { grid-column: 2; grid-row: 1 / span 3; cursor: col-resize; }
+  #split-row   { grid-column: 3; grid-row: 2; cursor: row-resize; }
+
+  .split { background: var(--bg); position: relative; }
+  .split::after {
+    content: ""; position: absolute; inset: 0; margin: auto;
+    background: var(--line); border-radius: 2px;
+  }
+  #split-col::after { width: 2px; height: 40px; }
+  #split-row::after { height: 2px; width: 40px; }
+  .split:hover::after, .split.dragging::after { background: var(--accent); }
+
+  .pane {
+    display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin: 6px;
+    overflow: hidden;
+  }
+  .pane > .bar {
+    display: flex; align-items: center; gap: 9px;
+    padding: 6px 10px; flex: none;
+    border-bottom: 1px solid var(--line);
+    font-size: 12.5px;
+  }
+  .bar .name { font-weight: 550; }
+  .bar .port { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar .note { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .grow { flex: 1; min-width: 0; }
+  .bar a, .bar button {
+    color: var(--muted); text-decoration: none; font-size: 12px;
+    border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px;
+    background: transparent; cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .bar a:hover, .bar button:hover { color: var(--text); border-color: var(--accent); }
+
+  .frame-wrap { flex: 1; min-height: 0; position: relative; background: #fff; }
+  iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .offline {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    background: var(--panel); color: var(--muted); font-size: 13px; padding: 20px;
+  }
+  .pane.down .offline { display: flex; }
+
+  /* Focus: one pane fills the window. The others are hidden with
+     `display: none`, never removed — an iframe taken out of the DOM reloads
+     when it comes back, which drops every joint slider and the selected
+     model. Hidden keeps them exactly where they were. */
+  main.focus-pcb    { grid-template-columns: 1fr 0 0; grid-template-rows: 1fr 0 0; }
+  main.focus-cad,
+  main.focus-joints { grid-template-columns: 0 0 1fr; grid-template-rows: 1fr 0 0; }
+  main.focus-cad    #pane-cad    { grid-row: 1 / span 3; }
+  main.focus-joints #pane-joints { grid-row: 1 / span 3; }
+  main[class*="focus-"] .split { display: none; }
+  main.focus-pcb    #pane-cad, main.focus-pcb    #pane-joints,
+  main.focus-cad    #pane-pcb, main.focus-cad    #pane-joints,
+  main.focus-joints #pane-pcb, main.focus-joints #pane-cad { display: none; }
+
+  /* ---- status drawer ---------------------------------------------- */
+  #drawer {
+    flex: none; max-height: 46vh; overflow: auto;
+    border-top: 1px solid var(--line); background: var(--panel); padding: 14px 16px;
+  }
+  #drawer[hidden] { display: none; }
+  .grid { display: grid; gap: 8px; max-width: 900px; }
+  .row {
+    display: grid; grid-template-columns: 12px 1fr auto; gap: 12px; align-items: baseline;
+    padding: 9px 12px; background: #10131a; border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .row .name { font-weight: 550; }
+  .row .note { color: var(--muted); font-size: 12.5px; }
+  .row .state { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .row .state.up { color: var(--ok); }
+  .row .state.down { color: var(--down); }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+       margin: 16px 0 8px; font-weight: 600; }
+  h2:first-child { margin-top: 0; }
+  code { background: #0c0f14; border: 1px solid var(--line); border-radius: 5px;
+         padding: 1px 6px; font-size: 12px; color: #cbd3e1; }
+  pre { background: #0c0f14; border: 1px solid var(--line); border-radius: var(--radius);
+        padding: 10px 12px; overflow-x: auto; font-size: 12px; color: #cbd3e1; max-width: 900px; }
+  p.hint { color: var(--muted); max-width: 900px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">STRUCT <span>console</span></div>
+  <div class="pills" id="pills"></div>
+  <div class="spacer"></div>
+  <button class="ctl" id="btn-all" aria-pressed="true">All three</button>
+  <button class="ctl" id="btn-status" aria-pressed="false">Status</button>
+</header>
+
+<main id="main">
+  <section class="pane" id="pane-pcb"></section>
+  <div class="split" id="split-col"></div>
+  <section class="pane" id="pane-cad"></section>
+  <div class="split" id="split-row"></div>
+  <section class="pane" id="pane-joints"></section>
+</main>
+
+<div id="drawer" hidden>
+  <h2>Services</h2>
+  <div class="grid" id="status-rows"></div>
+  <h2>Another design in the joint viewer</h2>
+  <p class="hint">One RobotIR per process. Start another on a free port, then add it to
+    <code>SERVICES</code> in <code>ui/console.py</code>:</p>
+  <pre>cad-generation/engine/.venv/bin/python -m cad_api.viewer \
+    cad-generation/designs/rover_arm_3axis.ir.json --host 0.0.0.0 --port 8082</pre>
+  <p class="hint">Available: <code>rover_4wd_300mm</code> (loaded), <code>rover_arm_300mm</code>,
+    <code>rover_arm_3axis</code>, <code>rover_stub_axle_280</code>, <code>so101_arm</code>.</p>
+</div>
+
+<script>
+// Every viewer is a port on the machine serving this page, so the address that
+// reaches them is the address that reached this page. Baking in 127.0.0.1 is the
+// bug that makes a dashboard work on the box and nowhere else.
+const HOST = location.hostname;
+const urlFor = (port) => `http://${HOST}:${port}/`;
+const PANES = ["pcb", "cad", "joints"];
+
+const mainEl = document.getElementById("main");
+const pillsEl = document.getElementById("pills");
+const drawerEl = document.getElementById("drawer");
+const rowsEl = document.getElementById("status-rows");
+const btnAll = document.getElementById("btn-all");
+const btnStatus = document.getElementById("btn-status");
+
+let meta = {};
+let built = false;
+let focused = null;
+
+function buildPane(id) {
+  const m = meta[id];
+  const pane = document.getElementById(`pane-${id}`);
+  pane.innerHTML =
+    `<div class="bar">
+       <span class="dot" data-dot="${id}"></span>
+       <span class="name">${m.name}</span>
+       <span class="port">:${m.port}</span>
+       <span class="note grow">${m.note}</span>
+       <button data-focus="${id}" title="Fill the window">focus</button>
+       <a href="${urlFor(m.port)}" target="_blank" rel="noreferrer" title="Open on its own">↗</a>
+     </div>
+     <div class="frame-wrap">
+       <iframe title="${m.name}" src="${urlFor(m.port)}"></iframe>
+       <div class="offline">nothing is listening on :${m.port} — see Status</div>
+     </div>`;
+  pane.querySelector("[data-focus]").onclick = () => setFocus(focused === id ? null : id);
+}
+
+function setFocus(id) {
+  focused = id;
+  mainEl.className = id ? `focus-${id}` : "";
+  btnAll.setAttribute("aria-pressed", String(!id));
+  for (const p of PANES) {
+    const btn = document.querySelector(`[data-focus="${p}"]`);
+    if (btn) btn.textContent = focused === p ? "restore" : "focus";
+  }
+  // Viser and the CAD viewer size their canvas to the container, and a canvas
+  // that was display:none never saw the container change.
+  requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+}
+
+btnAll.onclick = () => setFocus(null);
+btnStatus.onclick = () => {
+  drawerEl.hidden = !drawerEl.hidden;
+  btnStatus.setAttribute("aria-pressed", String(!drawerEl.hidden));
+};
+
+// ---- drag handles ------------------------------------------------------
+// Pointer capture on the handle, and a transparent overlay is unnecessary
+// because the iframes stop receiving events once the pointer is captured —
+// without that, dragging over an iframe swallows the move events and the
+// splitter sticks halfway.
+function draggable(el, axis, varName) {
+  el.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    el.setPointerCapture(ev.pointerId);
+    el.classList.add("dragging");
+    const rect = mainEl.getBoundingClientRect();
+
+    const onMove = (e) => {
+      const pct = axis === "x"
+        ? ((e.clientX - rect.left) / rect.width) * 100
+        : ((e.clientY - rect.top) / rect.height) * 100;
+      document.documentElement.style.setProperty(varName, `${Math.min(85, Math.max(15, pct))}%`);
+    };
+    const onUp = () => {
+      el.classList.remove("dragging");
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      window.dispatchEvent(new Event("resize"));
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  });
+}
+draggable(document.getElementById("split-col"), "x", "--col");
+draggable(document.getElementById("split-row"), "y", "--row");
+
+// ---- status ------------------------------------------------------------
+function paint(services) {
+  pillsEl.innerHTML = "";
+  for (const s of services) {
+    const m = meta[s.id];
+    if (m.tab) {
+      const pane = document.getElementById(`pane-${s.id}`);
+      if (pane) pane.classList.toggle("down", !s.open);
+      const dot = document.querySelector(`[data-dot="${s.id}"]`);
+      if (dot) dot.className = "dot " + (s.open ? "up" : "down");
+      continue;
+    }
+    const pill = document.createElement("span");
+    pill.className = "pill";
+    pill.title = m.note;
+    pill.innerHTML = `<span class="dot ${s.open ? "up" : "down"}"></span>${m.name}` +
+                     `<span class="port">:${s.port}</span>`;
+    pillsEl.appendChild(pill);
+  }
+
+  rowsEl.innerHTML = "";
+  for (const s of services) {
+    const m = meta[s.id];
+    const state = s.open
+      ? (s.http === null ? "port open, no HTTP answer" : `up · HTTP ${s.http}`)
+      : "not listening";
+    const cls = s.open && s.http !== null ? "up" : s.open ? "" : "down";
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML =
+      `<span class="dot ${s.open ? "up" : "down"}"></span>` +
+      `<span><span class="name">${m.name}</span> <code>:${s.port}</code>` +
+      `<div class="note">${m.note}</div></span>` +
+      `<span class="state ${cls}">${state}</span>`;
+    rowsEl.appendChild(row);
+  }
+}
+
+async function refresh() {
+  try {
+    const data = await (await fetch("/api/status", { cache: "no-store" })).json();
+    meta = data.meta;
+    if (!built) {
+      PANES.forEach(buildPane);
+      built = true;
+      const wanted = location.hash.slice(1);
+      if (PANES.includes(wanted)) setFocus(wanted);
+    }
+    paint(data.services);
+  } catch {
+    for (const dot of document.querySelectorAll(".dot")) dot.className = "dot down";
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

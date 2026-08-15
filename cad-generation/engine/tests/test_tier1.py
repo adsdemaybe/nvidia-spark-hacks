@@ -60,7 +60,15 @@ def test_light_short_arm_passes_on_small_motor():
     # arm: 0.2 x 0.02 x 0.005 m aluminum plate, r=0.1m -> required ~= 0.053 N*m
     assert torque.detail.startswith("required=0.05")
     assert torque.passed
-    assert torque.magnitude == pytest.approx(1.0 - 0.0530 / 0.45, abs=0.01)
+    # Read the available torque from the catalogue rather than hardcoding it.
+    # This assertion previously pinned 0.45 N*m, a figure no datasheet backed;
+    # when the catalogue was corrected to the 17HS4401's real 0.40 N*m the test
+    # failed even though the design still passed. A test that hardcodes a
+    # physical constant asserts against the fixture, not against the physics.
+    from engine.catalogue import resolve
+
+    available = resolve("stepper_motors", "nema17_direct").stall_torque.value
+    assert torque.magnitude == pytest.approx(1.0 - 0.0530 / available, abs=0.01)
 
 
 def test_heavy_long_arm_fails_on_small_motor_but_passes_geared():

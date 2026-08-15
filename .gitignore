@@ -1,0 +1,36 @@
+# Virtualenvs and caches — recreated by setup, never committed.
+.venv/
+**/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+
+# Agent tooling. `.agents/.venv` alone is 1.7 GB. `.agents/skills` is 40 MB of vendored
+# third-party skill packs (each with its own LICENSE) — real content, but vendoring it
+# here is a deliberate choice rather than a default, so it stays out until someone makes
+# that call. `.claude/skills/*` are symlinks into it and would clone broken.
+.agents/
+.claude/
+*.local.json
+
+# `ar-vr/` is a git *worktree* container, not source: the AR/VR code lives on its own
+# branches and is checked out here. Committing it would nest the repo inside itself.
+ar-vr/
+
+# Generated CAD output. The .py that produces a part is source; the solid it emits is
+# not, and `__cadgen__` alone is 51 MB.
+**/__cadgen__/
+cad-generation/out/
+cad-generation/rover-out*/
+cad-generation/enclosures/
+*.step
+*.stl
+*.glb
+*.3mf
+!cad-generation/vendor/**/*.step
+
+# Model weights and downloads.
+models/
+*.safetensors
+*.gguf

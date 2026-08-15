@@ -93,3 +93,19 @@ def test_unknown_generator_raises():
     spec = GeometrySpec(generator="nope", params={}, material=_material())
     with pytest.raises(KeyError):
         build(spec)
+
+
+def test_bracket_rejects_an_arm_shorter_than_its_own_thickness():
+    """Otherwise OCCT raises a bare `Standard_DomainError` with no message."""
+    spec = GeometrySpec(
+        generator="bracket",
+        material=CatalogueParam(value="pla", catalogue="materials"),
+        params={
+            "arm_a_length": _q(0.10),
+            "arm_b_length": _q(0.003),  # shorter than thickness
+            "thickness": _q(0.005),
+            "width": _q(0.02),
+        },
+    )
+    with pytest.raises(ValueError, match="must exceed thickness"):
+        build(spec)

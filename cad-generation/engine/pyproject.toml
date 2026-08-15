@@ -6,13 +6,25 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",
     "build123d>=0.11",
-    "anthropic>=0.40",
+    # An HTTP client for the local OpenAI-compatible server (vLLM on :8100),
+    # not a hosted-API dependency — see engine/agent_loop.py. `anthropic` was
+    # dropped with the hosted `claude` provider: this loop is local-only.
     "openai>=1.50",
+    # §1 (v3): units at every IR boundary. Not optional — `Quantity` validates
+    # its unit on construction, so the schema itself does not load without it.
+    "pint>=0.23",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+]
+# §3's physics tiers. Both have manylinux aarch64 wheels, so the Spark can run
+# them; tier1_statics.py's numpy stand-in was written when the dev machine
+# couldn't build Pinocchio, and is what these replace.
+sim = [
+    "pin>=4.1",       # tier 1 — inverse dynamics, Jacobians (~10x Drake at this tier)
+    "mujoco>=3.11",   # tier 2 — contact, settling, tip-over
 ]
 
 [build-system]

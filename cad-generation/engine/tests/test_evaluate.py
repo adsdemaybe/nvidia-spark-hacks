@@ -51,15 +51,17 @@ def test_mount_fits_fails_when_bracket_moved_off_chassis():
 def test_evaluate_reports_skipped_tiers_when_bounded_below_registry():
     report = evaluate(simple_rover(), max_tier=-1)
     assert report.tiers_run == []
-    assert report.tiers_skipped == [0, 1]
+    assert report.tiers_skipped == [0, 1, 2]
     assert report.results == []
 
 
-def test_evaluate_at_tier1_runs_torque_budget_and_reports_no_skips():
+def test_evaluate_at_tier1_runs_torque_budget_and_reports_contact_sim_skipped():
     # simple_rover's only actuated joint is bracket_to_wheel (revolute).
     report = evaluate(simple_rover(), max_tier=1)
     assert report.tiers_run == [0, 1]
-    assert report.tiers_skipped == []
+    # Tier 2 exists now, so bounding the run at tier 1 means contact simulation
+    # did not happen — and the report has to say so rather than omit it.
+    assert report.tiers_skipped == [2]
     assert any(r.name == "joint_torque_budget[bracket_to_wheel]" for r in report.results)
 
 
@@ -68,3 +70,63 @@ def test_compute_mass_properties_covers_every_link():
     props = compute_mass_properties(ir)
     assert set(props) == {link.id for link in ir.links}
     assert all(mp.mass > 0 for mp in props.values())
+
+
+# --- regressions ---
+
+
+def test_an_evaluation_that_ran_nothing_is_not_a_pass():
+    """`all([])` is True, so an empty result set used to report PASS.
+
+    Silence is not consent: no criteria run means nothing was verified, which is
+    the opposite of a design clearing the harness.
+    """
+    from engine.evaluate import EvaluationReport
+
+    empty = EvaluationReport(
+        design_id="x", design_name="nothing-ran", results=[], tiers_run=[], tiers_skipped=[0, 1]
+    )
+    assert not empty.passed
+    assert empty.failures == []  # nothing failed either — there was simply no evidence
+
+
+def test_cyclic_joint_graph_raises_rather_than_hanging():
+    """A cycle used to spin link_frames forever, with no error and no progress."""
+    import engine.kinematics as kinematics
+    from engine.ir import Joint, RobotIR
+
+    from tests.test_ir import _link
+
+    # The IR validator rejects a cycle at construction, so build one past it to
+    # prove the kinematics walk is independently safe.
+    ir = RobotIR(
+        name="cyc", root_link="a", links=[_link("a"), _link("b")],
+        joints=[Joint(id="j1", kind="fixed", parent="a", child="b")],
+    )
+    object.__setattr__(
+        ir, "joints",
+        [*ir.joints, Joint(id="j2", kind="fixed", parent="b", child="a")],
+    )
+    with pytest.raises(ValueError, match="cycle"):
+        kinematics.link_frames(ir)
+
+
+def test_unimplemented_tiers_are_reported_skipped():
+    """§3/§11 #5: a tier that didn't run is not a pass. Asking for a tier with
+    no criteria registered used to report `skipped: []` — an unverified design
+    presented as fully verified.
+
+    Tier 2 (MuJoCo) is implemented now; tier 3 (Drake) is not, so tier 3 is
+    what this guards. When Drake lands, this test should start failing and be
+    updated — that failure is the point.
+    """
+    report = evaluate(simple_rover(), max_tier=3)
+    assert report.tiers_run == [0, 1, 2]
+    assert report.tiers_skipped == [3]
+
+
+def test_requested_tiers_that_did_run_are_not_reported_skipped():
+    report = evaluate(simple_rover(), max_tier=2)
+    assert report.tiers_run == [0, 1, 2]
+    # A tier that ran must never also appear as skipped, whatever else is.
+    assert not set(report.tiers_run) & set(report.tiers_skipped)

@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from engine.criteria import CriterionResult, all_criteria
+from engine.crosscheck import PipelineBug
 from engine.geometry.registry import build as build_geometry
 from engine.ir import RobotIR
 from engine.mass_properties import MassProperties
@@ -26,6 +27,44 @@ class EvaluationReport:
     results: list[CriterionResult]
     tiers_run: list[int]
     tiers_skipped: list[int]
+    # Subsystems whose criteria are registered but produced nothing, because the
+    # design does not describe them yet. §12 non-negotiable #5 is about tiers;
+    # this is the same rule one level down. A robot with no `electronics` runs
+    # every electronics criterion and gets zero results from each — without this
+    # field the report is indistinguishable from one where they all passed.
+    unmodelled: list[str] = field(default_factory=list)
+    # Disagreements between two independent implementations of the same number
+    # (§3). Deliberately not in `results`: a pipeline bug has no magnitude a
+    # design change can move, and handing one to a design agent sends it off to
+    # optimise a quantity that was never about the design.
+    pipeline_bugs: list["PipelineBug"] = field(default_factory=list)
+
+    @property
+    def verdict(self) -> str:
+        """PASS, FAIL, or BLOCKED.
+
+        BLOCKED is the state `passed` cannot express: every criterion passed,
+        and the harness that said so is known to be internally inconsistent. A
+        PASS from a harness whose two mass models disagree by 20% is not a
+        weaker pass, it is not a pass at all.
+        """
+        if self.pipeline_bugs:
+            return "BLOCKED"
+        return "PASS" if self.passed else "FAIL"
+
+    @property
+    def worst_provenance(self) -> str:
+        """The weakest status among every criterion that ran (§12 #3).
+
+        This is the line that stops a report from overselling itself: a tip-over
+        PASS built on ASSUMED friction is an ASSUMED pass, and saying so is the
+        difference between a verdict and a claim.
+        """
+        from engine.ir import worst_provenance as _worst
+
+        if not self.results:
+            return "ASSUMED"
+        return _worst(*(r.provenance for r in self.results))
 
     @property
     def passed(self) -> bool:
@@ -52,6 +91,24 @@ def compute_mass_properties(ir: RobotIR) -> dict[str, MassProperties]:
 # discovered from whatever happens to be registered. That distinction is what
 # lets a report say "tier 2 did not run" instead of not mentioning tier 2.
 TIERS = (0, 1, 2, 3)
+
+
+def _electronics_criteria():
+    """The criteria that go silent on a robot with no electronics subsystem.
+
+    Resolved from the registry by module rather than by a hand-kept name list,
+    so a criterion added to `tier0_electronics` is reported as unmodelled
+    without anyone remembering to update this — the failure mode being a new
+    electronics check that silently contributes nothing and is never missed.
+    """
+    return tuple(
+        c
+        for c in all_criteria()
+        if getattr(c.fn, "__module__", "") == "engine.criteria.tier0_electronics"
+    )
+
+
+ELECTRONICS_CRITERIA = _electronics_criteria()
 
 
 def evaluate(
@@ -91,12 +148,30 @@ def evaluate(
     # pass". The tiers are fixed by §3, so absence is knowable here.
     tiers_skipped |= {tier for tier in TIERS if tier <= max_tier and tier not in tiers_run}
 
+    unmodelled: list[str] = []
+    if ir.electronics is None and any(c.tier <= max_tier for c in ELECTRONICS_CRITERIA):
+        unmodelled.append(
+            "electronics: the design declares no rails, boards or harnesses, so "
+            f"{', '.join(sorted(c.name for c in ELECTRONICS_CRITERIA))} produced no results"
+        )
+
+    # Only once the simulator has actually been asked to build the model. Below
+    # tier 2 there is no second implementation to disagree with, and filing "the
+    # simulator did not run" as a pipeline bug would block every tier-0 sweep.
+    pipeline_bugs: list[PipelineBug] = []
+    if max_tier >= 2:
+        from engine.crosscheck import against_simulation
+
+        pipeline_bugs = against_simulation(ir, mass_properties)
+
     return EvaluationReport(
         design_id=str(ir.id),
         design_name=ir.name,
         results=results,
         tiers_run=sorted(tiers_run),
         tiers_skipped=sorted(tiers_skipped),
+        unmodelled=unmodelled,
+        pipeline_bugs=pipeline_bugs,
     )
 
 
@@ -121,15 +196,33 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"design: {report.design_name} ({report.design_id})")
     print(f"tiers run: {report.tiers_run}  tiers skipped (not a pass): {report.tiers_skipped}")
+    for note in report.unmodelled:
+        print(f"  [UNMODELLED] {note}")
+    for bug in report.pipeline_bugs:
+        print(f"  [PIPELINE BUG] {bug}")
     for r in report.results:
         status = "PASS" if r.passed else "FAIL"
-        print(f"  [{status}] {r.name:30s} magnitude={r.magnitude:+.4f} {r.unit:14s} {r.detail}")
+        print(
+            f"  [{status}] {r.name:30s} magnitude={r.magnitude:+.4f} {r.unit:9s} "
+            f"{r.provenance:9s} {r.detail}"
+        )
     if not report.results:
         # Otherwise this prints "FAIL (0 failing)", which reads like a bug report
         # about the reporter rather than the actual situation.
         print("overall: FAIL — no criteria ran, so nothing was verified")
     else:
-        print(f"overall: {'PASS' if report.passed else 'FAIL'} ({len(report.failures)} failing)")
+        # §12 non-negotiable #3: the verdict states the worst provenance among
+        # its inputs. A PASS on ASSUMED numbers is a different claim from a PASS
+        # on MEASURED ones, and the one-word difference is the whole point.
+        print(
+            f"overall: {report.verdict} ({len(report.failures)} failing), "
+            f"worst provenance among inputs: {report.worst_provenance}"
+        )
+    # 2 rather than 1 for BLOCKED: a caller scripting this needs to tell "the
+    # design is wrong" from "the harness is wrong", and they are not the same
+    # thing to do next.
+    if report.pipeline_bugs:
+        return 2
     return 0 if report.passed else 1
 
 

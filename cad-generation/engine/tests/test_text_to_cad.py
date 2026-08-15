@@ -198,3 +198,157 @@ def test_code_is_extracted_from_a_fence_or_taken_whole():
     assert extract_code("```python\npart = 1\n```") == "part = 1"
     assert extract_code("```\npart = 2\n```") == "part = 2"
     assert extract_code("part = 3") == "part = 3"
+
+
+# --- counting bores -----------------------------------------------------
+#
+# All three of these are the same L-bracket request, judged three times. The
+# model got it wrong three different ways and the harness accepted the first
+# two, which is the argument for the check rather than an illustration of it.
+
+
+def _bracket(holes_at: tuple[float, ...]) -> object:
+    """A 60x5x5 bar with M5 clearance holes bored at the given x positions.
+
+    x=45 is off the end of a bar centred on the origin, which is exactly the
+    mistake worth encoding: the model wrote a hole there and it cut nothing.
+    """
+    cuts = " ".join(f"- Pos({x}, 0, 0) * Cylinder(2.75, 20)" for x in holes_at)
+    return make(f"part = Box(60, 5, 5) {cuts}").part
+
+
+def test_a_missing_bore_is_caught_though_the_bounding_box_is_identical():
+    """The failure this check exists for. Asked for two M5 holes, the model put
+    the `Hole()` calls after the `with BuildPart()` block closed, so they cut
+    nothing. The solid built, measured, and had exactly the bounding box the
+    request implies — with or without holes."""
+    undrilled = make("part = Box(60, 5, 5)").part
+    problems = check_expectations(undrilled, {"bores": {"diameter_mm": 5.5, "count": 2}})
+    assert problems and "found 0" in problems[0]
+    # and the bbox check it slipped past says nothing is wrong
+    assert not check_expectations(undrilled, {"bbox_mm": (60, 5, 5)})
+
+
+def test_two_faces_of_one_bore_are_not_two_bores():
+    """The second wrong answer. One hole drilled and one placed off the part
+    gave two cylindrical faces, because a through-hole is routinely split into
+    two half-cylinders. Counting faces accepted it; counting axes does not."""
+    one_hole = _bracket((15.0,))
+    cylinders = [f for f in one_hole.faces() if str(f.geom_type) == "GeomType.CYLINDER"]
+    assert len(cylinders) >= 1
+    problems = check_expectations(one_hole, {"bores": {"diameter_mm": 5.5, "count": 2}})
+    assert problems and "found 1" in problems[0]
+
+
+def test_two_real_bores_pass():
+    assert not check_expectations(_bracket((15.0, -15.0)), {"bores": {"diameter_mm": 5.5, "count": 2}})
+
+
+def test_a_bore_of_the_wrong_diameter_does_not_count():
+    """An M3 clearance hole is not an M5 one, and the message says which
+    diameters are actually present so the retry has somewhere to go."""
+    m3 = make("part = Box(60, 5, 5) - Pos(15, 0, 0) * Cylinder(1.7, 20)").part
+    problems = check_expectations(m3, {"bores": {"diameter_mm": 5.5, "count": 1}})
+    assert problems and "3.4" in problems[0]
+
+
+# --- export: the step that used to be missing ------------------------------
+
+
+def test_a_freeform_part_can_actually_be_exported(tmp_path):
+    """The regression that hid behind STL working.
+
+    Every freeform part is an imported STEP — `run_to_step` builds in a
+    subprocess and returns a file — so the object this module measures has
+    always been through `import_step`. `export_step` raises a bare
+    `RuntimeError: Failed to write STEP file` for such a shape while writing an
+    identically-shaped freshly-built one fine. STL was unaffected, which made it
+    look like a STEP quirk rather than "the freeform path cannot export at all".
+    """
+    from engine.text_to_cad import code_to_part
+
+    r = code_to_part("part = Box(20, 10, 5)", out_stem=tmp_path / "brick")
+    assert r.ok, r.errors
+    assert set(r.artifacts) == {"stl", "step"}
+    for path in r.artifacts.values():
+        assert Path(path).stat().st_size > 0
+
+
+def test_the_exported_stl_is_watertight(tmp_path):
+    """A mesh with an unshared edge slices into a shell. Checked here rather
+    than trusted, because the exporter reports success either way."""
+    import struct
+    from collections import Counter
+
+    from engine.text_to_cad import code_to_part
+
+    r = code_to_part(
+        "part = Box(20, 20, 6) - Pos(0, 0, 0) * Cylinder(3, 30)",
+        out_stem=tmp_path / "washer",
+    )
+    assert r.ok, r.errors
+
+    data = Path(r.artifacts["stl"]).read_bytes()
+    count = struct.unpack("<I", data[80:84])[0]
+    edges: Counter = Counter()
+    for i in range(count):
+        off = 84 + i * 50
+        tri = [
+            tuple(round(c, 4) for c in struct.unpack("<3f", data[off + 12 + j * 12 : off + 24 + j * 12]))
+            for j in range(3)
+        ]
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            edges[frozenset((tri[a], tri[b]))] += 1
+
+    unshared = [e for e, n in edges.items() if n != 2]
+    assert not unshared, f"{len(unshared)} edges not shared by exactly two faces"
+
+
+def test_nothing_is_written_when_the_part_did_not_build(tmp_path):
+    """A written STL is a claim that a part exists. Half a part on disk is the
+    thing somebody sends to a printer at 2am."""
+    from engine.text_to_cad import code_to_part
+
+    r = code_to_part("part = Circle(5)", out_stem=tmp_path / "not_a_part")
+    assert not r.ok
+    assert r.artifacts == {}
+    assert not list(tmp_path.iterdir())
+
+
+def test_author_written_code_gets_no_privileges(tmp_path):
+    """`code_to_part` is the path for code written in a chat session. It goes
+    through the identical gates — the author proposes, the harness disposes."""
+    from engine.text_to_cad import code_to_part
+
+    r = code_to_part(
+        "part = Box(20, 20, 6)",
+        expect={"bores": {"diameter_mm": 5.5, "count": 2}},  # there are none
+        out_stem=tmp_path / "unbored",
+    )
+    assert not r.ok
+    assert r.artifacts == {}
+    assert any("bore" in e for e in r.errors)
+
+
+def test_a_misspelled_expectation_raises_instead_of_checking_nothing(tmp_path):
+    """Found the hard way: `--expect '{"through_bores": 7}'` (plural) was accepted,
+    checked nothing, and reported a gate that had not run. A silently-ignored
+    expectation is the failure this whole function exists to prevent, wearing a
+    pass as a disguise."""
+    from engine.text_to_cad import check_expectations
+    from build123d import Box
+
+    with pytest.raises(ValueError) as exc:
+        check_expectations(Box(10, 10, 10), {"through_bores": 7})
+    assert "unknown expectation key" in str(exc.value)
+    assert "through_bore" in str(exc.value)
+
+
+def test_export_is_opt_in(tmp_path):
+    # A function that writes files whether or not you asked cannot be called
+    # inside a search loop.
+    from engine.text_to_cad import code_to_part
+
+    r = code_to_part("part = Box(10, 10, 10)")
+    assert r.ok
+    assert r.artifacts == {}
