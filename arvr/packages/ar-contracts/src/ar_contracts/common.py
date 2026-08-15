@@ -83,6 +83,8 @@ OrientationXYZW = Annotated[
 ]
 TimestampNs = Annotated[int, AfterValidator(_validate_timestamp)]
 
+IDENTITY_QUATERNION: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
+
 
 class Source(FrozenModel):
     device_type: DeviceType
@@ -97,8 +99,12 @@ class Pose(FrozenModel):
 
 
 class Target(FrozenModel):
-    """A spatial target (follow target, correction target). Orientation is
-    optional because a target may be position-only (e.g. a follow point)."""
+    """A spatial target (follow target, correction target). A target may be
+    position-only (e.g. a follow point) — orientation defaults to identity
+    rather than being nullable, so the wire format never carries a `null`
+    a consumer (e.g. the xr-web client's optional-but-not-nullable
+    `orientation_xyzw?: Quat`) would have to null-check. Reconciled during
+    the arvr/arxr consolidation (see STATE.md)."""
 
     position_m: PositionM
-    orientation_xyzw: OrientationXYZW | None = None
+    orientation_xyzw: OrientationXYZW = IDENTITY_QUATERNION

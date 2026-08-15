@@ -7,17 +7,14 @@ does not own learning from it (spec section 27, closing line).
 
 from __future__ import annotations
 
-from typing import Literal
-
 from .common import SCHEMA_VERSION, FrozenModel, SchemaVersion, Target, TimestampNs
 
-CorrectionReason = Literal[
-    "collision_avoidance",
-    "unreachable",
-    "task_alignment",
-    "human_preference",
-    "other",
-]
+# Free-text, not a closed enum: the spec's literal example (section 33) is
+# just a string ("collision_avoidance"), and a closed Literal would reject
+# any reason a client sends that isn't in a hardcoded list — including the
+# xr-web client's, which types this as `reason?: string`. Was a Literal enum
+# before the arvr/arxr consolidation (see STATE.md); loosened during it.
+CorrectionReason = str
 
 
 class CorrectionEvent(FrozenModel):

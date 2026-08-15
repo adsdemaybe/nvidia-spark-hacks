@@ -1,11 +1,12 @@
 [project]
 name = "ar-backend"
 version = "0.1.0"
-description = "STRUCT AR/XR API surface (spec section 36-37): Episodes + Scenes, wrapping ar-datapipe."
+description = "STRUCT AR/XR API surface (spec section 36-40): Episodes, Scenes, Twin, Corrections."
 requires-python = ">=3.11"
 dependencies = [
     "ar-contracts",
     "ar-datapipe",
+    "ar-sim",
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "python-multipart>=0.0.9",

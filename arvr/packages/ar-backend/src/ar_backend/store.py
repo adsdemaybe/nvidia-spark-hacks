@@ -13,7 +13,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
-from ar_contracts import EpisodeSource, SpatialEvent, SpatialFrame, VerificationResult
+from ar_contracts import (
+    CorrectionEvent,
+    EpisodeSource,
+    SpatialEvent,
+    SpatialFrame,
+    VerificationResult,
+)
 
 EpisodeStatus = Literal["created", "uploaded", "accepted", "rejected"]
 
@@ -56,3 +62,17 @@ class EpisodeStore:
     def update(self, record: EpisodeRecord) -> None:
         with self._lock:
             self._episodes[record.episode_id] = record
+
+
+class CorrectionStore:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._corrections: list[CorrectionEvent] = []
+
+    def add(self, event: CorrectionEvent) -> None:
+        with self._lock:
+            self._corrections.append(event)
+
+    def all(self) -> list[CorrectionEvent]:
+        with self._lock:
+            return list(self._corrections)

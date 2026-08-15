@@ -16,9 +16,9 @@ from pydantic import field_validator
 from .common import (
     SCHEMA_VERSION,
     CoordinateFrame,
-    DeviceType,
     FrozenModel,
     SchemaVersion,
+    Source,
     TimestampNs,
 )
 
@@ -30,15 +30,18 @@ class SpatialEvent(FrozenModel):
     timestamp_ns: TimestampNs
 
 
-class EpisodeSource(FrozenModel):
-    device_type: DeviceType
+# Was its own device_type-only model (rejecting input_type) before the
+# arvr/arxr consolidation (see STATE.md) — the xr-web client always sends
+# input_type on SpatialEpisode.source, same as it does on SpatialFrame.source,
+# and there was no real reason for these two to disagree. Now just `Source`.
+EpisodeSource = Source
 
 
 class SpatialEpisode(FrozenModel):
     schema_version: SchemaVersion = SCHEMA_VERSION
     episode_id: str
     task_id: str
-    source: EpisodeSource
+    source: Source
     coordinate_frame: CoordinateFrame
     frames_artifact: str
     events: tuple[SpatialEvent, ...] = ()
