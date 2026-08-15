@@ -28,6 +28,17 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/** Grasp-and-place / pull task predicates (Track C) -- see
+ * ar_contracts.simulation_provider.TaskSpec's own docstring for exactly
+ * what these check. Omitted fields keep the original single-goal "reach"
+ * predicate (button press) exercised unchanged. */
+export interface TaskPredicateExtra {
+  objectPositionM?: [number, number, number];
+  objectCaptureRadiusM?: number;
+  pullAxis?: [number, number, number];
+  pullDistanceM?: number;
+}
+
 export async function uploadHumanEpisode(
   apiBase: string,
   meta: HumanEpisodeMetadata,
@@ -37,6 +48,7 @@ export async function uploadHumanEpisode(
   assetWorldPose: { position_m: [number, number, number]; orientation_xyzw: [number, number, number, number] },
   goalPositionM: [number, number, number],
   goalToleranceM = 0.05,
+  taskPredicateExtra: TaskPredicateExtra = {},
 ): Promise<SpatialEpisodeVerdict> {
   const created = await postJson<{ episode_id: string; status: string }>(
     `${apiBase}/spatial/episodes`,
@@ -55,6 +67,10 @@ export async function uploadHumanEpisode(
       asset_world_pose: assetWorldPose,
       goal_position_m: goalPositionM,
       goal_tolerance_m: goalToleranceM,
+      object_position_m: taskPredicateExtra.objectPositionM ?? null,
+      object_capture_radius_m: taskPredicateExtra.objectCaptureRadiusM ?? 0.05,
+      pull_axis: taskPredicateExtra.pullAxis ?? null,
+      pull_distance_m: taskPredicateExtra.pullDistanceM ?? null,
     },
   );
 }

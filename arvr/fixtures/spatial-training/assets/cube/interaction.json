@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "cube_01",
+  "parts": {
+    "cube": {
+      "interaction": "grasp",
+      "local_origin_m": [
+        0.0,
+        0.0,
+        0.015
+      ]
+    }
+  }
+}

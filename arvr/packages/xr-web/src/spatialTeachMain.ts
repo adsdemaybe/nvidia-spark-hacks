@@ -17,7 +17,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { preferredInputSource, readHand, wristTarget, type HandFrame } from "./hands";
 import { describe as describeSession, detectCapabilities, startBestSession } from "./xr";
 import { HumanEpisodeRecorder } from "./humanEpisodeRecorder";
-import { uploadHumanEpisode, type SpatialEpisodeVerdict } from "./humanEpisodeUpload";
+import { uploadHumanEpisode, type SpatialEpisodeVerdict, type TaskPredicateExtra } from "./humanEpisodeUpload";
 import { LiveRetargetSession, type RobotShadowState } from "./liveRetargetSession";
 import { MockHandProvider } from "./mockHand";
 import { ShadowHand } from "./shadowHand";
@@ -52,18 +52,70 @@ const API_BASE = `http://${location.hostname}:8000`;
 // identity quaternion (which was empirically NOT achievable in-limits
 // near this workspace).
 const ROBOT_BASE_STRUCT: Vec3 = [0.0, 0.0, 0.0];
-const ASSET_WORLD_POSITION: Vec3 = [0.35, -0.05, 0.14];
-// The button itself sits normally on the table -- identity orientation.
-// (The wrist/gripper's *target* orientation for reaching it is a separate
-// concern, handled in tools/make_mock_hand_episode.py's NATURAL_EE_ORIENTATION
-// -- not the asset's own world rotation.)
-const ASSET_WORLD_POSE = {
-  position_m: ASSET_WORLD_POSITION,
-  orientation_xyzw: [0, 0, 0, 1] as [number, number, number, number],
+
+// Track C: one config per InteractableAsset, each an independently
+// IK-verified-reachable scene (same discipline as Track A's scene
+// recentering -- see STATE.md's Round 9 for the exact points and how they
+// were checked against the real IkSolver, not guessed). worldPosition is
+// where the asset's own GLB sits; taskPredicateExtra threads through to
+// TaskSpec (ar_contracts.simulation_provider) via humanEpisodeUpload.ts --
+// see that contract's own docstring for exactly what grasp-and-place/pull
+// check, and why they're EE-trajectory-shaped, not simulated object physics.
+interface AssetConfig {
+  taskId: string;
+  worldPosition: Vec3;
+  glbUrl: string;
+  /** Extra static prop shown alongside the asset (the bin, for cube_01) --
+   * visual only, not an InteractableAsset (see tools/make_object_assets.py's
+   * own docstring for why). */
+  propGlbUrl?: string;
+  propWorldPosition?: Vec3;
+  goalPositionM: Vec3;
+  goalToleranceM: number;
+  taskPredicateExtra: TaskPredicateExtra;
+}
+
+const ASSET_CONFIGS: Record<string, AssetConfig> = {
+  button_01: {
+    taskId: "press_button",
+    worldPosition: [0.35, -0.05, 0.14],
+    glbUrl: "/spatial-training/assets/button/asset.glb",
+    // tools/make_mock_hand_episode.py's RETRACT_END_M -- where the mock
+    // demo's wrist genuinely ends up, so the default goal exercises real
+    // accept logic.
+    goalPositionM: [0.37, 0.07, 0.2],
+    goalToleranceM: 0.1,
+    taskPredicateExtra: {},
+  },
+  cube_01: {
+    taskId: "cube_to_bin",
+    worldPosition: [0.32, -0.1, 0.135], // cube's base -- grasp point is +0.015 in Z
+    glbUrl: "/spatial-training/assets/cube/asset.glb",
+    propGlbUrl: "/spatial-training/props/bin.glb",
+    propWorldPosition: [0.3, 0.12, 0.0],
+    goalPositionM: [0.3, 0.12, 0.18],
+    goalToleranceM: 0.05,
+    taskPredicateExtra: { objectPositionM: [0.32, -0.1, 0.15], objectCaptureRadiusM: 0.05 },
+  },
+  drawer_01: {
+    taskId: "drawer_pull",
+    worldPosition: [0.38, -0.02, 0.135], // drawer front's base -- handle is +0.025 in Z
+    glbUrl: "/spatial-training/assets/drawer/asset.glb",
+    goalPositionM: [0.38, -0.1, 0.16],
+    goalToleranceM: 0.02,
+    // Matches fixtures/spatial-training/assets/drawer/interaction.json's
+    // "drawer" part exactly (axis/limit_m) -- duplicated here rather than
+    // fetched, same accepted drift-risk as every other TS/Python contract
+    // mirror in this client (docs/CONTRACTS.md).
+    taskPredicateExtra: { pullAxis: [0, -1, 0], pullDistanceM: 0.08 },
+  },
 };
-// tools/make_mock_hand_episode.py's RETRACT_END_M -- where the mock demo's
-// wrist genuinely ends up, so the default goal exercises real accept logic.
-const DEFAULT_GOAL_M: Vec3 = [0.37, 0.07, 0.2];
+
+function currentAssetConfig(): AssetConfig {
+  const config = ASSET_CONFIGS[assetSelect.value];
+  if (!config) throw new Error(`no AssetConfig for asset_id ${assetSelect.value}`);
+  return config;
+}
 
 const app = document.getElementById("app")!;
 const selectorsEl = document.getElementById("selectors")!;
@@ -109,28 +161,61 @@ const shadowRobot = new ShadowRobot();
 shadowRobot.placeBase(ROBOT_BASE_STRUCT);
 scene.add(shadowRobot.root);
 
-// A plain stand under the button -- Milestone 1 has no scene manifest / room
-// reconstruction (fixture scene only, spec section 41), so without this the
-// button asset just hangs in empty space at its world height with nothing
-// visually supporting it. A visual-only prop, not a modeled InteractableAsset.
-const stand = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.02, 0.025, ASSET_WORLD_POSITION[2], 16),
-  new THREE.MeshStandardMaterial({ color: 0x4b5263, roughness: 0.8, metalness: 0.1 }),
-);
-placeAtStruct(stand, [ASSET_WORLD_POSITION[0], ASSET_WORLD_POSITION[1], ASSET_WORLD_POSITION[2] / 2]);
-scene.add(stand);
+// Track C: the scene previously hardcoded a single button stand + GLB load;
+// now it's asset-driven so switching the ASSET selector swaps in the right
+// mesh(es) -- see ASSET_CONFIGS above.
+let currentAssetGroup: THREE.Group | undefined;
 
-void new GLTFLoader().loadAsync("/spatial-training/assets/button/asset.glb").then((gltf) => {
-  gltf.scene.traverse((child) => {
-    if ((child as THREE.Mesh).isMesh) {
-      (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
-        color: 0xe5c07b, roughness: 0.6, metalness: 0.1,
-      });
-    }
+function loadAssetVisual(assetId: string): void {
+  if (currentAssetGroup) {
+    scene.remove(currentAssetGroup);
+    currentAssetGroup = undefined;
+  }
+  const config = ASSET_CONFIGS[assetId];
+  if (!config) throw new Error(`no AssetConfig for asset_id ${assetId}`);
+  const group = new THREE.Group();
+  scene.add(group);
+  currentAssetGroup = group;
+
+  // A plain stand under the asset -- Milestone 1 has no scene manifest / room
+  // reconstruction (fixture scene only, spec section 41), so without this the
+  // asset just hangs in empty space at its world height with nothing
+  // visually supporting it. A visual-only prop, not a modeled InteractableAsset.
+  const stand = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.025, config.worldPosition[2], 16),
+    new THREE.MeshStandardMaterial({ color: 0x4b5263, roughness: 0.8, metalness: 0.1 }),
+  );
+  placeAtStruct(stand, [config.worldPosition[0], config.worldPosition[1], config.worldPosition[2] / 2]);
+  group.add(stand);
+
+  void new GLTFLoader().loadAsync(config.glbUrl).then((gltf) => {
+    gltf.scene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+          color: 0xe5c07b, roughness: 0.6, metalness: 0.1,
+        });
+      }
+    });
+    placeAtStruct(gltf.scene, config.worldPosition);
+    group?.add(gltf.scene);
   });
-  placeAtStruct(gltf.scene, ASSET_WORLD_POSITION);
-  scene.add(gltf.scene);
-});
+
+  const propGlbUrl = config.propGlbUrl;
+  const propWorldPosition = config.propWorldPosition;
+  if (propGlbUrl && propWorldPosition) {
+    void new GLTFLoader().loadAsync(propGlbUrl).then((gltf) => {
+      gltf.scene.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+            color: 0x6b7280, roughness: 0.9, metalness: 0.0,
+          });
+        }
+      });
+      placeAtStruct(gltf.scene, propWorldPosition);
+      group?.add(gltf.scene);
+    });
+  }
+}
 
 renderer.setAnimationLoop(() => {
   orbit.update();
@@ -181,12 +266,14 @@ function addSelector(label: string, id: string, options: string[]): HTMLSelectEl
 }
 
 const robotSelect = addSelector("Robot", "robot-select", ["so101"]);
-const assetSelect = addSelector("Asset", "asset-select", ["button_01"]);
+const assetSelect = addSelector("Asset", "asset-select", Object.keys(ASSET_CONFIGS));
 const handSelect = addSelector("Hand", "hand-select", ["mock"]);
 addSelector("Simulator", "sim-select", ["mujoco"]);
 handSelect.addEventListener("change", () => {
   handProviderKind = handSelect.value as HandProviderKind;
 });
+assetSelect.addEventListener("change", () => loadAssetVisual(assetSelect.value));
+loadAssetVisual(assetSelect.value);
 
 // A webcam is a normal laptop peripheral, not a special-permission device --
 // unlike XR, no async capability probe is needed, just checking the API
@@ -367,7 +454,7 @@ async function startHandTracking(): Promise<void> {
 
 async function startDemo(): Promise<void> {
   recorder = new HumanEpisodeRecorder({
-    taskId: "press_button", assetId: assetSelect.value, handProvider: handSelect.value as HandProviderKind,
+    taskId: currentAssetConfig().taskId, assetId: assetSelect.value, handProvider: handSelect.value as HandProviderKind,
   });
   recorder.start(nowNs());
   demoActive = true;
@@ -397,14 +484,22 @@ async function finishDemo(): Promise<void> {
   if (!recorder) return;
   const metadata = recorder.finish();
   try {
+    // Look up by the asset_id actually recorded (not currentAssetConfig(),
+    // which reads the live selector -- the user could switch ASSET after
+    // START DEMO but before FINISH) so the uploaded task/goal always match
+    // what was actually demonstrated.
+    const config = ASSET_CONFIGS[metadata.asset_id];
+    if (!config) throw new Error(`no AssetConfig for asset_id ${metadata.asset_id}`);
     latestVerdict = await uploadHumanEpisode(
       API_BASE,
       metadata,
       recorder.handFrames(),
       recorder.objectStates(),
       recorder.events(),
-      ASSET_WORLD_POSE,
-      DEFAULT_GOAL_M,
+      { position_m: config.worldPosition, orientation_xyzw: [0, 0, 0, 1] },
+      config.goalPositionM,
+      config.goalToleranceM,
+      config.taskPredicateExtra,
     );
   } catch (error) {
     latestVerdict = {

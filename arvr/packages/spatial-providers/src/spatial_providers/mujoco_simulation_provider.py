@@ -24,6 +24,73 @@ from ar_contracts import (
 
 from .simulation_provider import SimulationProvider, TaskSpec
 
+# Matches ArmRetargeter's gripper command scale ([0,1], 1=closed -- see
+# arm_retargeter.py's _gripper_from_aperture). Hysteresis thresholds, not a
+# single cutoff, for the same "avoid flicker at the boundary" reason
+# hands.ts's own pinch detection uses two.
+GRASP_CLOSED_THRESHOLD = 0.7
+GRASP_OPEN_THRESHOLD = 0.3
+
+
+def _task_predicate(
+    frames, replay_results, task: TaskSpec,
+) -> tuple[bool, float]:
+    """Returns (ok, error_m). See TaskSpec's own docstring for why this is
+    an EE-trajectory-shaped approximation (grasp/pull), not genuinely
+    simulated object physics -- replay_and_verify() has no live object body
+    to query. Checked in the priority order the docstring documents."""
+    if task.object_position_m is not None:
+        return _grasp_and_place_predicate(frames, replay_results, task)
+    if task.pull_axis is not None:
+        return _pull_predicate(frames, task)
+    return _reach_predicate(replay_results, task)
+
+
+def _reach_predicate(replay_results, task: TaskSpec) -> tuple[bool, float]:
+    goal = np.array(task.goal_position_m)
+    final_position = (
+        np.array(replay_results[-1].achieved_position_m) if replay_results else goal
+    )
+    error = float(np.linalg.norm(final_position - goal))
+    return error <= task.tolerance_m, error
+
+
+def _grasp_and_place_predicate(frames, replay_results, task: TaskSpec) -> tuple[bool, float]:
+    object_position = np.array(task.object_position_m)
+    captured = False
+    for frame, replay in zip(frames, replay_results, strict=True):
+        if frame.gripper < GRASP_CLOSED_THRESHOLD:
+            continue
+        achieved = np.array(replay.achieved_position_m)
+        if np.linalg.norm(achieved - object_position) <= task.object_capture_radius_m:
+            captured = True
+            break
+
+    goal = np.array(task.goal_position_m)
+    final_gripper_open = frames[-1].gripper <= GRASP_OPEN_THRESHOLD if frames else False
+    final_position = (
+        np.array(replay_results[-1].achieved_position_m) if replay_results else goal
+    )
+    final_error = float(np.linalg.norm(final_position - goal))
+    ok = captured and final_gripper_open and final_error <= task.tolerance_m
+    return ok, final_error
+
+
+def _pull_predicate(frames, task: TaskSpec) -> tuple[bool, float]:
+    if not frames or task.pull_distance_m is None:
+        return False, float("inf")
+    axis = np.array(task.pull_axis)
+    axis_norm = np.linalg.norm(axis)
+    if axis_norm < 1e-9:
+        return False, float("inf")
+    axis = axis / axis_norm
+
+    start = np.array(frames[0].end_effector_position_m)
+    end = np.array(frames[-1].end_effector_position_m)
+    displacement = float(np.dot(end - start, axis))
+    error = abs(task.pull_distance_m - displacement)
+    return displacement >= (task.pull_distance_m - task.tolerance_m), error
+
 
 class MuJoCoSimulationProvider(SimulationProvider):
     def __init__(self) -> None:
@@ -115,12 +182,7 @@ class MuJoCoSimulationProvider(SimulationProvider):
             for f in trajectory.frames
         )
 
-        goal = np.array(task.goal_position_m)
-        final_position = (
-            np.array(replay_results[-1].achieved_position_m) if replay_results else goal
-        )
-        task_error = float(np.linalg.norm(final_position - goal))
-        task_ok = task_error <= task.tolerance_m
+        task_ok, task_error = _task_predicate(trajectory.frames, replay_results, task)
 
         checks = VerificationChecks(
             ik=ik_ok,

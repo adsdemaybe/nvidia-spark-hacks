@@ -16,13 +16,94 @@
    (Round 8 — a second, independent, genuinely-different verifier, not a
    duplicate), exports accepted demos as `RobotEpisode` → LeRobot training
    data. Three interchangeable `HandFrame` sources: `mock`, `openxr`,
-   `webcam` (Round 6).
+   `webcam` (Round 6). Three demo tasks: press a button, grasp a cube into a
+   bin, pull open a drawer (Round 9).
 
 The old app was deliberately left running rather than torn out — see Round
-5's "why two apps" note. Combined test count: **143/143 Python, 111/111
-vitest**, both suites green, lint clean. Rounds 5-7 are on
-`feat/arvr-integration`; Round 8 (Isaac verification) is on
-`feat/isaac-verifier`, not yet merged in as of this writing.
+5's "why two apps" note. Combined test count: **151/151 Python, 111/111
+vitest**, both suites green, lint clean. Rounds 5-8 are on
+`feat/arvr-integration`; Round 9 (object interaction) is on
+`feat/object-interaction`, not yet merged in as of this writing.
+
+### Round 9: Object interaction — cube→bin, drawer pull
+
+Branch `feat/object-interaction`, off `feat/arvr-integration` (includes
+Rounds 6-8). The user asked for object interaction beyond the single
+button ("what about ar like interacting with objects n stuff, give me
+everything for that"), which matches the master spec's own §14 demo
+progression: button (done, Milestone 1) → cube→bin → drawer pull.
+
+**Fixture assets** (`tools/make_object_assets.py`, same crude-on-purpose
+trimesh pattern as `make_button_asset.py`): `cube_01`
+(`interaction: "grasp"`), `drawer_01` (a `"grasp"` handle part + a
+`"pull"` drawer part, `joint_type: "prismatic"`, `axis: [0,-1,0]`,
+`limit_m: [0.0, 0.08]`), and `bin.glb` — a visual-only prop, deliberately
+**not** an `InteractableAsset` (`InteractionKind` has no "static
+container" case, and inventing one would misrepresent what's actually
+modeled; same role the button's stand cylinder already plays).
+`interaction_ir.py` needed zero changes — it already handled `grasp`/
+`pull` from the spec's own asset examples, fixture data was the only gap.
+
+**New task predicates, not just new fixture data.** The button's existing
+check is EE-distance-to-a-goal-point (a "reach" predicate). Grasp-and-place
+success means something different (the object ends up near the goal *and*
+the gripper actually closed near the object at some point), and drawer-pull
+means something different again (the handle moved a real distance along a
+declared axis) — `TaskSpec` (`ar_contracts.simulation_provider`) gained
+`object_position_m`/`object_capture_radius_m`/`pull_axis`/`pull_distance_m`
+(all optional, default `None` — the original press-only behavior is
+unchanged when they're absent). `MuJoCoSimulationProvider` gained
+`_reach_predicate`/`_grasp_and_place_predicate`/`_pull_predicate`, selected
+by which `TaskSpec` fields are set.
+
+**Honest scope limit, stated in `TaskSpec`'s own docstring, not hidden:**
+`SimulationProvider.replay_and_verify()` only ever receives the robot's own
+trajectory — there is no simulated cube or drawer body to query for a real
+position/joint state. These predicates are approximated entirely from the
+recorded EE position + gripper command sequence (grasp = gripper closes
+within `object_capture_radius_m` of `object_position_m` at some frame, then
+the final EE position lands within `tolerance_m` of `goal_position_m`; pull
+= the EE's net displacement along `pull_axis` reaches `pull_distance_m`).
+This is not new dishonesty introduced this round — the pre-existing button
+predicate was already exactly this shape (an EE-position check standing in
+for "the button was pressed") — Round 9 extends the same precedent to two
+more interaction kinds rather than building real per-object MuJoCo body
+physics, which is real scope beyond this milestone.
+
+**UI**: `spatialTeachMain.ts`'s ASSET selector now offers all three assets
+(`button_01`/`cube_01`/`drawer_01`) instead of only the button. Scene setup
+was previously a single hardcoded stand + button GLB load; replaced with an
+`ASSET_CONFIGS` record (task id, world position, GLB URL, optional prop GLB
+for the bin, goal position/tolerance, `TaskPredicateExtra`) and a
+`loadAssetVisual(assetId)` function that clears and reloads the right
+mesh(es) on selector change. `startDemo()` derives `taskId` from the
+selected asset instead of a hardcoded `"press_button"`; `finishDemo()`
+looks up the config by the **recorded** `metadata.asset_id` (not the live
+selector value) so switching ASSET mid-demo can't desync what was uploaded
+from what was actually demonstrated. `humanEpisodeUpload.ts`'s
+`uploadHumanEpisode()` gained a `TaskPredicateExtra` parameter threaded
+into `/finish`'s POST body; `ar_backend`'s `FinishRequest` gained the same
+four optional fields, passed straight through to `TaskSpec`.
+
+**Every new world-space point is IK-verified**, same discipline as Round
+7's scene recentering — `CUBE_GRASP_M`, `BIN_DROP_M`,
+`DRAWER_HANDLE_CLOSED_M`, `DRAWER_HANDLE_PULLED_M` in
+`test_simulation_provider.py` are real converged, within-joint-limits
+`IkSolver` outputs at a shared natural EE orientation, not guessed; the
+same points back the UI's `ASSET_CONFIGS` world positions.
+
+**Tests**: `test_spatial_providers.py` gained cube/drawer asset-loading
+checks; `test_simulation_provider.py` gained four predicate tests (grasp
+accept + reject, pull accept + reject), built from hand-authored,
+warm-started IK trajectories through real waypoints (`_build_manual_trajectory`).
+151/151 Python (up from 143), 111/111 vitest, `ruff check` clean,
+`tsc --noEmit`/`npm run build` clean.
+
+**Not yet done:** live browser verification — same limitation as Rounds 6
+and 7, this agent has no way to open a browser here. Nobody has watched a
+real cube→bin or drawer-pull demo actually get recorded and accepted (or a
+deliberately-missed one actually get rejected) in an actual browser tab
+yet.
 
 ### Round 8: Isaac Sim verification (`IsaacSimulationProvider`)
 
