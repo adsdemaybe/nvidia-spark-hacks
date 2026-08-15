@@ -68,13 +68,59 @@ negotiable because breaking them means this work has to be redone when their sid
 Both produced plausible output. Neither would have been caught by a test that only
 checked "does it run".
 
-## M4 — close the loop  ← the risky one
+## M4 — close the loop ✅ done 2026-08-15
 
-- [ ] Electrical participant publishes torque from duty + ω
-- [ ] Mechanical participant applies torque, publishes ω back
-- [ ] Back-EMF visibly limits current as the joint spins up
-- [ ] **Stability**: no divergence over a long rollout; if it rings, the §4.2 ladder
-- [ ] Wall-clock per simulated second measured and recorded
+- [x] Electrical participant publishes torque from duty + ω (`electrical.py`, `rollout.py`)
+- [x] Mechanical participant applies torque, publishes ω back
+- [x] Back-EMF limits current — and **reverses it past no-load**, see the bug below
+- [x] **Stability boundary measured**, not assumed — table below
+- [x] Wall-clock: **123x real time** (0.4 s simulated in ~3 ms of loop, surface mode)
+- [x] `surface` validated against `direct`: **6.09% of full scale** worst, 9x9 grid
+
+### The rollout, and why it is right
+
+Full duty into a 100:1 arm: starts at stall (1.510 A, 8.31 mN·m), spins up, **overshoots
+no-load slightly, current goes negative and brakes**, then settles oscillating around
+1345 rad/s — which is this motor's no-load speed and its physical ceiling. The
+oscillation is the arm swinging under gravity, alternately helping and opposing.
+
+### Stability — the risk the plan named, measured
+
+| control period | outcome |
+|---|---|
+| 0.5 – 10 ms | stable |
+| 20 ms | unbounded, ω = −7314 rad/s |
+| 50 ms | **DIVERGED**, guard fired at −1.05e5 rad/s |
+
+Explicit coupling is stable while the exchange period is short against both time
+constants, and stops being stable somewhere between 10 and 20 ms for this arm. The guard
+reports divergence rather than smoothing it, which is the whole point: a diverged rollout
+is a failure of the *simulation*, not of the design, and conflating those would blame a
+board for a solver problem.
+
+### The bug that mattered most
+
+`Math.abs()` on the measured current, justified in a comment as tidying up a reference
+direction. **It was not a convention — the sign is the physics.** Above no-load the
+back-EMF exceeds the supply, current genuinely reverses, and the motor brakes. Taking the
+magnitude turned braking into driving, so the simulated motor accelerated past its own
+no-load speed forever: 4179 rad/s on a motor whose ceiling is 1345.
+
+Measured directly to settle it: i(VEMF) is **+1.513 A** driving at ω = 0 and **−1.299 A**
+at ω = 2500. The convention was already correct and the code was throwing it away.
+
+The lesson is narrower than "check your signs": a comment that explains why something
+does not matter is worth more scrutiny than one that explains why it does. This one
+argued its way past a real effect.
+
+### A metric that was also wrong
+
+Interpolation error was first judged per-point, giving 886%. That number is meaningless:
+at 6% duty this drive makes 0.021 mN·m, so a 0.12 mN·m error is 592% relative and
+irrelevant on a motor producing 8.31 mN·m. Judged against **full scale** it is 6.09%,
+which is the figure that tells you whether a trajectory is affected. Both are reported —
+the relative one still shows *where* the surface is soft, near the conduction threshold
+where the freewheel diode puts a kink no grid density removes.
 
 ### The performance decision M4 forces
 

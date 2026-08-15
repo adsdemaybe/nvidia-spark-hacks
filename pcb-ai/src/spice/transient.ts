@@ -159,7 +159,8 @@ export function buildTransientDeck(args: {
     // .meas is ngspice's own windowed statistics — more trustworthy than averaging a
     // vector by hand, and it prints as `name = value` which the parser already reads.
     `meas tran i_avg AVG i(VEMF) from=${settle_s.toExponential(6)} to=${span_s.toExponential(6)}`,
-    `meas tran i_pk MAX i(VEMF) from=${settle_s.toExponential(6)} to=${span_s.toExponential(6)}`,
+    `meas tran i_max MAX i(VEMF) from=${settle_s.toExponential(6)} to=${span_s.toExponential(6)}`,
+    `meas tran i_min MIN i(VEMF) from=${settle_s.toExponential(6)} to=${span_s.toExponential(6)}`,
     `meas tran v_mot AVG v(mot_p) from=${settle_s.toExponential(6)} to=${span_s.toExponential(6)}`,
     `meas tran v_rail MIN v(bridge_in) from=${settle_s.toExponential(6)} to=${span_s.toExponential(6)}`,
     ".endc",
@@ -197,11 +198,21 @@ export async function runTransient(args: {
   }
   if (!sim.ok) return { ...empty, error: sim.error ?? "the transient did not solve" }
 
-  // Current through VEMF is measured in the source's own reference direction, which is
-  // opposite to motor current. Sign is a convention, not physics — take the magnitude
-  // and say so rather than leaving a mysterious minus in the report.
-  const iAvg = Math.abs(sim.values.get("i_avg") ?? 0)
-  const iPk = Math.abs(sim.values.get("i_pk") ?? 0)
+  // **The sign is physics, not convention.** An earlier version took the magnitude here
+  // and justified it as tidying up a reference direction. It was not: above no-load
+  // speed the back-EMF exceeds the supply, current genuinely reverses, and the motor
+  // brakes. Taking the magnitude turned braking into driving, so a simulated motor
+  // accelerated past its own no-load speed indefinitely — 4179 rad/s on a motor whose
+  // ceiling is 1345.
+  //
+  // Measured directly: i(VEMF) is +1.513 A driving at ω = 0 and −1.299 A at ω = 2500,
+  // which is exactly the convention wanted. Pass it through.
+  const iAvg = sim.values.get("i_avg") ?? 0
+  // Peak is the worst *magnitude* the driver and copper must survive, which during
+  // regeneration is the most negative excursion — so both extremes are measured.
+  const iMax = sim.values.get("i_max") ?? 0
+  const iMin = sim.values.get("i_min") ?? 0
+  const iPk = Math.abs(iMax) >= Math.abs(iMin) ? iMax : iMin
   const vMot = sim.values.get("v_mot") ?? 0
   const vRail = sim.values.get("v_rail") ?? topology.supply_v
 
@@ -210,7 +221,7 @@ export async function runTransient(args: {
     warnings.push("ngspice returned no i_avg — the measurement window may be empty")
   }
   const env = envelope(motor, topology.supply_v)
-  if (iPk > env.stall_current_a * 1.05) {
+  if (Math.abs(iPk) > env.stall_current_a * 1.05) {
     warnings.push(
       `peak current ${iPk.toFixed(2)} A exceeds this motor's stall current ` +
         `${env.stall_current_a.toFixed(2)} A — check the deck, not the design`,

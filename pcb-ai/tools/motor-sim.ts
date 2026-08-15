@@ -24,6 +24,7 @@ const { values } = parseArgs({
     omega: { type: "string" },
     freq: { type: "string", default: "20000" },
     sweep: { type: "string" },
+    json: { type: "boolean", default: false },
     out: { type: "string", default: "runs/motor-sim" },
     list: { type: "boolean", default: false },
   },
@@ -35,6 +36,25 @@ if (values.list) {
     console.log()
   }
   process.exit(0)
+}
+
+// Machine-readable single point, for the co-simulation's electrical participant.
+// Emitted before any of the human-facing banner so a caller can take the last JSON line
+// without parsing prose.
+if (values.json) {
+  const m = getMotor(values.motor)
+  const r = await runTransient({
+    motor: m,
+    drive: {
+      duty: Number(values.duty ?? 1),
+      freq_hz: Number(values.freq),
+      omega_rad_s: Number(values.omega ?? 0),
+    },
+    dir: values.out!,
+    label: "point",
+  })
+  console.log(JSON.stringify({ motor: m.id, ok: r.ok, error: r.error ?? null, ...r }))
+  process.exit(r.ok ? 0 : 1)
 }
 
 const ng = await locateNgspice()
