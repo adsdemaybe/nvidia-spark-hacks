@@ -30,7 +30,19 @@ export interface RobotShadowState {
 
 export type LiveRetargetSessionState = "connecting" | "open" | "closed";
 
-export function toWireHandFrame(hand: HandFrame, timestampNs: number): object {
+/** Mirrors ar_contracts.HandFrame.source_device / HumanEpisodeMetadata.hand_provider. */
+export type HandSourceDeviceWire = "openxr" | "phone" | "mock" | "webcam";
+
+/** Defaults to "openxr" only to keep pre-existing call sites (mock's replay
+ * loop, before this default existed) working unchanged -- every real caller
+ * should now pass its actual provider so an episode's recorded provenance
+ * isn't silently mislabeled (this default previously mislabeled mock frames
+ * as "openxr" too; see STATE.md). */
+export function toWireHandFrame(
+  hand: HandFrame,
+  timestampNs: number,
+  sourceDevice: HandSourceDeviceWire = "openxr",
+): object {
   const joints: Record<string, unknown> = {};
   for (const [name, joint] of Object.entries(hand.joints)) {
     joints[name] = {
@@ -41,7 +53,7 @@ export function toWireHandFrame(hand: HandFrame, timestampNs: number): object {
   return {
     schema_version: "1.0",
     timestamp_ns: timestampNs,
-    source_device: "openxr",
+    source_device: sourceDevice,
     hand: hand.handedness,
     frame: "struct_world",
     joints,
@@ -85,9 +97,9 @@ export class LiveRetargetSession {
   }
 
   /** Sends one HandFrame. A no-op while not yet open. */
-  send(hand: HandFrame, timestampNs: number): void {
+  send(hand: HandFrame, timestampNs: number, sourceDevice?: HandSourceDeviceWire): void {
     if (this.state !== "open" || !this.socket) return;
-    this.socket.send(JSON.stringify(toWireHandFrame(hand, timestampNs)));
+    this.socket.send(JSON.stringify(toWireHandFrame(hand, timestampNs, sourceDevice)));
   }
 
   stop(): void {

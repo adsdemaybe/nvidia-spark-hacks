@@ -15,7 +15,7 @@
 import type { HandFrame } from "./hands";
 import { toWireHandFrame } from "./liveRetargetSession";
 
-export type HandProviderKind = "openxr" | "phone" | "mock";
+export type HandProviderKind = "openxr" | "phone" | "mock" | "webcam";
 export type HumanEpisodeEventType = "pinch" | "release" | "contact" | "task_start" | "task_finish";
 
 export interface HumanEpisodeRecorderOptions {
@@ -98,7 +98,7 @@ export class HumanEpisodeRecorder {
       );
     }
     this.lastTimestampNs = timestampNs;
-    this.handFrameBuffer.push(toWireHandFrame(frame, timestampNs));
+    this.handFrameBuffer.push(toWireHandFrame(frame, timestampNs, this.options.handProvider));
   }
 
   captureObject(state: ObjectStateCapture): void {

@@ -49,6 +49,16 @@
       #controls button:disabled { opacity: .35; cursor: default; }
       #controls .rec { border-color: var(--bad); color: var(--bad); }
       #controls .accepted { border-color: var(--accent); color: var(--accent); }
+
+      /* Spec's split-screen layout: the raw webcam feed beside the 3D
+         training view, only shown while HAND = webcam is actually running. */
+      #webcam-panel { bottom: 20px; right: 16px; display: none; flex-direction: column;
+        gap: 6px; align-items: flex-end; }
+      #webcam-panel.active { display: flex; }
+      #webcam-panel video { width: 320px; max-width: 32vw; border-radius: 6px;
+        border: 1px solid var(--line); background: #000; transform: scaleX(-1); }
+      #webcam-panel .label { font-size: 11px; letter-spacing: .06em; color: var(--muted);
+        text-transform: uppercase; }
     </style>
   </head>
   <body>
@@ -62,6 +72,10 @@
     </div>
 
     <div class="hud" id="controls"></div>
+
+    <div class="hud" id="webcam-panel">
+      <span class="label">webcam</span>
+    </div>
 
     <script type="module" src="/src/spatialTeachMain.ts"></script>
   </body>

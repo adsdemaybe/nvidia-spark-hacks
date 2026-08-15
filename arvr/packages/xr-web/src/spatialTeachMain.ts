@@ -22,6 +22,7 @@ import { LiveRetargetSession, type RobotShadowState } from "./liveRetargetSessio
 import { MockHandProvider } from "./mockHand";
 import { ShadowHand } from "./shadowHand";
 import { ShadowRobot } from "./shadowRobot";
+import { WebcamHandProvider } from "./webcamHand";
 import { buildEnvironment, placeAtStruct } from "./scene";
 import type { Vec3 } from "./contracts";
 
@@ -53,6 +54,8 @@ const selectorsEl = document.getElementById("selectors")!;
 const controlsEl = document.getElementById("controls")!;
 const readoutEl = document.getElementById("readout")!;
 const calibrationEl = document.getElementById("calibration")!;
+const webcamPanelEl = document.getElementById("webcam-panel")!;
+const webcamPanelLabelEl = webcamPanelEl.querySelector(".label")!;
 
 // ---------------------------------------------------------------- renderer --
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -115,9 +118,10 @@ renderer.setAnimationLoop(() => {
 });
 
 // ------------------------------------------------------------------- state --
-type HandProviderKind = "mock" | "openxr";
+type HandProviderKind = "mock" | "openxr" | "webcam";
 let handProviderKind: HandProviderKind = "mock";
 let mockProvider: MockHandProvider | undefined;
+let webcamProvider: WebcamHandProvider | undefined;
 let calibrated = false;
 let recorder: HumanEpisodeRecorder | undefined;
 let liveSession: LiveRetargetSession | undefined;
@@ -164,6 +168,16 @@ handSelect.addEventListener("change", () => {
   handProviderKind = handSelect.value as HandProviderKind;
 });
 
+// A webcam is a normal laptop peripheral, not a special-permission device --
+// unlike XR, no async capability probe is needed, just checking the API
+// exists (matches how "openxr" is only offered when XR is actually usable).
+if (navigator.mediaDevices) {
+  const opt = document.createElement("option");
+  opt.value = "webcam";
+  opt.textContent = "WEBCAM";
+  handSelect.appendChild(opt);
+}
+
 void fetch(`${API_BASE}/robots`)
   .then((r) => r.json() as Promise<Array<{ robot_id: string }>>)
   .catch(() => []);
@@ -204,6 +218,23 @@ function renderReadout(): void {
     `asset      ${assetSelect.value}`,
     `hand       ${handSelect.value}`,
   ];
+  // Spec section 49: provider interchangeability (same HandFrame) does not
+  // mean sensor fidelity is equal -- say so plainly, not just in code.
+  if (handProviderKind === "webcam") {
+    const status = webcamProvider?.getStatus();
+    lines.push(
+      "HAND SOURCE     LAPTOP WEBCAM",
+      "MODE            SCREEN CONTROL",
+      "DEPTH           ESTIMATED",
+    );
+    if (status) {
+      lines.push(
+        `fps             ${status.resultFps.toFixed(0)}`,
+        `handedness      ${status.handedness ?? "…"}`,
+        `pinch           ${status.pinchActive ? "closed" : "open"}`,
+      );
+    }
+  }
   if (demoActive) {
     lines.push(
       "",
@@ -256,7 +287,7 @@ function onHandFrame(hand: HandFrame | null): void {
 
   const target = wristTarget(hand);
   if (target && liveSession?.state === "open") {
-    liveSession.send(hand, timestampNs);
+    liveSession.send(hand, timestampNs, handProviderKind);
   }
   renderReadout();
 }
@@ -297,6 +328,18 @@ async function startHandTracking(): Promise<void> {
     } catch (error) {
       console.warn("XR session unavailable, falling back to mock hand:", error);
     }
+  } else if (handProviderKind === "webcam") {
+    try {
+      webcamProvider = await WebcamHandProvider.create();
+      webcamPanelEl.appendChild(webcamProvider.videoElement);
+      webcamPanelEl.classList.add("active");
+      webcamProvider.start((hand) => onHandFrame(hand));
+      return;
+    } catch (error) {
+      console.warn("webcam unavailable, falling back to mock hand:", error);
+      webcamProvider = undefined;
+      webcamPanelEl.classList.remove("active");
+    }
   }
   mockProvider = await MockHandProvider.load("/spatial-training/hand/mock_episode.jsonl");
   mockProvider.start((hand) => onHandFrame(hand));
@@ -304,7 +347,7 @@ async function startHandTracking(): Promise<void> {
 
 async function startDemo(): Promise<void> {
   recorder = new HumanEpisodeRecorder({
-    taskId: "press_button", assetId: assetSelect.value, handProvider: handSelect.value as "mock" | "openxr",
+    taskId: "press_button", assetId: assetSelect.value, handProvider: handSelect.value as HandProviderKind,
   });
   recorder.start(nowNs());
   demoActive = true;
@@ -319,6 +362,10 @@ async function finishDemo(): Promise<void> {
   demoActive = false;
   mockProvider?.stop();
   mockProvider = undefined;
+  webcamProvider?.stop();
+  webcamProvider = undefined;
+  webcamPanelEl.classList.remove("active");
+  webcamPanelEl.replaceChildren(webcamPanelLabelEl); // drop the <video>, keep the label
   liveSession?.stop();
   liveSession = undefined;
   // Without this, FINISH on a real headset leaves the user stuck inside the

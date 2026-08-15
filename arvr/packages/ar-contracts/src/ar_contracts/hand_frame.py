@@ -36,7 +36,7 @@ from .common import (
 )
 
 HandSide = Literal["left", "right"]
-HandSourceDevice = Literal["openxr", "phone", "mock"]
+HandSourceDevice = Literal["openxr", "phone", "mock", "webcam"]
 
 # Matches xr-web/src/hands.ts's HAND_JOINTS + PALM_JOINT exactly.
 HAND_JOINT_NAMES: tuple[str, ...] = (
