@@ -152,7 +152,7 @@ export class ShadowHand {
  * this is -- is per-hand state that a shared implementation would have to
  * index by handedness anyway. Two instances get that separation from the
  * language for free, and leave `ShadowHand` exactly as the teleop pages
- * (spatialTeachMain.ts, sortTeleopMain.ts) already use it.
+ * (spatialTeachMain.ts, canPickupMain.ts) already use it.
  */
 export class ShadowHands {
   readonly root = new THREE.Group();

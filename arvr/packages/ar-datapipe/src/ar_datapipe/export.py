@@ -29,6 +29,70 @@ except ImportError:  # pragma: no cover - exercised via pytest.importorskip
 LEROBOT_CODEBASE_VERSION = "v3.0"
 
 
+def require_pyarrow(caller: str) -> None:
+    """Raise the standard "no pyarrow here" error, naming the caller.
+
+    Every export entry point needs the same guard with the same explanation,
+    and the explanation is the valuable part: `import ar_datapipe` must keep
+    working on a machine without pyarrow, so the failure has to happen at
+    call time and has to say which call it was.
+    """
+    if pa is None or pq is None:
+        raise ImportError(
+            f"pyarrow is not installed on this platform — see "
+            f"packages/ar-datapipe/README.md. ar_datapipe itself imports "
+            f"fine everywhere; only {caller} needs it."
+        )
+
+
+def write_lerobot_meta(
+    meta_dir: Path,
+    *,
+    robot_type: str,
+    fps: float,
+    features: dict,
+    task: str,
+    episode_index: int,
+    n_rows: int,
+    extra_info: dict | None = None,
+) -> None:
+    """Write the `meta/` half of a LeRobot v3 dataset: `info.json` plus one
+    appended line each in `tasks.jsonl` and `episodes.jsonl`.
+
+    Factored out so a new exporter does not have to re-derive the on-disk
+    layout by copying it — getting `episodes.jsonl` subtly wrong is the kind
+    of mistake that only surfaces when a training run refuses to load the
+    dataset, long after the export looked fine.
+
+    `export_episode` and `export_robot_episode` above still inline their own
+    copies of this. They are deliberately frozen: they are the robot-layer
+    path, their acceptance tests only run where Pinocchio and MuJoCo import
+    (not on the Windows dev machine), and a behaviour-preserving refactor
+    that cannot be *observed* to preserve behaviour is not worth the risk.
+    Migrating them belongs in its own reviewed change.
+    """
+    meta_dir.mkdir(parents=True, exist_ok=True)
+
+    info = {
+        "codebase_version": LEROBOT_CODEBASE_VERSION,
+        "robot_type": robot_type,
+        "fps": fps,
+        "features": features,
+    }
+    if extra_info:
+        info.update(extra_info)
+    (meta_dir / "info.json").write_text(json.dumps(info, indent=2) + "\n")
+
+    with (meta_dir / "tasks.jsonl").open("a") as f:
+        f.write(json.dumps({"task_index": 0, "task": task}) + "\n")
+
+    with (meta_dir / "episodes.jsonl").open("a") as f:
+        f.write(
+            json.dumps({"episode_index": episode_index, "tasks": [task], "length": n_rows})
+            + "\n"
+        )
+
+
 def export_episode(
     dataset_dir: Path,
     *,

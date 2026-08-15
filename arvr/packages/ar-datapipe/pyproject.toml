@@ -15,7 +15,14 @@ dependencies = [
     # tests/test_datapipe.py already handles via pytest.importorskip.
     "pin>=3.4; sys_platform == 'linux'",
     "mujoco>=3.2; sys_platform == 'linux'",
-    "pyarrow>=17.0; sys_platform == 'linux'",
+    # NOT Linux-gated, unlike the two above. pyarrow ships first-class Windows
+    # wheels; it was originally grouped with them because the only exporter at
+    # the time sat downstream of Pinocchio IK, so gating it changed nothing.
+    # human_export.py breaks that assumption: it turns a recorded HumanEpisode
+    # into a LeRobot dataset with no robot, no IK and no simulator involved,
+    # and that path has to run on the Windows dev machine — where the robot
+    # hand it would otherwise retarget onto does not exist yet.
+    "pyarrow>=17.0",
 ]
 
 [build-system]

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STRUCT — Can Pickup</title>
+    <style>
+      :root {
+        --bg: #14171c;
+        --panel: #1d2129;
+        --ink: #e8eaed;
+        --muted: #9aa0a6;
+        --accent: #00d4aa;
+        --warn: #ffb347;
+        --bad: #e06c75;
+        --line: #2a2f3a;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+        font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; }
+
+      .hud { position: fixed; pointer-events: none; }
+      .hud * { pointer-events: auto; }
+
+      #status-wrap { top: 16px; right: 16px; text-align: right; max-width: 380px; }
+      #status { display: inline-block; padding: 7px 14px; border-radius: 6px;
+        border: 1px solid var(--line); color: var(--muted); letter-spacing: .08em;
+        font-weight: 700; }
+      #status[data-state="ready"] { border-color: var(--accent); color: var(--accent); }
+      #status[data-state="recording"] { border-color: var(--bad); color: var(--bad); }
+
+      #readout { margin-top: 10px; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 6px; padding: 10px 12px; color: var(--muted); text-align: left;
+        white-space: pre-wrap; overflow-wrap: anywhere; }
+
+      #title { top: 16px; left: 16px; }
+      #title h1 { margin: 0 0 4px; font-size: 15px; letter-spacing: .06em; }
+      #title p { margin: 0; color: var(--muted); max-width: 42ch; }
+
+      #controls { bottom: 20px; left: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+      #controls button { background: var(--panel); color: var(--ink);
+        border: 1px solid var(--line); padding: 11px 20px; border-radius: 8px;
+        cursor: pointer; font: inherit; font-weight: 700; letter-spacing: .04em; }
+      #controls button:disabled { opacity: .35; cursor: default; }
+      #controls .rec { border-color: var(--bad); color: var(--bad); }
+
+      #video-panel { bottom: 20px; right: 16px; display: none; flex-direction: column;
+        gap: 6px; align-items: flex-end; }
+      #video-panel.active { display: flex; }
+      #video-panel video { width: 300px; max-width: 30vw; border-radius: 8px;
+        border: 1px solid var(--line); background: #000; transform: scaleX(-1); }
+      #video-panel .label { font-size: 11px; letter-spacing: .06em; color: var(--muted);
+        text-transform: uppercase; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div class="hud" id="title">
+      <h1>STRUCT — Can Pickup</h1>
+      <p>Pick the can up off the table with your hand. Each take is recorded
+         as training data.</p>
+    </div>
+
+    <div class="hud" id="status-wrap">
+      <span id="status" data-state="off">CAMERA OFF</span>
+      <div id="readout">loading…</div>
+    </div>
+
+    <div class="hud" id="controls"></div>
+
+    <div class="hud" id="video-panel">
+      <span class="label">webcam</span>
+    </div>
+
+    <script type="module" src="/src/canPickupMain.ts"></script>
+  </body>
+</html>

@@ -1,17 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { PINCH_CLOSED_M, PINCH_OPEN_M } from "./hands";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { PINCH_CLOSED_M, PINCH_OPEN_M, type HandFrame, type HandPair } from "./hands";
 import {
   DEFAULT_CONTROL_VOLUME,
+  HandPairTracking,
   MEDIAPIPE_LANDMARK_TO_JOINT,
   PinchHysteresis,
+  WebcamHandProvider,
+  createHandPairSmoothingState,
   emaSmooth,
   imageToControlSpace,
   mediapipeResultToHandFrame,
+  mediapipeResultToHandPair,
   palmOrientation,
   preferredHandIndex,
+  resolveHandSide,
   worldLandmarksToStructJoints,
   type MediapipeHandResult,
   type MediapipeLandmark,
+  type WebcamHandProviderOptions,
 } from "./webcamHand";
 
 function lm(x: number, y: number, z: number): MediapipeLandmark {
@@ -44,6 +50,51 @@ function syntheticResult(overrides: Partial<MediapipeHandResult> = {}): Mediapip
     worldLandmarks: [WORLD_LANDMARKS_OPEN],
     handedness: [[{ categoryName: "Right", score: 0.98 }]],
     ...overrides,
+  };
+}
+
+// ------------------------------------------------- two-handed test fixtures --
+
+// Only the wrist's image-space landmark is read (it picks the control-volume
+// anchor), so a detection can be tagged by giving its wrist a distinct image
+// x. That tag is what makes a left/right swap *provable*: `handedness` alone
+// cannot catch one, because a swap carries the frame's own self-reported
+// label into the wrong slot along with it. Same reasoning, and the same
+// trick, as hands.test.ts's LEFT_X / RIGHT_X.
+const WRIST_IMAGE_Z = -0.05;
+const IMAGE_X_A = 0.2;
+const IMAGE_X_B = 0.8;
+const IMAGE_X_MOVED = 0.6;
+
+function imageLandmarksAtX(wristImageX: number): MediapipeLandmark[] {
+  return WORLD_LANDMARKS_OPEN.map((_, i) =>
+    i === 0 ? lm(wristImageX, 0.5, WRIST_IMAGE_Z) : lm(0.5, 0.5, 0),
+  );
+}
+
+/** The struct-space x a detection tagged with this image x must produce. */
+function expectedStructX(wristImageX: number): number {
+  return imageToControlSpace(wristImageX, 0.5, WRIST_IMAGE_Z, DEFAULT_CONTROL_VOLUME)[0];
+}
+
+/** Recovers the tag from a converted frame. hands.ts's HandFrame is WebXR
+ * space and adapter.ts's structToWebxr maps struct [x,y,z] -> webxr
+ * [-y, z, -x], so the struct x that identifies a detection comes back as the
+ * negated webxr z. */
+function wristStructX(hand: HandFrame): number {
+  return -hand.joints["wrist"]!.position[2];
+}
+
+interface Detection {
+  categoryName: string;
+  imageX: number;
+}
+
+function multiHandResult(...detections: readonly Detection[]): MediapipeHandResult {
+  return {
+    landmarks: detections.map((d) => imageLandmarksAtX(d.imageX)),
+    worldLandmarks: detections.map(() => WORLD_LANDMARKS_OPEN),
+    handedness: detections.map((d) => [{ categoryName: d.categoryName, score: 0.95 }]),
   };
 }
 
@@ -238,5 +289,439 @@ describe("mediapipeResultToHandFrame", () => {
     const json = JSON.stringify(hand);
     expect(json).not.toContain("NaN");
     expect(JSON.parse(json)).toMatchObject({ handedness: "left" });
+  });
+
+  it("still collapses two detections to the one preferredHandIndex picks", () => {
+    // The regression guard on the single-hand path. Adding the pair path must
+    // not tempt this one into emitting both, or into changing which of the
+    // two it picks: the teleop pipeline it feeds drives a single end-effector
+    // and would interleave unrelated targets if either happened.
+    // preferredHandIndex prefers the MediaPipe category "Right" -- the
+    // camera's label, deliberately read before any mirroring is applied, so
+    // the chosen detection is the same one whatever mirroredPreview says.
+    for (const mirroredPreview of [true, false]) {
+      const hand = mediapipeResultToHandFrame(
+        multiHandResult(
+          { categoryName: "Left", imageX: IMAGE_X_A },
+          { categoryName: "Right", imageX: IMAGE_X_B },
+        ),
+        { mirroredPreview },
+      );
+      expect(hand).not.toBeNull();
+      expect(wristStructX(hand!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 6);
+    }
+  });
+
+  it("is unaffected by detection order, as before", () => {
+    const swapped = mediapipeResultToHandFrame(
+      multiHandResult(
+        { categoryName: "Right", imageX: IMAGE_X_B },
+        { categoryName: "Left", imageX: IMAGE_X_A },
+      ),
+      { mirroredPreview: false },
+    );
+    expect(swapped!.handedness).toBe("right");
+    expect(wristStructX(swapped!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 6);
+  });
+});
+
+describe("resolveHandSide", () => {
+  it("flips the camera's label onto the user's body for a mirrored preview", () => {
+    // The camera faces the user, so the hand MediaPipe calls "Right" is the
+    // one the user reaches with on their left. A mirrored preview is what the
+    // user is actually looking at, so that is the frame the label has to be
+    // expressed in.
+    expect(resolveHandSide({ categoryName: "Right", score: 1 }, true)).toBe("left");
+    expect(resolveHandSide({ categoryName: "Left", score: 1 }, true)).toBe("right");
+  });
+
+  it("keeps the camera's label when the preview is not mirrored", () => {
+    expect(resolveHandSide({ categoryName: "Right", score: 1 }, false)).toBe("right");
+    expect(resolveHandSide({ categoryName: "Left", score: 1 }, false)).toBe("left");
+  });
+});
+
+describe("mediapipeResultToHandPair", () => {
+  it("returns both hands when both are detected", () => {
+    const pair = mediapipeResultToHandPair(
+      multiHandResult(
+        { categoryName: "Left", imageX: IMAGE_X_A },
+        { categoryName: "Right", imageX: IMAGE_X_B },
+      ),
+    );
+    expect(pair.left?.handedness).toBe("left");
+    expect(pair.right?.handedness).toBe("right");
+    expect(Object.keys(pair.left!.joints).length).toBeGreaterThan(0);
+    expect(Object.keys(pair.right!.joints).length).toBeGreaterThan(0);
+    expect(pair.left).not.toBe(pair.right);
+  });
+
+  it("does not swap the user's hands on a mirrored preview, in either detection order", () => {
+    // The highest-value assertion in this file, and the one bug worth the
+    // most to prevent: MediaPipe labels from the camera's point of view, so
+    // with the default mirrored preview its "Right" detection is the user's
+    // LEFT hand. Bucketing on categoryName instead of the resolved side would
+    // put both hands in the wrong slot -- and every frame would still
+    // self-report a plausible handedness, so nothing downstream could tell.
+    // The per-detection image-x tag is what makes the swap visible.
+    const cameraRight = { categoryName: "Right", imageX: IMAGE_X_A };
+    const cameraLeft = { categoryName: "Left", imageX: IMAGE_X_B };
+
+    for (const detections of [
+      [cameraRight, cameraLeft],
+      [cameraLeft, cameraRight],
+    ]) {
+      const pair = mediapipeResultToHandPair(multiHandResult(...detections));
+      // The user's left hand is the one the camera called "Right".
+      expect(wristStructX(pair.left!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
+      expect(wristStructX(pair.right!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 6);
+      expect(pair.left!.handedness).toBe("left");
+      expect(pair.right!.handedness).toBe("right");
+    }
+  });
+
+  it("does not swap the user's hands on a non-mirrored preview either", () => {
+    // Same fixture, mirroring off: now the camera's label already is the
+    // user's side, so both hands must land in the *opposite* slots from the
+    // test above. A single-frame convention (always flip, or never flip)
+    // would pass one of these two tests and fail the other.
+    const pair = mediapipeResultToHandPair(
+      multiHandResult(
+        { categoryName: "Right", imageX: IMAGE_X_A },
+        { categoryName: "Left", imageX: IMAGE_X_B },
+      ),
+      { mirroredPreview: false },
+    );
+    expect(wristStructX(pair.right!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
+    expect(wristStructX(pair.left!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 6);
+  });
+
+  it("returns only the left hand when only it is detected", () => {
+    const pair = mediapipeResultToHandPair(
+      multiHandResult({ categoryName: "Right", imageX: IMAGE_X_A }),
+    );
+    expect(pair.left?.handedness).toBe("left");
+    expect(wristStructX(pair.left!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
+    expect(pair.right).toBeNull();
+  });
+
+  it("returns only the right hand when only it is detected", () => {
+    const pair = mediapipeResultToHandPair(
+      multiHandResult({ categoryName: "Left", imageX: IMAGE_X_B }),
+    );
+    expect(pair.right?.handedness).toBe("right");
+    expect(wristStructX(pair.right!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 6);
+    expect(pair.left).toBeNull();
+  });
+
+  it("returns nulls, never frames of zeros, when neither hand is detected", () => {
+    // Zeros would retarget into a real robot pose at the origin and render a
+    // hand collapsed at the floor -- the failure the null contract exists to
+    // prevent, preserved across both slots.
+    expect(mediapipeResultToHandPair(multiHandResult())).toEqual({ left: null, right: null });
+  });
+
+  it("drops a hand with too few landmarks instead of fabricating one", () => {
+    const result = multiHandResult(
+      { categoryName: "Left", imageX: IMAGE_X_A },
+      { categoryName: "Right", imageX: IMAGE_X_B },
+    );
+    const truncated: MediapipeHandResult = {
+      ...result,
+      worldLandmarks: [WORLD_LANDMARKS_OPEN.slice(0, 5), WORLD_LANDMARKS_OPEN],
+    };
+    const pair = mediapipeResultToHandPair(truncated);
+    expect(pair.right).toBeNull(); // the truncated one: category "Left" -> user's right
+    expect(pair.left).not.toBeNull();
+  });
+
+  it("keeps the first of two detections classified as the same hand", () => {
+    // MediaPipe can misclassify and report the same handedness twice. One
+    // slot cannot hold two frames, so the first wins -- matching
+    // readBothHands -- rather than the second silently replacing the first.
+    const pair = mediapipeResultToHandPair(
+      multiHandResult(
+        { categoryName: "Right", imageX: IMAGE_X_A },
+        { categoryName: "Right", imageX: IMAGE_X_B },
+      ),
+    );
+    expect(wristStructX(pair.left!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
+    expect(pair.right).toBeNull();
+  });
+
+  it("smooths each hand against its own history, not the other's", () => {
+    // The failure this pins down: one shared SmoothingState is keyed by joint
+    // name alone, so both hands write "wrist" into the same slot and each
+    // hand's EMA drags toward wherever the other one was. The output stays
+    // smooth and plausible while being wrong, which is why it needs a test
+    // and not just care.
+    const smoothing = createHandPairSmoothingState(0.5);
+    const first = mediapipeResultToHandPair(
+      multiHandResult(
+        { categoryName: "Right", imageX: IMAGE_X_A }, // user's left
+        { categoryName: "Left", imageX: IMAGE_X_B }, // user's right
+      ),
+      { smoothing },
+    );
+
+    // Each hand's first frame passes through unblended. With a shared filter
+    // the second hand converted would already be dragged halfway to the
+    // first, so this alone catches the shared-state bug.
+    expect(wristStructX(first.left!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
+    expect(wristStructX(first.right!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 6);
+
+    // Now move ONLY the user's left hand. The right hand's input is
+    // byte-identical to last frame, so its smoothed output must be too.
+    const second = mediapipeResultToHandPair(
+      multiHandResult(
+        { categoryName: "Right", imageX: IMAGE_X_MOVED },
+        { categoryName: "Left", imageX: IMAGE_X_B },
+      ),
+      { smoothing },
+    );
+    expect(wristStructX(second.right!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 10);
+    // ...while the hand that actually moved lands half-way, alpha being 0.5.
+    expect(wristStructX(second.left!)).toBeCloseTo(
+      (expectedStructX(IMAGE_X_A) + expectedStructX(IMAGE_X_MOVED)) / 2,
+      6,
+    );
+  });
+
+  it("resumes a returning hand from its own history, not the other hand's", () => {
+    const smoothing = createHandPairSmoothingState(0.5);
+    const both = multiHandResult(
+      { categoryName: "Right", imageX: IMAGE_X_A },
+      { categoryName: "Left", imageX: IMAGE_X_B },
+    );
+    mediapipeResultToHandPair(both, { smoothing });
+    // The user's right hand leaves frame for a while; only the left is fed.
+    mediapipeResultToHandPair(
+      multiHandResult({ categoryName: "Right", imageX: IMAGE_X_MOVED }),
+      { smoothing },
+    );
+    const back = mediapipeResultToHandPair(both, { smoothing });
+    // It returns to exactly where it left off -- its own filter never saw the
+    // other hand's motion in the meantime.
+    expect(wristStructX(back.right!)).toBeCloseTo(expectedStructX(IMAGE_X_B), 10);
+  });
+});
+
+// ------------------------------------------------------- tracking-loss gate --
+
+const PAIR_FIXTURE = mediapipeResultToHandPair(
+  multiHandResult(
+    { categoryName: "Right", imageX: IMAGE_X_A },
+    { categoryName: "Left", imageX: IMAGE_X_B },
+  ),
+);
+const LEFT_HAND: HandFrame = PAIR_FIXTURE.left!;
+const RIGHT_HAND: HandFrame = PAIR_FIXTURE.right!;
+const NO_HANDS: HandPair = { left: null, right: null };
+
+describe("HandPairTracking", () => {
+  it("passes both hands straight through while both are tracked", () => {
+    const tracking = new HandPairTracking(3);
+    expect(tracking.update({ left: LEFT_HAND, right: RIGHT_HAND })).toEqual({
+      left: LEFT_HAND,
+      right: RIGHT_HAND,
+    });
+  });
+
+  it("holds a briefly-lost hand's last frame while the other keeps tracking", () => {
+    // The single-hand path holds by not calling back at all. A pair callback
+    // still has to fire for the hand that IS tracked, so the other slot is
+    // filled with its last known frame -- the caller ends up holding exactly
+    // what it would have held anyway, rather than being told the hand is gone
+    // after one dropped detection.
+    const tracking = new HandPairTracking(3);
+    tracking.update({ left: LEFT_HAND, right: RIGHT_HAND });
+    const held = tracking.update({ left: LEFT_HAND, right: null });
+    expect(held).toEqual({ left: LEFT_HAND, right: RIGHT_HAND });
+  });
+
+  it("reports a hand null once its dropout is sustained", () => {
+    const tracking = new HandPairTracking(3);
+    tracking.update({ left: LEFT_HAND, right: RIGHT_HAND });
+    expect(tracking.update({ left: LEFT_HAND, right: null })!.right).toBe(RIGHT_HAND);
+    expect(tracking.update({ left: LEFT_HAND, right: null })!.right).toBe(RIGHT_HAND);
+    expect(tracking.update({ left: LEFT_HAND, right: null })!.right).toBeNull();
+    expect(tracking.update({ left: LEFT_HAND, right: null })!.right).toBeNull();
+  });
+
+  it("counts each hand's dropout separately", () => {
+    // One shared counter would let the steadily-tracked hand keep resetting
+    // it, so a hand that had genuinely left the frame would never be reported
+    // lost at all.
+    const tracking = new HandPairTracking(2);
+    tracking.update({ left: LEFT_HAND, right: RIGHT_HAND });
+    tracking.update({ left: LEFT_HAND, right: null });
+    const lost = tracking.update({ left: LEFT_HAND, right: null });
+    expect(lost).toEqual({ left: LEFT_HAND, right: null });
+  });
+
+  it("announces a total loss exactly once, then stays quiet", () => {
+    // With neither hand fresh there is nobody to call back for, so a brief
+    // total dropout skips the callback entirely -- byte for byte the
+    // single-hand rule, where the caller simply keeps its last frame.
+    const tracking = new HandPairTracking(2);
+    tracking.update({ left: LEFT_HAND, right: RIGHT_HAND });
+    expect(tracking.update(NO_HANDS)).toBeNull(); // brief: silence, caller holds
+    expect(tracking.update(NO_HANDS)).toEqual(NO_HANDS); // sustained: announced
+    expect(tracking.update(NO_HANDS)).toBeNull(); // already known: nothing to say
+    expect(tracking.update(NO_HANDS)).toBeNull();
+  });
+
+  it("still announces a loss for a stream that never tracked anything", () => {
+    // The single-hand path emits its null on the Nth miss whether or not a
+    // hand was ever seen -- that is how a caller learns the camera is up but
+    // there are no hands in it, rather than waiting forever.
+    const tracking = new HandPairTracking(2);
+    expect(tracking.update(NO_HANDS)).toBeNull();
+    expect(tracking.update(NO_HANDS)).toEqual(NO_HANDS);
+    expect(tracking.update(NO_HANDS)).toBeNull();
+  });
+
+  it("emits a hand again as soon as it returns", () => {
+    const tracking = new HandPairTracking(2);
+    tracking.update({ left: LEFT_HAND, right: RIGHT_HAND });
+    tracking.update({ left: LEFT_HAND, right: null });
+    tracking.update({ left: LEFT_HAND, right: null }); // sustained loss
+    expect(tracking.update({ left: LEFT_HAND, right: RIGHT_HAND })).toEqual({
+      left: LEFT_HAND,
+      right: RIGHT_HAND,
+    });
+  });
+
+  it("does not resurrect a hand that was already reported lost", () => {
+    // Once a loss has been announced the held frame has to be forgotten,
+    // otherwise the next time the *other* hand moves, this one reappears from
+    // a frame that is by then seconds stale -- a hand sitting motionless in
+    // the recording where there is no hand at all.
+    const tracking = new HandPairTracking(2);
+    tracking.update({ left: LEFT_HAND, right: RIGHT_HAND });
+    tracking.update(NO_HANDS);
+    tracking.update(NO_HANDS); // both sustained-lost
+    const back = tracking.update({ left: LEFT_HAND, right: null });
+    expect(back).toEqual({ left: LEFT_HAND, right: null });
+  });
+});
+
+// -------------------------------------------------------------- provider --
+
+/** The provider's constructor is private (it exists only via `create`, which
+ * needs a camera and the MediaPipe WASM). These tests drive the frame loop
+ * directly instead, with a stub landmarker -- the loop's wiring is what is
+ * under test here; the conversion and loss semantics are covered above. */
+type ProviderConstructor = new (
+  video: unknown,
+  stream: unknown,
+  landmarker: unknown,
+  options: WebcamHandProviderOptions,
+) => WebcamHandProvider;
+
+describe("WebcamHandProvider frame loop", () => {
+  let pendingFrame: (() => void) | undefined;
+  const realRaf = globalThis.requestAnimationFrame;
+  const realCancelRaf = globalThis.cancelAnimationFrame;
+
+  beforeEach(() => {
+    pendingFrame = undefined;
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback): number => {
+      pendingFrame = () => callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = ((): void => {
+      pendingFrame = undefined;
+    }) as typeof cancelAnimationFrame;
+  });
+
+  afterEach(() => {
+    globalThis.requestAnimationFrame = realRaf;
+    globalThis.cancelAnimationFrame = realCancelRaf;
+  });
+
+  function step(): void {
+    const frame = pendingFrame;
+    pendingFrame = undefined;
+    frame?.();
+  }
+
+  function makeProvider(
+    nextResult: () => MediapipeHandResult,
+    options: WebcamHandProviderOptions = {},
+  ): WebcamHandProvider {
+    const video = { videoWidth: 640, videoHeight: 480 };
+    const stream = { getTracks: () => [] };
+    const landmarker = { detectForVideo: () => nextResult(), close: () => undefined };
+    return new (WebcamHandProvider as unknown as ProviderConstructor)(
+      video,
+      stream,
+      landmarker,
+      options,
+    );
+  }
+
+  it("startPair streams both hands and reports status for them", () => {
+    const provider = makeProvider(() =>
+      multiHandResult(
+        { categoryName: "Right", imageX: IMAGE_X_A },
+        { categoryName: "Left", imageX: IMAGE_X_B },
+      ),
+    );
+    const seen: HandPair[] = [];
+    provider.startPair((hands) => seen.push(hands));
+    step();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.left?.handedness).toBe("left");
+    expect(seen[0]!.right?.handedness).toBe("right");
+    expect(wristStructX(seen[0]!.left!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
+    const status = provider.getStatus();
+    expect(status.trackingLost).toBe(false);
+    expect(status.handedness).toBe("right");
+    expect(status.resolutionWidth).toBe(640);
+  });
+
+  it("startPair holds briefly, then announces a sustained total loss once", () => {
+    let result = multiHandResult(
+      { categoryName: "Right", imageX: IMAGE_X_A },
+      { categoryName: "Left", imageX: IMAGE_X_B },
+    );
+    const provider = makeProvider(() => result, { trackingLossFrames: 2 });
+    const seen: HandPair[] = [];
+    provider.startPair((hands) => seen.push(hands));
+    step();
+
+    result = multiHandResult();
+    step(); // brief total loss: no callback, the caller keeps what it has
+    step(); // sustained: explicit nulls
+    step(); // already reported: no callback at all
+    step();
+
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toEqual({ left: null, right: null });
+    expect(provider.getStatus().trackingLost).toBe(true);
+    expect(provider.getStatus().handedness).toBeNull();
+  });
+
+  it("start still emits exactly one hand per frame, unchanged", () => {
+    const provider = makeProvider(() =>
+      multiHandResult(
+        { categoryName: "Right", imageX: IMAGE_X_A },
+        { categoryName: "Left", imageX: IMAGE_X_B },
+      ),
+    );
+    const seen: (HandFrame | null)[] = [];
+    provider.start((hand) => seen.push(hand));
+    step();
+    step();
+
+    expect(seen).toHaveLength(2);
+    // preferredHandIndex picks the camera-labelled "Right" detection, which
+    // the default mirrored preview then reports as the user's left hand --
+    // pre-existing behaviour, asserted here so the pair path cannot quietly
+    // change it.
+    expect(seen[0]!.handedness).toBe("left");
+    expect(wristStructX(seen[0]!)).toBeCloseTo(expectedStructX(IMAGE_X_A), 6);
   });
 });

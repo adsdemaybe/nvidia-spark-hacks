@@ -42,6 +42,19 @@
  * reachable geometry (robot base at struct Y=-0.7, button at Y=0.0,Z=0.53)
  * rather than the spec's generic example numbers, which don't overlap it.
  *
+ * Two-handed capture: the landmarker has always run with numHands: 2, but
+ * for a while only one hand ever left this module, because the single-hand
+ * teleop path (ArmRetargeter / LiveRetargetSession) drives one end-effector
+ * and would interleave unrelated targets if fed both. That constraint is
+ * real and unchanged -- `mediapipeResultToHandFrame` / `start` still pick
+ * exactly one hand. But the task being recorded for RL is bimanual, so
+ * dropping a hand at the provider is data loss no downstream stage can undo.
+ * `mediapipeResultToHandPair` / `startPair` therefore exist alongside, in the
+ * same left/right-slot shape (`hands.ts`'s HandPair) the WebXR path's
+ * `readBothHands` already emits, so ShadowHand and the recorders cannot tell
+ * which provider produced a pair. Same relationship, same reasoning, as
+ * `preferredInputSource` vs `readBothHands` in hands.ts.
+ *
  * Depth sign, world-landmark axis mapping, and the mirrored-preview
  * handedness flip are documented, deliberate choices below -- each is
  * internally consistent and testable, but real-camera *calibration*
@@ -55,7 +68,7 @@ import {
   HandLandmarker,
   type HandLandmarkerResult,
 } from "@mediapipe/tasks-vision";
-import { PINCH_CLOSED_M, PINCH_OPEN_M, type HandFrame } from "./hands";
+import { PINCH_CLOSED_M, PINCH_OPEN_M, type HandFrame, type HandPair } from "./hands";
 import { toHandFrame, type StructHandFrame, type StructJoint } from "./mockHand";
 
 type Vec3 = [number, number, number];
@@ -321,6 +334,35 @@ function flipHand(side: "left" | "right"): "left" | "right" {
   return side === "left" ? "right" : "left";
 }
 
+/**
+ * MediaPipe's per-hand handedness label -> the side of the *user's* body that
+ * hand actually belongs to.
+ *
+ * This is the single place that decision is made, and everything two-handed
+ * routes through it, because it is the one place a left/right swap can enter.
+ * MediaPipe classifies from the camera's point of view: the camera faces the
+ * user, so the user's right hand appears on the camera image's left and gets
+ * labelled accordingly. A selfie-style preview is then shown mirrored so the
+ * user's motion feels natural on screen, which undoes exactly that inversion
+ * for the viewer but not for the label -- hence the flip, defaulting on
+ * because a mirrored preview is the normal laptop-webcam presentation. The
+ * flip itself, its default, and this option are pre-existing behaviour
+ * carried over verbatim from the single-hand path, not a new judgement call.
+ *
+ * The consequence that matters for a pair: which slot a hand lands in must be
+ * decided from this resolved side, never from `categoryName` directly. Bucket
+ * on the raw label with a mirrored preview and both hands land in the wrong
+ * slot -- and every frame still self-reports a plausible handedness, so
+ * nothing downstream can notice.
+ */
+export function resolveHandSide(
+  category: MediapipeHandednessCategory,
+  mirroredPreview: boolean,
+): "left" | "right" {
+  const rawSide: "left" | "right" = category.categoryName === "Left" ? "left" : "right";
+  return mirroredPreview ? flipHand(rawSide) : rawSide;
+}
+
 // ------------------------------------------------------------ conversion --
 
 export interface SmoothingState {
@@ -339,23 +381,58 @@ export interface MediapipeConversionOptions {
   smoothing?: SmoothingState;
 }
 
-/** Pure conversion entry point: one MediaPipe result -> the canonical
- * HandFrame, or null when no hand was detected. No camera/WASM/DOM
- * involved, so this is directly unit-testable with synthetic results. */
-export function mediapipeResultToHandFrame(
-  result: MediapipeHandResult,
-  options: MediapipeConversionOptions = {},
-): HandFrame | null {
-  const index = preferredHandIndex(result.handedness);
-  if (index === undefined) return null;
+/** Per-hand smoothing filters for the two-handed path.
+ *
+ * Two filters rather than one because a `SmoothingState`'s `previous` map is
+ * keyed by joint *name* only -- there is nothing in the key that says which
+ * hand a "wrist" entry came from. Sharing one map across both hands would
+ * make each hand's EMA blend toward wherever the other hand's same-named
+ * joint was last written, so the two hands would visibly drag each other
+ * around and, worse, would do it silently: the output stays smooth and
+ * plausible, just wrong, and it gets worse the further apart the hands are.
+ * Keying by name *and* side is what fixes it; separate states per side is the
+ * simplest spelling of that, and it also means a hand that drops out and
+ * returns resumes from its own history rather than the other hand's. */
+export interface HandPairSmoothingState {
+  left: SmoothingState;
+  right: SmoothingState;
+}
 
+export function createHandPairSmoothingState(alpha: number): HandPairSmoothingState {
+  return {
+    left: { alpha, previous: new Map() },
+    right: { alpha, previous: new Map() },
+  };
+}
+
+export interface MediapipePairConversionOptions {
+  controlVolume?: ControlVolumeBounds;
+  /** Same meaning and same default as the single-hand option -- see
+   * `resolveHandSide`, which both paths share. */
+  mirroredPreview?: boolean;
+  smoothing?: HandPairSmoothingState;
+}
+
+/** The whole per-hand conversion, for one already-chosen detection index.
+ *
+ * Extracted so the single-hand and two-handed entry points are the same code
+ * rather than two copies of the landmark mapping, the control-volume math and
+ * the palm basis. A second copy would drift: the two would eventually disagree
+ * about depth sign or joint naming, and a recording's meaning would depend on
+ * which entry point happened to produce it. */
+function convertHandAtIndex(
+  result: MediapipeHandResult,
+  index: number,
+  bounds: ControlVolumeBounds,
+  mirroredPreview: boolean,
+  smoothing: SmoothingState | undefined,
+): HandFrame | null {
   const imageLandmarks = result.landmarks[index];
   const worldLandmarks = result.worldLandmarks[index];
   const handedCategory = result.handedness[index]?.[0];
   if (!imageLandmarks?.[0] || !worldLandmarks?.[0] || !handedCategory) return null;
   if (imageLandmarks.length < 21 || worldLandmarks.length < 21) return null;
 
-  const bounds = options.controlVolume ?? DEFAULT_CONTROL_VOLUME;
   const wristImage = imageLandmarks[0];
   const anchor = imageToControlSpace(wristImage.x, wristImage.y, wristImage.z, bounds);
   const positions = worldLandmarksToStructJoints(worldLandmarks, anchor);
@@ -363,8 +440,8 @@ export function mediapipeResultToHandFrame(
   const joints: Record<string, StructJoint> = {};
   for (const [name, rawPosition] of Object.entries(positions)) {
     let position = rawPosition;
-    if (options.smoothing) {
-      const { alpha, previous } = options.smoothing;
+    if (smoothing) {
+      const { alpha, previous } = smoothing;
       position = emaSmooth(previous.get(name), rawPosition, alpha);
       previous.set(name, position);
     }
@@ -384,14 +461,147 @@ export function mediapipeResultToHandFrame(
     };
   }
 
-  const rawSide: "left" | "right" = handedCategory.categoryName === "Left" ? "left" : "right";
-  const mirrored = options.mirroredPreview ?? true;
   const struct: StructHandFrame = {
     timestamp_ns: 0,
-    hand: mirrored ? flipHand(rawSide) : rawSide,
+    hand: resolveHandSide(handedCategory, mirroredPreview),
     joints,
   };
   return toHandFrame(struct);
+}
+
+/** Pure conversion entry point: one MediaPipe result -> the canonical
+ * HandFrame, or null when no hand was detected. No camera/WASM/DOM
+ * involved, so this is directly unit-testable with synthetic results.
+ *
+ * Single-hand by design (see `preferredHandIndex`): the teleop pipeline this
+ * feeds drives one end-effector. `mediapipeResultToHandPair` is the entry
+ * point for callers that want both. */
+export function mediapipeResultToHandFrame(
+  result: MediapipeHandResult,
+  options: MediapipeConversionOptions = {},
+): HandFrame | null {
+  const index = preferredHandIndex(result.handedness);
+  if (index === undefined) return null;
+  return convertHandAtIndex(
+    result,
+    index,
+    options.controlVolume ?? DEFAULT_CONTROL_VOLUME,
+    options.mirroredPreview ?? true,
+    options.smoothing,
+  );
+}
+
+/** One MediaPipe result -> both hands, each slot null when that hand was not
+ * detected this frame.
+ *
+ * The pair shape, and the reasons for it, are `hands.ts`'s: the two hands are
+ * not interchangeable to any caller, and an array would push every one of
+ * them into re-deriving the same `find(h => h.handedness === "left")` lookup,
+ * which is precisely where a mix-up gets introduced. An undetected hand is
+ * null rather than a frame of zeros, for the same reason it is there too:
+ * zeros are indistinguishable from a hand resting at the origin.
+ *
+ * Never returns the same HandFrame in both slots, and never puts a frame in
+ * the slot that disagrees with its own `handedness` -- both slots are filled
+ * from the frame's own field, so `pair.left.handedness === "left"` holds by
+ * construction rather than by care. */
+export function mediapipeResultToHandPair(
+  result: MediapipeHandResult,
+  options: MediapipePairConversionOptions = {},
+): HandPair {
+  const bounds = options.controlVolume ?? DEFAULT_CONTROL_VOLUME;
+  const mirroredPreview = options.mirroredPreview ?? true;
+  const pair: HandPair = { left: null, right: null };
+
+  for (let i = 0; i < result.handedness.length; i += 1) {
+    const category = result.handedness[i]?.[0];
+    if (!category) continue;
+
+    // Resolve the side *before* converting, for two reasons: it selects which
+    // per-hand smoothing filter this detection belongs to, and it lets a
+    // duplicate classification (MediaPipe can, rarely, report two "Right"
+    // hands) be dropped without first running it through -- and polluting --
+    // that side's smoothing history. First detection wins, matching
+    // readBothHands.
+    const side = resolveHandSide(category, mirroredPreview);
+    if (pair[side] !== null) continue;
+
+    const smoothing = options.smoothing?.[side];
+    const hand = convertHandAtIndex(result, i, bounds, mirroredPreview, smoothing);
+    if (!hand) continue;
+
+    // Bucket on the frame's own handedness, not on `side`. The two are equal
+    // by construction (convertHandAtIndex resolves the side through the same
+    // `resolveHandSide`), and routing on the frame's field is what keeps that
+    // an invariant instead of a coincidence.
+    if (hand.handedness === "left") pair.left = hand;
+    else pair.right = hand;
+  }
+
+  return pair;
+}
+
+/**
+ * Per-hand tracking-loss bookkeeping for the two-handed stream.
+ *
+ * Generalizes the single-hand rule (`start`'s `missCount`) rather than
+ * replacing it: a brief dropout holds the last state, and only a sustained
+ * one is announced as an explicit loss, exactly once, on the frame it crosses
+ * the threshold. What changes is that the counters are per hand, because the
+ * hands occlude each other and leave frame independently -- one shared
+ * counter would let a steadily-tracked left hand keep resetting the right
+ * hand's dropout, so a right hand that vanished entirely would never be
+ * reported lost.
+ *
+ * "Holds the last state" also has to mean something different here. The
+ * single-hand path holds by *not calling back at all*, leaving the caller
+ * sitting on its last frame. A pair callback fires as soon as either hand has
+ * fresh data, so the briefly-lost hand's slot has to be filled with
+ * something, and the last frame it was seen in is that something -- the
+ * caller ends up holding the same value it would have held anyway. When
+ * neither hand has anything fresh and nothing crossed the threshold, this
+ * returns null and the callback is skipped, which is the original behaviour
+ * unchanged.
+ */
+export class HandPairTracking {
+  private readonly missCount: { left: number; right: number } = { left: 0, right: 0 };
+  private readonly lastSeen: HandPair = { left: null, right: null };
+
+  constructor(private readonly lossThreshold: number) {}
+
+  /** The pair to emit for this frame, or null to emit nothing at all. */
+  update(fresh: HandPair): HandPair | null {
+    const emit: HandPair = { left: null, right: null };
+    let anyFresh = false;
+    let crossedLossThreshold = false;
+
+    for (const side of ["left", "right"] as const) {
+      const hand = fresh[side];
+      if (hand) {
+        anyFresh = true;
+        this.missCount[side] = 0;
+        this.lastSeen[side] = hand;
+        emit[side] = hand;
+        continue;
+      }
+
+      this.missCount[side] += 1;
+      if (this.missCount[side] >= this.lossThreshold) {
+        // Equality, not >=, decides the announcement: the loss is news once,
+        // and every frame after it is the same already-reported state.
+        if (this.missCount[side] === this.lossThreshold) crossedLossThreshold = true;
+        // Forget the held frame as well, so that if the *other* hand comes
+        // back later this one is reported as still absent rather than
+        // resurrected from a frame that is by now seconds stale.
+        this.lastSeen[side] = null;
+        emit[side] = null;
+      } else {
+        emit[side] = this.lastSeen[side];
+      }
+    }
+
+    return anyFresh || crossedLossThreshold ? emit : null;
+  }
 }
 
 // ------------------------------------------------------------- provider --
@@ -431,7 +641,15 @@ export interface WebcamStatus {
   resultFps: number;
   mode: "screen_control";
   depthQuality: "estimated";
+  /** Which hand the single-hand readouts below describe. Under `startPair`
+   * both hands may be tracked at once and this names the one being reported
+   * on -- right when it is present, otherwise left -- because this is a HUD
+   * line, and preferring right matches `preferredHandIndex`'s own choice so
+   * the two streams label the same hand the same way. */
   handedness: "left" | "right" | null;
+  /** Pinch state of the hand `handedness` names. Both hands' hysteresis is
+   * still advanced every frame under `startPair`; only the reported one is
+   * narrowed to a single boolean, which is all this status line can hold. */
   pinchActive: boolean;
   trackingLost: boolean;
   resolutionWidth: number;
@@ -442,6 +660,16 @@ export class WebcamHandProvider {
   private raf: number | undefined;
   private readonly smoothingState: SmoothingState;
   private readonly pinch = new PinchHysteresis();
+  // The two-handed path gets its own filters and its own pinch hysteresis per
+  // hand rather than sharing the single-hand ones, so that `start` and
+  // `startPair` cannot contaminate each other's history and so that neither
+  // hand's smoothing or pinch deadband is driven by the other's motion. See
+  // HandPairSmoothingState for why sharing is not merely untidy but wrong.
+  private readonly pairSmoothingState: HandPairSmoothingState;
+  private readonly pairPinch = {
+    left: new PinchHysteresis(),
+    right: new PinchHysteresis(),
+  };
   private missCount = 0;
   private resultTimestampsMs: number[] = [];
   private status: WebcamStatus;
@@ -453,6 +681,7 @@ export class WebcamHandProvider {
     private readonly options: WebcamHandProviderOptions,
   ) {
     this.smoothingState = { alpha: options.smoothingAlpha ?? 0.35, previous: new Map() };
+    this.pairSmoothingState = createHandPairSmoothingState(options.smoothingAlpha ?? 0.35);
     this.status = {
       cameraFps: 0,
       resultFps: 0,
@@ -525,6 +754,10 @@ export class WebcamHandProvider {
     return { ...this.status };
   }
 
+  /** Stream one hand, the single-hand teleop path. Unchanged, and still the
+   * right entry point for anything driving a single end-effector -- see
+   * `startPair` for the bimanual one. The two share one rAF handle, so only
+   * one may be running at a time; `stop` cancels whichever it is. */
   start(onFrame: (hand: HandFrame | null) => void): void {
     const lossThreshold = this.options.trackingLossFrames ?? 5;
     const tick = (): void => {
@@ -573,11 +806,85 @@ export class WebcamHandProvider {
     this.raf = requestAnimationFrame(tick);
   }
 
+  /** Stream both hands as a `HandPair`, for the bimanual recording path.
+   *
+   * A peer of `start`, not a replacement: the callback signature differs
+   * (a pair, never null -- an absent hand is a null *slot*), so existing
+   * single-hand callers are untouched. Emission follows the same
+   * tracking-loss rule as `start`, generalized per hand by `HandPairTracking`
+   * -- brief dropouts hold, a sustained one is announced once. */
+  startPair(onFrame: (hands: HandPair) => void): void {
+    // Both loops share `this.raf`; starting a second one without cancelling
+    // the first would leave an orphaned loop that `stop` can never reach.
+    if (this.raf !== undefined) cancelAnimationFrame(this.raf);
+    const tracking = new HandPairTracking(this.options.trackingLossFrames ?? 5);
+    const tick = (): void => {
+      const nowMs = performance.now();
+      let result: HandLandmarkerResult;
+      try {
+        result = this.landmarker.detectForVideo(this.video, nowMs);
+      } catch (error) {
+        console.warn("MediaPipe detectForVideo failed on this frame:", error);
+        this.raf = requestAnimationFrame(tick);
+        return;
+      }
+
+      const conversionOptions: MediapipePairConversionOptions = {
+        smoothing: this.pairSmoothingState,
+      };
+      if (this.options.controlVolume !== undefined) {
+        conversionOptions.controlVolume = this.options.controlVolume;
+      }
+      if (this.options.mirroredPreview !== undefined) {
+        conversionOptions.mirroredPreview = this.options.mirroredPreview;
+      }
+      const fresh = mediapipeResultToHandPair(result, conversionOptions);
+
+      this.recordResultTiming(nowMs);
+      const hands = tracking.update(fresh);
+      if (hands) {
+        this.status = { ...this.status, ...this.pairStatus(hands) };
+        onFrame(hands);
+      }
+      // `hands === null` is the pair-shaped version of the single-hand path's
+      // skipped callback: nothing fresh, nothing newly lost, so the caller
+      // keeps what it already has.
+      this.raf = requestAnimationFrame(tick);
+    };
+    this.raf = requestAnimationFrame(tick);
+  }
+
   stop(): void {
     if (this.raf !== undefined) cancelAnimationFrame(this.raf);
     this.raf = undefined;
     for (const track of this.stream.getTracks()) track.stop();
     this.landmarker.close();
+  }
+
+  /** Collapses a pair down to the single-hand shape `WebcamStatus` can hold.
+   *
+   * Both hands' pinch hysteresis is advanced every frame regardless of which
+   * one gets reported -- a deadband that only ran while its hand happened to
+   * be the reported one would latch on stale data the moment the other hand
+   * appeared. An absent hand is fed `null`, which `PinchHysteresis` already
+   * treats as "hold", so a hand that briefly disappears does not spuriously
+   * release its pinch. */
+  private pairStatus(
+    hands: HandPair,
+  ): Pick<
+    WebcamStatus,
+    "handedness" | "pinchActive" | "trackingLost" | "resolutionWidth" | "resolutionHeight"
+  > {
+    const leftPinch = this.pairPinch.left.update(hands.left?.pinchApertureM ?? null);
+    const rightPinch = this.pairPinch.right.update(hands.right?.pinchApertureM ?? null);
+    const reported = hands.right ?? hands.left;
+    return {
+      handedness: reported?.handedness ?? null,
+      pinchActive: hands.right ? rightPinch : hands.left ? leftPinch : false,
+      trackingLost: hands.left === null && hands.right === null,
+      resolutionWidth: this.video.videoWidth,
+      resolutionHeight: this.video.videoHeight,
+    };
   }
 
   private recordResultTiming(nowMs: number): void {

@@ -28,6 +28,55 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/** What the human-layer export returns. No verdict and no task_success:
+ * nothing was retargeted or verified, so there is nothing to pass or fail. */
+export interface HumanExportResult {
+  episode_id: string;
+  dataset_id: string | null;
+  frames: number;
+}
+
+/**
+ * Record a demonstration and export it as training data, with no robot in
+ * the loop at all.
+ *
+ * `uploadHumanEpisode` below finishes through retarget -> verify -> export,
+ * which needs a robot model to retarget onto and Pinocchio to do it with.
+ * Neither exists for a robot hand that is still being generated, and
+ * Pinocchio is Linux-only regardless -- so on this path `/finish` can only
+ * ever 503.
+ *
+ * This is the other layer of the same architecture rather than a workaround.
+ * A HumanEpisode is robot-independent by design (never destroy raw human
+ * data), and a policy can be trained on human hand trajectories now, while
+ * the same stored episodes stay available to compile onto the generated hand
+ * the moment it exists. Two datasets from one recording, which is the whole
+ * point of keeping the layers apart.
+ */
+export async function exportHumanEpisodeForTraining(
+  apiBase: string,
+  meta: HumanEpisodeMetadata,
+  handFrames: object[],
+  objectStates: ObjectStateCapture[],
+  events: HumanEpisodeEvent[],
+): Promise<HumanExportResult> {
+  const created = await postJson<{ episode_id: string; status: string }>(
+    `${apiBase}/spatial/episodes`,
+    { task_id: meta.task_id, asset_id: meta.asset_id, hand_provider: meta.hand_provider },
+  );
+
+  await postJson(`${apiBase}/spatial/episodes/${created.episode_id}/artifact`, {
+    hand_frames: handFrames,
+    object_states: objectStates,
+    events,
+  });
+
+  return postJson<HumanExportResult>(
+    `${apiBase}/spatial/episodes/${created.episode_id}/export-human`,
+    {},
+  );
+}
+
 export async function uploadHumanEpisode(
   apiBase: string,
   meta: HumanEpisodeMetadata,

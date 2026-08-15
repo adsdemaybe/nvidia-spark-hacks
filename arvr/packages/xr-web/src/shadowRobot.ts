@@ -200,7 +200,27 @@ export class ShadowRobot {
 
     let manifest: VisualMeshesManifest;
     try {
-      manifest = (await fetch(VISUAL_MESHES_URL).then((r) => r.json())) as VisualMeshesManifest;
+      const response = await fetch(VISUAL_MESHES_URL);
+      // A 404 is not a thrown fetch. It resolves with a perfectly parseable
+      // body -- an error document like {"detail":"Not Found"} -- which sails
+      // through .json() and only fails later, deep in the render path, as
+      // "cannot convert undefined to object". Checking the status and the
+      // shape here turns a missing fixture back into what it should be: the
+      // marker skeleton, plus one warning naming the URL that was missing.
+      if (!response.ok) {
+        console.warn(
+          `ShadowRobot: ${VISUAL_MESHES_URL} -> ${response.status}; using marker-only skeleton`,
+        );
+        return;
+      }
+      const parsed = (await response.json()) as Partial<VisualMeshesManifest>;
+      if (!parsed || typeof parsed.links !== "object" || parsed.links === null) {
+        console.warn(
+          `ShadowRobot: ${VISUAL_MESHES_URL} has no "links" map; using marker-only skeleton`,
+        );
+        return;
+      }
+      manifest = parsed as VisualMeshesManifest;
     } catch (error) {
       console.warn("ShadowRobot: visual_meshes.json unavailable, using marker-only skeleton:", error);
       return;

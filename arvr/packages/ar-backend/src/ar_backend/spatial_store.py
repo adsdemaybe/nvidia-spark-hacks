@@ -25,6 +25,16 @@ class HumanEpisodeRecord:
     object_states: list[ObjectState] = field(default_factory=list)
     events: list[HumanEpisodeEvent] = field(default_factory=list)
     result: RobotEpisode | None = None
+    # What `/export-human` produced for this episode, as a plain dict of the
+    # route's response fields. A dict rather than the ar_datapipe result type
+    # so this store keeps depending on nothing but ar_contracts, and rather
+    # than the route's response model because that module imports this one.
+    #
+    # Remembered at all so a retried POST returns the first export instead of
+    # appending the same demonstration to the dataset a second time -- a
+    # duplicate is invisible on disk and silently doubles that episode's
+    # weight in training.
+    human_export: dict | None = None
 
 
 class HumanEpisodeStore:

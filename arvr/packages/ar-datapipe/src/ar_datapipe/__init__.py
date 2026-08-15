@@ -5,6 +5,13 @@ this currently targets."""
 
 from .arm_retargeter import ArmRetargeter, ArmRetargetResult
 from .export import export_robot_episode
+
+# The layout constants (ACTION_DIM, MASK_DIM, JOINT_ORDER, ...) stay in
+# `ar_datapipe.human_export` rather than being re-exported here: at package
+# level a bare `ACTION_DIM` would read as *the* action dimension, and the
+# robot exporter's action dimension is a different, embodiment-dependent
+# number. Keeping them qualified makes which layer you are in unambiguous.
+from .human_export import HumanExportResult, export_human_episode
 from .interaction_ir import (
     derive_interaction_ir,
     derive_sort_interaction_ir,
@@ -32,6 +39,7 @@ __all__ = [
     "SORT_TASK_SPEC",
     "ArmRetargetResult",
     "ArmRetargeter",
+    "HumanExportResult",
     "IkSolver",
     "MujocoReplay",
     "ReplayResult",
@@ -44,6 +52,7 @@ __all__ = [
     "derive_sort_interaction_ir",
     "evaluate_sort_episode",
     "evaluate_sort_task",
+    "export_human_episode",
     "export_robot_episode",
     "inside_basket",
     "object_relative_pose",

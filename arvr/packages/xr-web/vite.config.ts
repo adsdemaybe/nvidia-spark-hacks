@@ -51,8 +51,15 @@ export default defineConfig({
     proxy: Object.fromEntries(
       // Every ar_backend router prefix. `ws: true` matters for /spatial (the
       // live retarget stream) and /twin.
-      ["/robots", "/assets", "/scenes", "/spatial", "/twin", "/xr"].map((prefix) => [
-        prefix,
+      //
+      // Anchored to a path boundary, not a bare prefix. Vite matches proxy
+      // keys as prefixes, so a plain "/spatial" also swallows
+      // "/spatial-training/..." -- which is where the fixture robot meshes and
+      // assets live. That sent every fixture request to the API, which
+      // correctly 404'd it, and the robot silently failed to load with the
+      // only clue being a 404 for a file that plainly exists on disk.
+      ["robots", "assets", "scenes", "spatial", "twin", "xr"].map((name) => [
+        `^/${name}(/|$)`,
         { target: BACKEND, changeOrigin: true, ws: true, secure: false },
       ]),
     ),
@@ -60,11 +67,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
+        // One app: the can data-collection page, plus the headset capability
+        // probe (the only way to diagnose a Quest, and a few lines).
+        canPickup: resolve(__dirname, "can-pickup.html"),
         probe: resolve(__dirname, "probe.html"),
-        spatialTeach: resolve(__dirname, "spatial-teach.html"),
-        sortTeleop: resolve(__dirname, "sort-teleop.html"),
-        ballPit: resolve(__dirname, "ballpit.html"),
       },
     },
   },
