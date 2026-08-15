@@ -11,6 +11,11 @@ import { describeBuild } from "../build.ts"
 import { describePhysics, physicsBlockers, type PhysicsReport } from "../physics/index.ts"
 import { describeSpice, type SpiceReport } from "../spice/index.ts"
 import { describeDfm, dfmBlockers, type DfmReport } from "../dfm/index.ts"
+import {
+  describePlacement,
+  placementBlockers,
+  type PlacementReport,
+} from "../placement/check.ts"
 import { VerdictSchema, type Review, type Verdict } from "../schemas.ts"
 import type { BuildResult } from "../types.ts"
 
@@ -46,9 +51,10 @@ export async function decide(args: {
   physics?: PhysicsReport
   spice?: SpiceReport
   dfm?: DfmReport
+  placement?: PlacementReport
   reviews: Record<string, Review>
 }): Promise<Verdict> {
-  const { model, spec, build, physics, spice, dfm, reviews } = args
+  const { model, spec, build, physics, spice, dfm, placement, reviews } = args
 
   const reviewText = Object.entries(reviews)
     .map(([name, r]) => {
@@ -68,6 +74,7 @@ export async function decide(args: {
     ...(physics ? physicsBlockers(physics) : []),
     ...(spice?.hardFailures ?? []),
     ...(dfm ? dfmBlockers(dfm) : []),
+    ...(placement ? placementBlockers(placement) : []),
   ]
 
   const verdict = await askStructured<Verdict>(
@@ -81,6 +88,7 @@ export async function decide(args: {
       physics ? `<physics>\n${describePhysics(physics)}\n</physics>` : "",
       spice?.available ? `<circuit_simulation>\n${describeSpice(spice)}\n</circuit_simulation>` : "",
       dfm ? `<manufacturability>\n${describeDfm(dfm)}\n</manufacturability>` : "",
+      placement ? `<placement>\n${describePlacement(placement)}\n</placement>` : "",
       blockers.length
         ? `<hard_failures source="rule checker and solvers, not opinions">\n${blockers
             .map((b) => `  - ${b}`)

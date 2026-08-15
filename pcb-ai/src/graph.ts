@@ -28,6 +28,12 @@ import { runPhysics, describePhysics, physicsBlockers } from "./physics/index.ts
 import { runSpice, describeSpice, type Claim, type SpiceReport } from "./spice/index.ts"
 import { runDfm, describeDfm, dfmBlockers, type DfmReport } from "./dfm/index.ts"
 import { DEFAULT_PROFILE, describeProfile, type FabProfile } from "./dfm/profile.ts"
+import {
+  checkPlacement,
+  describePlacement,
+  placementBlockers,
+  type PlacementReport,
+} from "./placement/check.ts"
 import type { PhysicsReport } from "./physics/index.ts"
 import { exportFabrication } from "./fab.ts"
 import { designFromSpec, reviseDesign } from "./agents/designer.ts"
@@ -75,6 +81,7 @@ const State = Annotation.Root({
   physics: Annotation<PhysicsReport | undefined>({ reducer: (_, b) => b }),
   spice: Annotation<SpiceReport | undefined>({ reducer: (_, b) => b }),
   dfm: Annotation<DfmReport | undefined>({ reducer: (_, b) => b }),
+  placement: Annotation<PlacementReport | undefined>({ reducer: (_, b) => b }),
   /** Merged, not replaced: the three review nodes write concurrently. */
   reviews: Annotation<Record<string, Review>>({
     reducer: (a, b) => ({ ...a, ...b }),
@@ -268,7 +275,22 @@ export function buildGraph(deps: GraphDeps) {
       `  dfm       ${dfm.errors} error(s), ${dfm.warnings} warning(s) vs "${fabProfile.name}"`,
     )
 
-    return { physics: report, spice, dfm }
+    // Placement rules: the specification's physical requirements, checked against the
+    // board that actually came out. Nothing else in the ladder looks at *where* a part
+    // ended up — a board with both connectors on the same edge routes, simulates and
+    // fabricates perfectly well, and is simply not the board that was asked for.
+    const placement = checkPlacement(state.build!.circuitJson, state.plan?.placement_rules ?? [])
+    await fs.writeFile(path.join(dir, "placement.txt"), describePlacement(placement))
+    console.log(
+      placement.unchecked
+        ? state.plan
+          ? "  placement UNCHECKED — the parts plan emitted no rules, so nothing about " +
+            "where the parts sit was verified"
+          : "  placement no rules (seeded run, no parts plan)"
+        : `  placement ${placement.checked} rule(s), ${placement.violations.length} violation(s)`,
+    )
+
+    return { physics: report, spice, dfm, placement }
   }
 
   /** The three reviews below run concurrently; each writes its own key. */
@@ -318,6 +340,7 @@ export function buildGraph(deps: GraphDeps) {
       physics: state.physics,
       spice: state.spice,
       dfm: state.dfm,
+      placement: state.placement,
       reviews: state.reviews,
     })
     verdict.work_order.sort(
@@ -460,7 +483,8 @@ function record(
     hard_failures:
       (state.physics ? physicsBlockers(state.physics).length : 0) +
       (state.spice?.hardFailures.length ?? 0) +
-      (state.dfm ? dfmBlockers(state.dfm).length : 0),
+      (state.dfm ? dfmBlockers(state.dfm).length : 0) +
+      (state.placement ? placementBlockers(state.placement).length : 0),
     spice_claims_passing: state.spice
       ? `${state.spice.claims.filter((c) => c.pass).length}/${state.spice.claims.length}`
       : undefined,

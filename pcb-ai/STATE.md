@@ -42,6 +42,7 @@ same for both — a weaker model degrades the advice, not the verdict.
 | L1 compile | working | 36 parts, 34 nets, 0 errors |
 | L6 physics | working | peak 92.0 °C, IR 32.1 mV vs 150 mV budget |
 | **L7 SPICE** | **new, working** | `NRST = 3.3000 V`, `R2 = 1.3 mA`, 75% model coverage |
+| **L3 placement** | **new, working** | catches connectors on the wrong/same edge, parts on the wrong layer |
 | **L8 DFM** | **new, working** | 3 errors / 5 warnings vs `flight_controller.kicad_pro` |
 | L9 artifacts | working + extended | 14 fab files, **plus KiCad 9 project and GLB** |
 
@@ -68,6 +69,25 @@ it just was not needed.
 → `runs/bench/scorecard.{md,json}`. Headline: **`pcbPack` cuts area 4960 → 3312 mm²
 (−33%), copper 1132 → 793 mm, vias 75 → 60, at netlist Jaccard 1.000** — it moved
 everything and changed no connection.
+
+## Connectors on the wrong side — fixed (2026-08-15)
+
+Reported symptom: a Laguna-designed board had its connectors on the wrong/opposite side.
+**Not a model problem.** The parts agent was already emitting the right requirements
+("J1 at one short edge", "J2 at the opposite short edge", "all parts on the top layer")
+as *prose*, and the only code that touched them pasted them into the designer's prompt.
+Nothing measured the result, so every gate passed a board that was not what was asked for.
+
+Fixed with a closed placement grammar the agent composes and the harness checks —
+`src/placement/`, `placement_rules` in the parts plan, wired as L3 and into the chief's
+override. Rules: `at_edge`, `opposite_edges`, `same_edge`, `on_layer`, `adjacent`,
+`in_row`. The geometry digest now names *which* edge each connector is on and says so
+outright when they all share one.
+
+Verified on the rover: `opposite_edges(J1, J2)` → *"J1 is on the left edge and J2 is on
+the left edge — both on the same side, not opposite ones"*; `at_edge(SW1, any)` catches
+the reset button 16.5 mm into the interior. `npx tsx tools/placement-check.ts <circuit.json> [rules.json]`
+runs it standalone.
 
 ## The designer role — the one part that was still failing
 

@@ -72,6 +72,14 @@ export class StubChatModel {
               ],
               key_calculations: ["stub: no calculations performed"],
               layout_constraints: [],
+              placement_rules: [
+                {
+                  kind: "at_edge",
+                  refs: ["J1"],
+                  edge: "left",
+                  why: "stub: exercises the placement checker without asserting anything real.",
+                },
+              ],
               risks: [],
             } as T
 

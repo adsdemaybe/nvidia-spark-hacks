@@ -67,7 +67,7 @@ resume state.
 | L0 | HDL lint | **new: `pcb-lint`** — AST rules over the .tsx (see §3) | zero errors |
 | L1 | Compile | `@tscircuit/eval` → Circuit JSON | no `_error` elements |
 | L2 | ERC ×2 | `@tscircuit/checks` + own rules (pins connected, rails driven, decoupling present/near, no floating inputs) **and** `kicad-cli sch erc` on the KiCad-side schematic | both clean, findings reconciled |
-| L3 | Placement | `pcbPack` (proven: −33% area vs hand) + own overlap/edge/constraint checker | all constraints hold |
+| L3 | Placement | `pcbPack` (measured: **−33% area at netlist Jaccard 1.000**, §7.4.1) + own overlap/edge/constraint checker (**built, §3.9**) | all constraints hold |
 | L4 | Route | capacity-autorouter, Freerouting fallback (§4) | 100% nets routed |
 | L5 | DRC ×2 | tscircuit DRC **and** `kicad-cli pcb drc --exit-code-violations` via `circuit-json-to-kicad` | both clean, results reconciled |
 | L6 | Physics | own PCG solvers: thermal, IR drop, current density, IPC-2221 | no hard failure vs budgets |
@@ -263,6 +263,46 @@ had checked, so nothing had said so. Also caught: a 0.149 mm hole-to-hole gap
 (0.250 mm minimum) and 54 silkscreen strings below the 0.800 mm legible minimum.
 Severities come from the profile's own `rule_severities`, so a fab that treats
 hole-to-hole as a warning gets a warning here — errors gate, warnings report.
+### 3.9 Placement rules — L3's constraint checker (**BUILT, 2026-08-15**)
+> **This closed a live defect.** A board came back with its connectors on the wrong
+> sides, and **every gate passed it**: the netlist was right, the routing was clean, the
+> physics was fine, the fab could build it. It was simply not the board that was asked
+> for.
+The cause was not the model. The parts agent had already emitted exactly the right
+requirements:
+```
+"J1 (power header) at one short edge (e.g., bottom edge)."
+"J2 (signal header) at the opposite short edge (e.g., top edge)."
+"All components on the top layer only."
+```
+— as **free text**, whose only consumer was the line that pasted it into the designer's
+prompt. Nothing measured the result. That is an agent asserting a physical fact with
+nothing to check it, which is precisely what principle 1 exists to forbid, sitting
+undetected in the pipeline the whole time.
+**The fix is the same shape as L7's claims, and deliberately the same shape as the master
+plan's F3 success predicates: a closed grammar the agent composes and the harness
+checks.** `placement_rules` joins `layout_constraints` in the parts plan — the prose stays
+for the designer to read, the structured form is what gates.
+| Rule | Checks |
+|---|---|
+| `at_edge(refs, edge, max_mm)` | the part sits against a named edge — or any edge — within a tolerance |
+| `opposite_edges(a, b)` | the two are on **opposing** sides, and both actually at an edge |
+| `same_edge(refs, edge)` | parts share one edge |
+| `on_layer(refs \| ["*"], layer)` | nothing is on the wrong side of the board |
+| `adjacent(a, b, max_mm)` | decoupling against the pin it serves |
+| `in_row(refs, axis, max_mm)` | indicator LEDs actually line up |
+Every answer is geometry measured from Circuit JSON. Three details that matter:
+- **A rule naming a part that does not exist fails**, rather than being skipped — a
+  typo'd designator must not silently disable a gate.
+- **"No rules" is never reported as "passed."** A parts plan that emitted none is called
+  out as *unchecked*; a seeded run with no plan is distinguished from it.
+- **The digest names the edge, not just the distance** (§8.3). "J2 is 4.42 mm from an
+  edge" does not tell a reviewer that J1 and J2 are on the *same* side; "J1 left, J2
+  left" does. When every connector shares an edge, the digest says so outright.
+Verified against the rover: asserting `opposite_edges(J1, J2)` produces
+*"J1 is on the left edge and J2 is on the left edge — both on the same side, not opposite
+ones"*, and `at_edge(SW1, any)` catches the reset button sitting 16.5 mm into the
+interior. Violations are hard failures and reach the chief's override alongside L6/L7/L8.
 ### 3.7 Golden-board regression (~ongoing)
 The PoC's blinker and rover become fixtures. Every pipeline change re-runs them plus
 ~10 more seeded specs; metrics (area, copper, vias, peak °C, IR drop, stage timings)

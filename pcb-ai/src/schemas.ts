@@ -6,6 +6,7 @@
  * turns it into whatever it needs (a tool definition, a response format, a grammar).
  */
 import { z } from "zod"
+import { PlacementRuleSchema } from "./placement/constraints.ts"
 
 export const SEVERITIES = ["blocker", "major", "minor"] as const
 
@@ -146,6 +147,14 @@ export const PartsPlanSchema = z.object({
     .array(z.string())
     .describe(
       "Physical requirements the layout must satisfy: board size, what sits at an edge, what must be adjacent to what.",
+    ),
+  // The prose above is for the designer to read. This is what actually gates — see
+  // src/placement/constraints.ts for why both exist.
+  placement_rules: z
+    .array(PlacementRuleSchema)
+    .describe(
+      "The same physical requirements, expressed so a tool can check them after routing. " +
+        "Every constraint the specification states about where a part sits should appear here.",
     ),
   risks: z
     .array(z.string())

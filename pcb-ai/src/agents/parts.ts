@@ -11,6 +11,7 @@
 import { askStructured, type ChatLike } from "../model.ts"
 import { FOOTPRINTS } from "../hdl-guide.ts"
 import { PartsPlanSchema, type PartsPlan } from "../schemas.ts"
+import { PLACEMENT_RULE_GUIDANCE } from "../placement/constraints.ts"
 
 const SYSTEM = `
 You are the engineer choosing what a board will be built from, before anyone starts
@@ -56,6 +57,8 @@ Rules:
   SW switches, TP test points.
 - Do not design the layout. Placement is someone else's job; you set the constraints
   it has to satisfy.
+
+${PLACEMENT_RULE_GUIDANCE}
 `.trim()
 
 export function selectParts(args: { model: ChatLike; spec: string }): Promise<PartsPlan> {
@@ -102,6 +105,20 @@ export function describePartsPlan(plan: PartsPlan): string {
   if (plan.layout_constraints.length) {
     out.push("", "Layout constraints:")
     for (const c of plan.layout_constraints) out.push(`  ${c}`)
+  }
+  if (plan.placement_rules?.length) {
+    out.push("", "Placement rules (these are checked against the routed board):")
+    for (const r of plan.placement_rules) {
+      const detail = [
+        r.edge ? `edge=${r.edge}` : "",
+        r.layer ? `layer=${r.layer}` : "",
+        r.axis ? `axis=${r.axis}` : "",
+        r.max_mm != null ? `max=${r.max_mm}mm` : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+      out.push(`  ${r.kind}(${r.refs.join(", ")})${detail ? ` ${detail}` : ""} — ${r.why}`)
+    }
   }
   if (plan.risks.length) {
     out.push("", "Risks:")
