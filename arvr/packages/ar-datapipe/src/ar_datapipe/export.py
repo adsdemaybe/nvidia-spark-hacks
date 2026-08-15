@@ -17,8 +17,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+except ImportError:  # pragma: no cover - exercised via pytest.importorskip
+    # See retarget.py's matching comment: deferred so `import ar_datapipe`
+    # (and anything transitively importing it) still succeeds on Windows.
+    pa = None
+    pq = None
 
 LEROBOT_CODEBASE_VERSION = "v3.0"
 
@@ -36,6 +42,12 @@ def export_episode(
 ) -> str:
     """Writes one episode into `dataset_dir` in LeRobot v3 layout. Returns a
     dataset_id string suitable for `VerificationResult.dataset_id`."""
+    if pa is None or pq is None:
+        raise ImportError(
+            "pyarrow is not installed on this platform (Linux only — see "
+            "packages/ar-datapipe/README.md). ar_datapipe itself imports "
+            "fine everywhere; only export_episode needs it."
+        )
     if not (len(timestamps_s) == len(actions) == len(gripper)):
         raise ValueError("timestamps_s, actions, and gripper must be the same length")
     if not actions:
