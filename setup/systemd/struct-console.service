@@ -1,0 +1,21 @@
+[Unit]
+Description=STRUCT console — the pipeline front end
+Documentation=file:///home/acer01/nvidia-spark-hacks/ui/README.md
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/acer01/nvidia-spark-hacks
+ExecStart=/usr/bin/python3 /home/acer01/nvidia-spark-hacks/ui/app.py --host 0.0.0.0 --port 8600
+Restart=always
+RestartSec=3
+# The console shells out to `npx tsx` for design runs, so it needs the same PATH a
+# login shell has. Without this it starts fine and every run fails at "cannot run npx",
+# which reads like a pipeline fault rather than a unit-file one.
+Environment=PATH=/home/acer01/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
