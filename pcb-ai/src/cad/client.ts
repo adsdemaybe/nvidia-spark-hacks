@@ -105,15 +105,28 @@ export class CadClient {
     return this.call("/cad/check_fit", { board_report, enclosure_report }, FitResult)
   }
 
-  /** §6 `cad.constrain_board(reason)`. */
+  /** §6 `cad.constrain_board(reason)`.
+   *
+   * `board_thickness_mm` is not optional in practice even though the service
+   * defaults it: the envelope's `max_component_height_mm` is
+   * `cavity_height - standoff - board_thickness`, so omitting it silently
+   * budgets for a 1.6mm board. A 1.4mm board then gets an envelope 0.2mm out,
+   * and nothing anywhere reports an error.
+   */
   async constrainBoard(
     reason: string,
     enclosure_report: EnclosureReport,
     intent?: Partial<EnclosureIntent>,
+    board_thickness_mm?: number,
   ): Promise<Envelope> {
     return this.call(
       "/cad/constrain_board",
-      { reason, enclosure_report, intent: intent ?? {} },
+      {
+        reason,
+        enclosure_report,
+        intent: intent ?? {},
+        ...(board_thickness_mm !== undefined ? { board_thickness_mm } : {}),
+      },
       Envelope,
     )
   }
@@ -213,6 +226,7 @@ export async function negotiate(
       `round ${i}: ${worst.code} — ${worst.detail}`,
       enclosure,
       opts.intent,
+      board.thickness_mm,
     )
     round.envelope = envelope
     round.movedSide = "pcb"

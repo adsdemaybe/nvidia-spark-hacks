@@ -105,6 +105,19 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
     envVision: "LAGUNA_VISION",
     vision: false,
   },
+  // The CPU tier. llama.cpp on the Spark's ARM cores, holding **zero GPU memory** — so
+  // the design loop keeps running while Isaac Sim, gsplat or a fine-tune owns the GB10.
+  // Weaker than Laguna at review (§8.7 in the plan) and unable to degrade any verdict,
+  // because the deterministic gates do not care which model is talking.
+  qwen: {
+    envBaseUrl: ["QWEN_BASE_URL", "LLM_BASE_URL"],
+    defaultBaseUrl: "http://127.0.0.1:8200/v1",
+    defaultModel: "qwen",
+    envModel: ["QWEN_MODEL"],
+    envKey: ["QWEN_API_KEY", "LLM_API_KEY"],
+    envVision: "QWEN_VISION",
+    vision: false,
+  },
   // Generic escape hatch for any other locally-served OpenAI-compatible model
   // (a second vLLM, llama.cpp, TGI). `--model local:my-model --base-url ...`.
   local: {

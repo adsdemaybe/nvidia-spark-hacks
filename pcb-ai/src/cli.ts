@@ -40,7 +40,9 @@ Fully local, nothing leaves the machine — Laguna S 2.1 NVFP4 served by vLLM on
 Spark. No API key; the base URL defaults to http://localhost:8000/v1 and is overridden
 with --base-url or LAGUNA_BASE_URL:
 
-  --model laguna                             the local endpoint, model name "laguna"
+  --model laguna                             GPU tier: vLLM on :8100, ~117GB of the GB10
+  --model qwen                               CPU tier: llama.cpp on :8200, zero GPU —
+                                             use this while Isaac Sim / training owns the GPU
   --model laguna:some-other-served-name      a different model on the same endpoint
   --model local:my-model --base-url http://spark:8001/v1
 

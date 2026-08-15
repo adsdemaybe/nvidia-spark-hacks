@@ -44,20 +44,37 @@ export const PlacementRuleSchema = z.object({
       "Reference designators the rule applies to, e.g. ['J1'] or ['J1','J2']. " +
         "Use ['*'] with on_layer to mean every part.",
     ),
+  // Nullable-and-required, never optional.
+  //
+  // Every other schema in this pipeline has all-required fields, and that is not a
+  // style preference: the OpenAI structured-output API that vLLM implements rejects
+  // `.optional()` outright ("uses .optional() without .nullable()"), so an optional
+  // field fails at schema-construction time against a real server while passing
+  // silently against the offline stub. A field that does not apply to a given rule is
+  // emitted as null.
   edge: z
     .enum(["left", "right", "top", "bottom", "any"])
-    .describe("For at_edge/same_edge: which edge, or 'any' when only proximity matters.")
-    .optional(),
-  layer: z.enum(["top", "bottom"]).describe("For on_layer.").optional(),
+    .nullable()
+    .describe(
+      "For at_edge/same_edge: which edge, or 'any' when only proximity matters. " +
+        "null for every other rule kind.",
+    ),
+  layer: z
+    .enum(["top", "bottom"])
+    .nullable()
+    .describe("For on_layer. null otherwise."),
   max_mm: z
     .number()
+    .nullable()
     .describe(
       "For at_edge/same_edge: how close counts as 'at' the edge (default 3). " +
         "For adjacent: the maximum centre-to-centre distance. " +
-        "For in_row: the allowed spread across the axis (default 1).",
-    )
-    .optional(),
-  axis: z.enum(["x", "y"]).describe("For in_row: the axis the parts line up along.").optional(),
+        "For in_row: the allowed spread across the axis (default 1). null to take the default.",
+    ),
+  axis: z
+    .enum(["x", "y"])
+    .nullable()
+    .describe("For in_row: the axis the parts line up along. null otherwise."),
   why: z.string().describe("What breaks if this is not true. One sentence."),
 })
 

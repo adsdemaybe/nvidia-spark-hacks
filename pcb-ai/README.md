@@ -267,6 +267,42 @@ The three reviews are independent and concurrent — they are meant to disagree.
 chief resolves the disagreement into an ordered work order and is the only node that
 can accept the board.
 
+## Placement rules (L3)
+
+Every other gate checks that the board is correct. None of them checks that it is the
+board that was *asked for* — a design with its connectors on the wrong sides has a valid
+netlist, clean routing, sound physics and a manufacturable stackup.
+
+The parts agent emits placement requirements twice: as prose for the designer to read,
+and as `placement_rules` that a tool checks against the routed board.
+
+```bash
+npx tsx tools/placement-check.ts runs/<dir>/iter-0/circuit.json rules.json
+npx tsx tools/placement-check.ts runs/<dir>/iter-0/circuit.json    # just report edges
+```
+
+| Rule | Checks |
+|---|---|
+| `at_edge(refs, edge, max_mm)` | the part sits against a named edge, or any edge |
+| `opposite_edges(a, b)` | the two are on **opposing** sides, and both really at an edge |
+| `same_edge(refs, edge)` | parts share one edge |
+| `on_layer(refs or ["*"], layer)` | nothing is on the wrong side of the board |
+| `adjacent(a, b, max_mm)` | decoupling against the pin it serves |
+| `in_row(refs, axis, max_mm)` | indicator LEDs actually line up |
+
+A rule naming a part that does not exist **fails** rather than being skipped, so a typo
+cannot silently disable a gate. "No rules" is never reported as "passed": a parts plan
+that emitted none is called out as unchecked.
+
+Verified on the rover — asserting the two headers belong on opposite edges:
+
+```
+[opposite_edges] J1 is on the left edge and J2 is on the left edge
+                 — both on the same side, not opposite ones.
+[at_edge]        SW1 is 16.50 mm from its nearest edge (left), limit 3.00 mm
+                 — it is sitting in the interior.
+```
+
 ## Manufacturability (L8) and handoff files
 
 The board is checked against a real fab's rules, and those rules are read out of a real
