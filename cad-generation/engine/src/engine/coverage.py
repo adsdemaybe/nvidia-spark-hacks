@@ -73,7 +73,10 @@ def analyze_coverage(ir: RobotIR, *, max_tier: int = 0) -> list[VariableCoverage
                     if base_result.passed and not perturbed[name].passed and name not in fragile:
                         fragile.append(name)
 
-            blind = bool(responses) and all(r < _BLIND_THRESHOLD for r in responses.values())
+            # No responses at all is the *most* blind a variable can be, not the
+            # least: `bool(responses) and ...` reported the one case where nothing
+            # measured the variable as covered.
+            blind = all(r < _BLIND_THRESHOLD for r in responses.values())
             coverage.append(
                 VariableCoverage(
                     link_id=link.id,

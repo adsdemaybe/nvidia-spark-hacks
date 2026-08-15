@@ -25,22 +25,30 @@ from engine.catalogue import MotorSpec, resolve as resolve_catalogue
 from engine.criteria.base import CriterionResult
 from engine.criteria.registry import register
 from engine.ir import RobotIR
-from engine.kinematics import joint_world_frame, link_geometry_transform, subtree_links
+from engine.kinematics import (
+    joint_world_frame,
+    link_frames,
+    link_geometry_transform,
+    subtree_links,
+)
 from engine.mass_properties import MassProperties
 
 _GRAVITY = 9.80665  # m/s^2
+# See engine.criteria.builtin._DEGENERATE — finite so the report stays valid JSON.
+_NO_TORQUE_AVAILABLE = -1.0e6
 
 
 @register("joint_torque_budget", tier=1)
 def _joint_torque_budget(ir: RobotIR, mass_props: dict[str, MassProperties]) -> list[CriterionResult]:
     results: list[CriterionResult] = []
+    frames = link_frames(ir)
 
     for joint in ir.joints:
         if joint.kind != "revolute" or joint.actuator is None:
             continue
 
         motor: MotorSpec = resolve_catalogue(joint.actuator.catalogue, joint.actuator.value)
-        joint_frame = joint_world_frame(ir, joint)
+        joint_frame = joint_world_frame(ir, joint, frames)
         joint_pos = joint_frame[:3, 3]
         axis_world = joint_frame[:3, :3] @ np.array(joint.axis.as_tuple(), dtype=float)
         axis_world /= np.linalg.norm(axis_world)
@@ -48,7 +56,7 @@ def _joint_torque_budget(ir: RobotIR, mass_props: dict[str, MassProperties]) -> 
         torque = 0.0
         for link_id in subtree_links(ir, joint.child):
             mp = mass_props[link_id]
-            transform = link_geometry_transform(ir, link_id)
+            transform = link_geometry_transform(ir, link_id, frames)
             world_com = transform[:3, :3] @ np.array(mp.com.as_tuple()) + transform[:3, 3]
             lever_arm = world_com - joint_pos
             weight = np.array([0.0, 0.0, -mp.mass * _GRAVITY])
@@ -56,7 +64,7 @@ def _joint_torque_budget(ir: RobotIR, mass_props: dict[str, MassProperties]) -> 
 
         required = abs(float(torque))
         available = motor.stall_torque.value
-        margin = (available - required) / available if available > 0 else float("-inf")
+        margin = (available - required) / available if available > 0 else _NO_TORQUE_AVAILABLE
 
         results.append(
             CriterionResult(

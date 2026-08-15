@@ -86,7 +86,11 @@ def simple_rover() -> RobotIR:
         kind="revolute",
         parent="bracket_L",
         child="wheel_L",
-        origin=Pose(position=Vec3(x=0.0, y=0.0, z=0.08)),
+        # 0.078, not 0.080: the bracket's own geometry is offset 2mm down the
+        # chassis (see the pose above), so an axle at the bracket's nominal
+        # arm_b height left the wheel hanging 2mm clear of the arm holding it.
+        # `link_attached` caught it; nothing before that criterion existed to.
+        origin=Pose(position=Vec3(x=0.0, y=0.0, z=0.078)),
         axis=Vec3(x=0.0, y=1.0, z=0.0),
         limits=JointLimits(
             lower=_assumed(-3.1416, "rad", "one full rotation range"),

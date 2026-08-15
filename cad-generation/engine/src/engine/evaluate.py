@@ -29,7 +29,15 @@ class EvaluationReport:
 
     @property
     def passed(self) -> bool:
-        return all(r.passed for r in self.results)
+        """True only if something was actually measured and all of it passed.
+
+        `all([])` is True, so without the emptiness guard a design that ran zero
+        criteria — no criteria registered, every tier skipped, a robot no criterion
+        applies to — reports PASS and the CLI exits 0. That is the precise
+        inversion of "agents propose, the harness disposes": silence would become
+        consent. No evidence is not a pass.
+        """
+        return bool(self.results) and all(r.passed for r in self.results)
 
     @property
     def failures(self) -> list[CriterionResult]:
@@ -38,6 +46,12 @@ class EvaluationReport:
 
 def compute_mass_properties(ir: RobotIR) -> dict[str, MassProperties]:
     return {link.id: build_geometry(link.geometry).mass_properties for link in ir.links}
+
+
+# The tier ladder is fixed by §3 — analytic, Pinocchio, MuJoCo, Drake — not
+# discovered from whatever happens to be registered. That distinction is what
+# lets a report say "tier 2 did not run" instead of not mentioning tier 2.
+TIERS = (0, 1, 2, 3)
 
 
 def evaluate(
@@ -67,6 +81,15 @@ def evaluate(
             continue
         tiers_run.add(criterion.tier)
         results.extend(criterion.fn(ir, mass_properties))
+
+    # A tier with no criteria registered at all never enters the loop above, so
+    # it could never be reported skipped: asking for `max_tier=3` ran tiers 0-1,
+    # said "skipped: []", and returned PASS — presenting a design that has seen
+    # no contact simulation and no equilibrium proof as though it had passed
+    # both. §3 and §11 non-negotiable #5 say the opposite in as many words: "a
+    # tier that didn't run is reported skipped, never silently treated as a
+    # pass". The tiers are fixed by §3, so absence is knowable here.
+    tiers_skipped |= {tier for tier in TIERS if tier <= max_tier and tier not in tiers_run}
 
     return EvaluationReport(
         design_id=str(ir.id),
@@ -101,7 +124,12 @@ def main(argv: list[str] | None = None) -> int:
     for r in report.results:
         status = "PASS" if r.passed else "FAIL"
         print(f"  [{status}] {r.name:30s} magnitude={r.magnitude:+.4f} {r.unit:14s} {r.detail}")
-    print(f"overall: {'PASS' if report.passed else 'FAIL'} ({len(report.failures)} failing)")
+    if not report.results:
+        # Otherwise this prints "FAIL (0 failing)", which reads like a bug report
+        # about the reporter rather than the actual situation.
+        print("overall: FAIL — no criteria ran, so nothing was verified")
+    else:
+        print(f"overall: {'PASS' if report.passed else 'FAIL'} ({len(report.failures)} failing)")
     return 0 if report.passed else 1
 
 

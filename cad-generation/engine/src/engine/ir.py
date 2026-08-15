@@ -86,9 +86,13 @@ class GeometrySpec(BaseModel):
     """
 
     generator: str
-    # Every param is either a purchasable-component reference or a
-    # provenanced physical quantity — never a bare float (§2).
-    params: dict[str, CatalogueParam | Quantity] = Field(default_factory=dict)
+    # Every *measurement* is either a purchasable-component reference or a
+    # provenanced physical quantity — never a bare float (§2). Plain strings are
+    # allowed alongside them for identifiers that are not measurements at all:
+    # a vendored asset path, or the sha256 pinning it. Attaching a Provenance to
+    # a filename would be provenance theatre, and the §2 rule exists to stop an
+    # optimizer exploiting an untethered *number* — a filename is not one.
+    params: dict[str, CatalogueParam | Quantity | str] = Field(default_factory=dict)
     material: CatalogueParam  # catalogue="materials"
 
 
@@ -98,18 +102,45 @@ class Link(BaseModel):
     pose: Pose = Field(default_factory=Pose)
 
 
-class JointType(str):
-    pass
-
-
 JointKind = Literal["revolute", "prismatic", "fixed"]
 
 
 class JointLimits(BaseModel):
-    lower: Quantity
-    upper: Quantity
+    """Effort and velocity always; positional bounds only if the joint has them.
+
+    `lower`/`upper` of `None` means the joint turns without end — a wheel. That
+    needs to be sayable, because the alternative is authors encoding "no limit"
+    as a wide-looking range, and a wheel written as +/-pi is a wheel that stops
+    dead after half a turn. It happened here: the rover's drive joints carried
+    +/-pi with the provenance note "continuous rotation", passed every static
+    criterion, and drove 34 mm before welding solid against the limit.
+
+    Dropping the whole `JointLimits` object would express it too, but it would
+    also discard the effort and velocity ratings, which are real catalogue facts
+    about the actuator and are what URDF's `continuous` type still wants.
+    """
+
+    lower: Quantity | None = None
+    upper: Quantity | None = None
     effort: Quantity  # N or N*m depending on joint kind
     velocity: Quantity
+
+    @property
+    def bounded(self) -> bool:
+        return self.lower is not None and self.upper is not None
+
+    @model_validator(mode="after")
+    def _bounds_come_as_a_pair(self) -> "JointLimits":
+        if (self.lower is None) != (self.upper is None):
+            raise ValueError(
+                "joint limits must declare both lower and upper or neither; "
+                "one-sided bounds are not representable in URDF or MJCF"
+            )
+        if self.bounded and self.lower.value > self.upper.value:
+            raise ValueError(
+                f"joint limit lower ({self.lower.value}) exceeds upper ({self.upper.value})"
+            )
+        return self
 
 
 class Joint(BaseModel):
@@ -140,6 +171,18 @@ class RobotIR(BaseModel):
     root_link: str
     links: list[Link]
     joints: list[Joint] = Field(default_factory=list)
+    # How the root link meets the world. "floating" is a robot that carries
+    # itself — a rover, a quadruped, a drone. "fixed" is one bolted down: an arm
+    # on a bench, a delta on a frame.
+    #
+    # This is not cosmetic, and it is not inferable. A bench arm reaching out
+    # over its own base plate has its centre of mass well outside its footprint,
+    # so `static_margin` fails it — correctly, if it were free-standing, and
+    # meaninglessly, since it is bolted to a table. SO-101 fails by 1.56 support
+    # half-widths. Simulating it is worse: a fixed-base robot given a free joint
+    # falls over on the first step, and `settles` reports a design fault that is
+    # entirely an artefact of how it was mounted.
+    base: Literal["floating", "fixed"] = "floating"
 
     @field_validator("links")
     @classmethod
@@ -159,6 +202,38 @@ class RobotIR(BaseModel):
                 raise ValueError(f"joint {joint.id!r} parent {joint.parent!r} is not a known link")
             if joint.child not in link_ids:
                 raise ValueError(f"joint {joint.id!r} child {joint.child!r} is not a known link")
+            if joint.parent == joint.child:
+                raise ValueError(f"joint {joint.id!r} connects link {joint.child!r} to itself")
+
+        joint_ids = [joint.id for joint in v]
+        if len(joint_ids) != len(set(joint_ids)):
+            dupes = sorted({j for j in joint_ids if joint_ids.count(j) > 1})
+            raise ValueError(f"duplicate joint ids: {dupes}")
+
+        # One parent per link, or the tree isn't a tree. The kinematics walk
+        # assigns `frames[joint.child]` per joint, so a second joint claiming the
+        # same child silently wins and the robot evaluated is not the robot
+        # authored — a wrong answer rather than an error.
+        seen_children: dict[str, str] = {}
+        for joint in v:
+            if joint.child in seen_children:
+                raise ValueError(
+                    f"link {joint.child!r} is the child of both {seen_children[joint.child]!r} "
+                    f"and {joint.id!r}; each link may have at most one parent joint"
+                )
+            seen_children[joint.child] = joint.id
+
+        # The root is the one link with no parent. Without this, `a -> b` plus
+        # `b -> a` satisfies the one-parent rule above (each link has exactly one)
+        # while still being a cycle. Together the two rules make every subgraph
+        # reachable from the root a tree; an unreachable cycle is caught separately
+        # by `kinematics.link_frames`, which reports it as unreachable.
+        root = info.data.get("root_link")
+        if root is not None and root in seen_children:
+            raise ValueError(
+                f"root link {root!r} is the child of joint {seen_children[root]!r}: "
+                "the root has no parent by definition, and this closes a cycle"
+            )
         return v
 
     def link(self, link_id: str) -> Link:
