@@ -77,9 +77,20 @@ make gates       # uv run r2s gates
 make fixture     # regenerate fixtures/tiny_room
 ```
 
-`pytest` deselects `cuda` and `isaac` markers by default, so a green local run says
-nothing about the GPU rungs. `make clean-run` and the Makefile's `rm -rf` need a POSIX
-shell — on Windows use the Bash tool, not PowerShell.
+`arxr/` has the same loop contract (`make loop` = lint + tests) and its own uv workspace.
+
+**`make` is not installed on the Windows dev machine.** The Makefiles are the source of
+truth for what the loop *is*, but here you run the steps directly:
+
+```bash
+uv run ruff check packages tools tests
+uv run pytest tests/ -q
+```
+
+`pytest` deselects `cuda` and `isaac` markers by default (and `isaac`/`device` in arxr),
+so a green local run says nothing about the GPU rungs or anything needing a phone.
+`make clean-run` and the Makefile's `rm -rf` also need a POSIX shell — use the Bash tool,
+not PowerShell.
 
 ## Conventions
 
