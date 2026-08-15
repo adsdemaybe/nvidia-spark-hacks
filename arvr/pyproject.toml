@@ -8,6 +8,7 @@ dependencies = [
     "ar-datapipe",
     "ar-backend",
     "ar-sim",
+    "spatial-providers",
 ]
 
 [tool.uv.workspace]
@@ -22,6 +23,7 @@ ar-contracts = { workspace = true }
 ar-datapipe = { workspace = true }
 ar-backend = { workspace = true }
 ar-sim = { workspace = true }
+spatial-providers = { workspace = true }
 
 [tool.uv]
 # This code only ever runs on a dev laptop (win32) or the Spark (linux

@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "button_01",
+  "parts": {
+    "button": {
+      "interaction": "press",
+      "local_origin_m": [
+        0.0,
+        0.0,
+        0.02
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "travel_m": 0.006
+    }
+  }
+}
