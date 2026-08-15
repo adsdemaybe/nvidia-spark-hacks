@@ -243,7 +243,12 @@ export function imageToControlSpace(
     palmSpan !== undefined && palmSpan !== null
       ? depthFromPalmSpan(palmSpan)
       : normalizeDepth(zRaw);
-  const y = lerp(bounds.yMin, bounds.yMax, depth);
+  // depth = 1 means the hand is NEAR the camera, and the person operating
+  // this is sitting at the camera. The scene puts the viewer on the -Y side,
+  // so moving your hand toward yourself has to DECREASE struct Y. Mapping
+  // near to yMax instead is what made the axis feel inverted: pulling your
+  // hand back pushed the object away from you.
+  const y = lerp(bounds.yMax, bounds.yMin, depth);
   return [x, y, z];
 }
 

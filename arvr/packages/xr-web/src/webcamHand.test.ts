@@ -140,12 +140,16 @@ describe("imageToControlSpace", () => {
   });
 
   it("depth strategy is monotonic in raw z and stays within bounds", () => {
+    // Monotonic toward the viewer: a hand nearer the camera maps to a
+    // SMALLER struct Y, because the person is at the camera and the scene
+    // puts them on the -Y side. This assertion ran the other way while the
+    // axis was inverted in use, which is why it did not catch it.
     const bounds = DEFAULT_CONTROL_VOLUME;
     const near = imageToControlSpace(0.5, 0.5, -0.3, bounds)[1];
     const mid = imageToControlSpace(0.5, 0.5, -0.06, bounds)[1];
     const far = imageToControlSpace(0.5, 0.5, 0.3, bounds)[1];
-    expect(near).toBeGreaterThanOrEqual(mid);
-    expect(mid).toBeGreaterThanOrEqual(far);
+    expect(near).toBeLessThanOrEqual(mid);
+    expect(mid).toBeLessThanOrEqual(far);
     for (const y of [near, mid, far]) {
       expect(y).toBeGreaterThanOrEqual(bounds.yMin);
       expect(y).toBeLessThanOrEqual(bounds.yMax);
@@ -775,12 +779,17 @@ describe("depth from apparent hand size", () => {
     expect(palmSpanImage(deep)).toBeCloseTo(palmSpanImage(flat)!, 9);
   });
 
-  it("drives the control volume's depth axis from the palm span when given one", () => {
+  it("moves the anchor toward the viewer as the hand approaches the camera", () => {
+    // The person is at the camera and the scene puts them on the -Y side, so
+    // a hand coming closer must map to a SMALLER struct Y. Getting this
+    // backwards is not subtle in use: pulling your hand toward yourself
+    // shoves the object away from you.
     const bounds = { xMin: 0, xMax: 1, yMin: 0, yMax: 1, zMin: 0, zMax: 1 };
     const near = imageToControlSpace(0.5, 0.5, 0, bounds, PALM_SPAN_NEAR);
     const far = imageToControlSpace(0.5, 0.5, 0, bounds, PALM_SPAN_FAR);
-    expect(near[1]).toBe(1);
-    expect(far[1]).toBe(0);
+    expect(near[1]).toBe(0);
+    expect(far[1]).toBe(1);
+    expect(near[1]).toBeLessThan(far[1]);
   });
 
   it("falls back to MediaPipe z only when no span is available", () => {
@@ -788,8 +797,8 @@ describe("depth from apparent hand size", () => {
     const withSpan = imageToControlSpace(0.5, 0.5, -0.15, bounds, PALM_SPAN_FAR);
     const withoutSpan = imageToControlSpace(0.5, 0.5, -0.15, bounds, null);
     // Same z, opposite ends: the span must win when present.
-    expect(withSpan[1]).toBe(0);
-    expect(withoutSpan[1]).toBe(1);
+    expect(withSpan[1]).toBe(1);
+    expect(withoutSpan[1]).toBe(0);
   });
 });
 
