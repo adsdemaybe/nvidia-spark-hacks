@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "task_id": "cube_to_bin",
+  "timestamp_ns": 1700000000000000000,
+  "original_target": {
+    "position_m": [
+      0.4,
+      0.2,
+      0.5
+    ],
+    "orientation_xyzw": null
+  },
+  "corrected_target": {
+    "position_m": [
+      0.45,
+      0.25,
+      0.58
+    ],
+    "orientation_xyzw": null
+  },
+  "reason": "collision_avoidance"
+}

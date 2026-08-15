@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "scene_id": "demo_room",
+  "canonical_usd": "artifacts/demo_room/scene.usd",
+  "visual_assets": [
+    {
+      "id": "table",
+      "glb": "table.glb"
+    },
+    {
+      "id": "cube",
+      "glb": "cube.glb"
+    },
+    {
+      "id": "bin",
+      "glb": "bin.glb"
+    },
+    {
+      "id": "robot",
+      "glb": "robot.glb"
+    }
+  ]
+}

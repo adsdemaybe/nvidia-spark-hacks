@@ -6,3 +6,4 @@ sm_121, aarch64, CUDA 13).
 | dir | what |
 |---|---|
 | [`realsim/`](realsim/) | F3: one phone video -> 8 validated digital-cousin simulation scenes. Start at [`realsim/STATE.md`](realsim/STATE.md). |
+| [`arvr/`](arvr/) | F4+F5: AR/XR spatial robotics interface — PLACE, TEACH, REPLAY, FOLLOW, TEST, CORRECT, TWIN. Start at [`arvr/STATE.md`](arvr/STATE.md). |
