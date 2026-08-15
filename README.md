@@ -80,6 +80,7 @@ Everything is local. Nothing leaves the box.
 
 | port | service | start with |
 |---|---|---|
+| 8610 | **studio** — prompt box that runs the whole pipeline | `python ui/studio.py` |
 | 8600 | **console** — PCB + CAD viewers in one page | `python ui/console.py` |
 | 3246 | CAD viewer (STEP/STL/3MF) | [`ui/README.md`](ui/README.md) |
 | 8081 | joint viewer (Viser, one slider per joint) | `python -m cad_api.viewer <ir.json> --host 0.0.0.0` |
