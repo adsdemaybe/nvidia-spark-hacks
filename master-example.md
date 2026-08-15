@@ -317,7 +317,7 @@ human-seeded HDL, gated by the same ladder.
 
 ## 8. The order to build it in
 
-1. **Grasp gates before grasp learning.** Add force closure, finger workspace and
+1. **Grasp gates before grasp learning** (§9.1). Add force closure, finger workspace and
    payload-at-grip to `evaluate()`. Without them the pipeline will happily converge on a
    hand that cannot hold anything, and every downstream hour is spent teaching a policy to
    use it.
@@ -327,9 +327,185 @@ human-seeded HDL, gated by the same ladder.
    replayed. The format is the risk, not the volume.
 4. **Isaac Lab, replay before randomise.** Reproduce the captured episode in sim first;
    randomisation on top of an unvalidated replay teaches noise.
-5. **GR00T post-train, gated on grasp success** over held-out cup poses — not on loss.
+5. **GR00T post-train, gated on grasp success** over held-out cup poses — not on loss,
+   and with the per-checkpoint delta shown (§9.11).
 6. **VR prompting last.** It is the thinnest layer and the most demo-visible; everything
    before it is what makes it work.
 
 Each of those is a checkpoint with a measurement, which is the same contract the rest of
 this project runs on: nothing is done because it looks done.
+
+---
+
+## 9. Recommendations
+
+Ordered by leverage. Every one of these comes from something that actually happened while
+building this, and each says how you would know it worked.
+
+### 9.1 Gate the grasp before you learn the grasp
+
+**Add force closure, finger-workspace overlap and payload-at-grip to `evaluate()` before any
+policy training starts.**
+
+This is the highest-leverage item in the document. The pattern that has bitten this project
+at every layer is a design that passes every measurement and is still not the thing:
+
+- a PCB whose bounding box, mass and every gate were correct, with a **bore that stopped
+  halfway** — the harness measured 819.8 mm³ and 1.02 g, both exactly right *for the solid
+  that was built*;
+- a rover whose static margin and torque budgets all passed, with **four wheels mounted
+  perpendicular to their own axles** — they would tumble, not roll;
+- a converged rover with its wheels in a **100 × 30 mm footprint on a 300 mm chassis**,
+  which `static_margin` passed because the centre of mass sat inside that tiny polygon.
+
+A hand has the same failure available and it is worse, because it is invisible until a
+policy has been trained against it: fingers that close but never oppose, a workspace that
+never intersects a cup, a grip force below the cup's weight. Without these gates the
+pipeline converges on a hand that cannot hold anything, and every downstream GPU-hour goes
+into teaching a policy to use it.
+
+*Verify:* a deliberately bad hand — fingers splayed so they cannot oppose — must fail. A
+gate nobody has watched reject something is a gate nobody should trust.
+
+### 9.2 Make the ablation loaded, not free-spinning
+
+`prove_drive.py` currently shows current −83 %, torque −85 % and **travel only −4 %**,
+because a free-spinning joint reaches similar terminal speed regardless: back-EMF dominates
+and the resistance stops mattering. The proof passes but barely discriminates.
+
+**Re-run it against a loaded joint** — a finger closing on a cup, or gravity on a lifted
+link. There the relationship is not "slower" but "stalls": below some current the fingers
+never close, and the ablation goes from a 4 % effect to a binary one. That is the version
+worth putting in front of someone, and it is the regime the demo actually runs in.
+
+### 9.3 Let lint outrank the documentation
+
+The design loop could not converge on a board, and the cause was that **the tscircuit docs
+are wrong**: `pinheader.mdx` shows `pinLabels={["VCC","GND"]}` and the compiler rejects
+exactly that (array → 3 errors and 0 parts; object → 0 errors). `chip` behaves identically.
+
+That made it *unfixable* rather than merely wrong, because the loop is a closed circle: the
+designer reads the retrieved docs and writes the array form, the compiler rejects it, the
+reviewer reads the same docs and its work order repeats the array form, the model applies it
+faithfully, and the error returns byte-identical.
+
+**The uncomfortable corollary: the docs RAG feeds this.** Grounding a model in real
+documentation is right, and it inherits whatever the documentation gets wrong.
+**Retrieval is not a correctness oracle.**
+
+So when the docs and the compiler disagree, encode the truth in **lint** — the only place in
+the chain that outranks upstream docs, that runs before compile, and whose message reaches
+both the designer and the reviewer. After that rule: the error appeared once in iteration 0,
+the model corrected it, and it never returned.
+
+*Generalise it:* every time a model is told something by a retrieved document and the
+harness disagrees, that is a lint rule waiting to be written, not a prompt to be tuned.
+
+### 9.4 Give the reviewers a different model from the designer
+
+**Wire Nemotron-3-Nano-Omni to the reviewer agents** (it is served, and not yet used).
+
+Two reasons. First, it is Principle 4 at the model level: two independent implementations
+for anything load-bearing, because a model reviewing its own output shares its own blind
+spots and its agreement is worth very little. The pinLabels loop above is exactly that
+failure — designer and reviewer confidently agreeing on the same wrong thing.
+
+Second, **it can see**. The pipeline renders `assembly.png`, `pcb.png` and `schematic.png`
+for every board and has never shown one to a local model; `contentOf` currently tells every
+reviewer "you are a text-only model, do not claim to have seen them" and substitutes a
+geometry digest. A layout reviewer that can look at the layout is a different reviewer.
+
+At 3B active it is cheap enough to keep resident beside the design model.
+
+### 9.5 Check the artifact against the request, not just against itself
+
+`evaluate(ir, max_tier, mass_properties)` — **the intent text never reaches the harness.**
+Every criterion measures internal consistency; none measures conformance to what was asked.
+A run asked for "about 30 cm long" reported a 420 × 240 × 80 mm envelope and PASSed.
+
+For the demo this matters more than it sounds: "a hand that can pick up a cup" contains
+checkable claims — a grip aperture that spans a cup, a payload at least the cup's mass, a
+finger count. **Extract them at planning time into machine-checkable expectations and pass
+them to `evaluate()`**, the way `text_to_part` already accepts an `expect` block with
+`through_bore`, `bbox_mm` and `volume_mm3`.
+
+### 9.6 Wire the board mass into the mass model
+
+`BoardSpec` has `mounted_on` and `measured_mass`; the board reports carry real numbers
+(2.23 g, 7.00 g, 7.93 g — 17.16 g total, 1.4 % of robot mass); **no design consumes any of
+it.** For a rover 17 g is a rounding error. For a hand it is not: boards in the palm sit far
+from the wrist axis and change exactly the inertia the controller has to move.
+
+*Verify:* mounting the boards must move the robot's centre of mass. If it does not, the
+integration is decorative — which is the whole reason `fit_boards.py` asks that question
+rather than reporting that the fields were populated.
+
+### 9.7 Schedule the memory; do not hope
+
+vLLM already holds 66–90 GB of 121 GB. Isaac Lab, a GR00T fine-tune and a model server will
+not co-exist, and discovering that mid-demo is the worst time.
+
+Decide the shifts explicitly: **design hours** (model server up, Isaac Lab down),
+**training hours** (Isaac Lab and GR00T own the GPU, design agents fall back to the CPU tier
+or pause), **demo hours** (policy and renderer only). One 4-bit model server can stay
+resident across all three; a bf16 one cannot.
+
+This is also the strongest argument for sparse 4-bit models everywhere: the difference
+between "fits beside training" and "is training's competitor".
+
+### 9.8 Prefer sparse-and-quantised over dense-and-large, always, on this box
+
+Stated once more because it will recur every time a new model is proposed: decode here is
+bound by **bytes of weights read per token**, not by arithmetic. A larger model can be an
+order of magnitude faster than a smaller one if it is sparse and quantised.
+
+**Footprint decides whether a model fits; bytes-per-token decides whether it is usable.**
+Ask the second question first — it took two model choices to learn that here.
+
+### 9.9 Keep a second opinion for routing, and gate it on completeness
+
+Freerouting is installed as a cross-check on tscircuit's autorouter. On boards both complete
+it is a wash (5 vs 9 vias, 15 vs 13, 2 vs 3). Its value is diagnostic: when a board fails to
+route, a second router says whether the board is hard or the router is weak.
+
+**But never compare cost before confirming coverage.** On the densest board Freerouting
+reported 0 vias against 83 and a 20 % shorter route — having routed 30 of 38 nets. An
+incomplete route is cheaper by construction and looks like a decisive win. The tool now
+prints INCOMPLETE and exits non-zero; keep that property in anything that compares two
+solvers.
+
+### 9.10 Distrust a stale artifact as much as a wrong one
+
+Twice in one session an artifact on disk said something alarming and was simply old: board
+masses reading 0.000 g (written before the mass computation existed), and a rover with
+tumbling wheels (produced before the axis checks existed). Both looked exactly like live
+bugs.
+
+**Check the timestamp before believing the file, and re-generate before reporting.** For the
+demo specifically: dataset episodes, characterisation surfaces and board reports are all
+regenerated artifacts, and a policy trained against a stale one fails in a way that looks
+like a learning problem.
+
+### 9.11 Instrument the loop so you can see fixes land
+
+The Studio play-by-play exists because a streaming log could not answer the only question
+worth asking of a revise loop: *did the last round of fixes help?* "12 errors" reads
+identically whether it improved or regressed; `▲ +4 — worse` does not.
+
+**Carry that into training.** Grasp success over randomised cup poses, per checkpoint,
+against the previous checkpoint — with the delta shown. A training run that is getting worse
+looks exactly like one that is getting better until you put the numbers side by side.
+
+### 9.12 Two implementations for anything load-bearing
+
+The pattern that found the real bugs, worth stating as policy: where a number matters, get
+it twice by independent means and treat disagreement as a defect rather than as noise.
+
+It caught a thermal model reporting a component's *average* temperature against a junction
+limit that applies to its hotspot — 140 °C/W against 180 °C/W for the same package, a 36 %
+error in a load-bearing check, found only because the co-sim gate carried its own figure.
+
+Its converse is the failure to watch for: **two systems agreeing about something neither of
+them checks.** `check_fit` compared a cutout's edge, width and height and never its
+position, so both sides agreed on a cutout that did not exist. Agreement is only evidence if
+the two paths are genuinely independent.
