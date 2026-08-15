@@ -63,6 +63,7 @@ const readoutEl = document.getElementById("readout")!;
 const controlsEl = document.getElementById("controls")!;
 const statusEl = document.getElementById("status")!;
 const videoPanelEl = document.getElementById("video-panel")!;
+const cameraSelectEl = document.getElementById("camera-select") as HTMLSelectElement;
 
 // ---------------------------------------------------------------- renderer --
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -227,9 +228,73 @@ function renderReadout(): void {
 }
 
 // ------------------------------------------------------------------ camera --
+/**
+ * List the cameras available to the browser.
+ *
+ * A phone streamed in as a virtual webcam (Iriun, Camo, EpocCam) shows up
+ * here like any other device, and is usually the better choice: phone optics
+ * beat a laptop webcam badly, and -- more importantly -- a phone can be
+ * placed to the SIDE. Depth toward a laptop's fixed forward-facing camera is
+ * the one direction it cannot see; from the side, that same motion is
+ * lateral, which monocular tracking measures directly. None of these
+ * virtual cameras carry a depth channel, so this improves the input rather
+ * than changing what is being inferred.
+ *
+ * Labels are only populated after camera permission has been granted, so
+ * this is called again once a stream is open.
+ */
+async function refreshCameraList(): Promise<void> {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  let devices: MediaDeviceInfo[];
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } catch (error) {
+    console.warn("could not enumerate cameras:", error);
+    return;
+  }
+
+  const cameras = devices.filter((d) => d.kind === "videoinput");
+  const previous = cameraSelectEl.value;
+  cameraSelectEl.replaceChildren();
+
+  const auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = "DEFAULT";
+  cameraSelectEl.appendChild(auto);
+
+  for (const [i, camera] of cameras.entries()) {
+    const option = document.createElement("option");
+    option.value = camera.deviceId;
+    // Before permission is granted the label is empty by design (it would
+    // otherwise be a fingerprinting vector), so fall back to a number rather
+    // than rendering a row of blanks.
+    option.textContent = camera.label || `CAMERA ${i + 1}`;
+    cameraSelectEl.appendChild(option);
+  }
+  if (previous) cameraSelectEl.value = previous;
+}
+
+void refreshCameraList();
+
+/** Switching camera mid-session restarts tracking on the new device. */
+cameraSelectEl.addEventListener("change", () => {
+  if (!tracking) return;
+  provider?.stop();
+  provider = undefined;
+  tracking = false;
+  void startCamera();
+});
+
 async function startCamera(): Promise<void> {
   try {
-    provider = await WebcamHandProvider.create({ controlVolume: MUG_CONTROL_VOLUME });
+    const deviceId = cameraSelectEl.value;
+    provider = await WebcamHandProvider.create({
+      controlVolume: MUG_CONTROL_VOLUME,
+      ...(deviceId ? { cameraDeviceId: deviceId } : {}),
+    });
+    // Labels only become readable once permission exists, so re-list now
+    // that a stream is open -- otherwise the picker stays a list of numbers.
+    void refreshCameraList();
     videoPanelEl.appendChild(provider.videoElement);
     videoPanelEl.classList.add("active");
     provider.startPair(onHandPair);

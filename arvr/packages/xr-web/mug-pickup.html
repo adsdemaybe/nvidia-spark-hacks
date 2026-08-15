@@ -39,12 +39,20 @@
       #title h1 { margin: 0 0 4px; font-size: 15px; letter-spacing: .06em; }
       #title p { margin: 0; color: var(--muted); max-width: 42ch; }
 
-      #controls { bottom: 20px; left: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+      #controls { bottom: 92px; left: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
       #controls button { background: var(--panel); color: var(--ink);
         border: 1px solid var(--line); padding: 11px 20px; border-radius: 8px;
         cursor: pointer; font: inherit; font-weight: 700; letter-spacing: .04em; }
       #controls button:disabled { opacity: .35; cursor: default; }
       #controls .rec { border-color: var(--bad); color: var(--bad); }
+
+      #camera-pick { bottom: 20px; left: 16px; display: flex; flex-direction: column;
+        gap: 4px; margin-bottom: 0; }
+      #camera-pick label { font-size: 11px; letter-spacing: .06em; color: var(--muted);
+        text-transform: uppercase; }
+      #camera-pick select { background: var(--panel); color: var(--ink);
+        border: 1px solid var(--line); padding: 8px 10px; border-radius: 6px;
+        font: inherit; max-width: 320px; }
 
       #video-panel { bottom: 20px; right: 16px; display: none; flex-direction: column;
         gap: 6px; align-items: flex-end; }
@@ -67,6 +75,11 @@
     <div class="hud" id="status-wrap">
       <span id="status" data-state="off">CAMERA OFF</span>
       <div id="readout">loading…</div>
+    </div>
+
+    <div class="hud" id="camera-pick">
+      <label for="camera-select">Camera</label>
+      <select id="camera-select"></select>
     </div>
 
     <div class="hud" id="controls"></div>
