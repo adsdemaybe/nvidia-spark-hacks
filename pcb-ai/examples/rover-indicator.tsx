@@ -17,7 +17,14 @@
 // The parts also moved 4.5mm right — they had drifted left of centre, and shrinking the
 // outline without moving them would have cut J1 off the board rather than saving space.
 export default () => (
-  <board width="22mm" height="14mm" pcbPack pcbPackGap="1.2mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
+  <board width="22mm" height="16mm" pcbPack pcbPackGap="1.2mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
+
+    {/* M2 rather than M3: at 22x14 there is no room for an M3 boss and its
+        clearance. Two holes, not four — a board this small is held adequately on
+        a diagonal, and four would leave nowhere for the LEDs. */}
+    <hole name="MH1" diameter="2.2mm" pcbX={-9.1} pcbY={-5.1} />
+    <hole name="MH2" diameter="2.2mm" pcbX={-9.1} pcbY={4.9} />
+    <hole name="MH3" diameter="2.2mm" pcbX={8.9} pcbY={-2.1} />
     <net name="V3V3" />
     <net name="GND" />
     <net name="STAT1" />

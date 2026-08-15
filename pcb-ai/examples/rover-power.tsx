@@ -24,6 +24,19 @@
 export default () => (
   <board width="48mm" height="30mm" pcbPack pcbPackGap="2mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
     <net name="VIN" />
+
+    {/* ── mounting: M3 at the corners ───────────────────────────────────────
+        Added because the PCB<->CAD integration check said so. cad.check_fit
+        returned `board_not_mechanically_secured` on every rover board: the
+        enclosure had a cavity the board fitted into and nothing to bolt it to,
+        so it generated 0 standoffs. Neither side could see that alone — the PCB
+        gates do not care how a board is held and the CAD side cannot invent
+        holes — which is the case for running them against each other. */}
+    <hole name="MH1" diameter="3.2mm" pcbX={-21.6} pcbY={-12.6} />
+    <hole name="MH2" diameter="3.2mm" pcbX={21.4} pcbY={-12.6} />
+    <hole name="MH3" diameter="3.2mm" pcbX={-21.6} pcbY={12.4} />
+    <hole name="MH4" diameter="3.2mm" pcbX={21.4} pcbY={6.4} />
+
     <net name="VBAT" />
     <net name="GND" />
 

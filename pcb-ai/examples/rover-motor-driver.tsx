@@ -23,8 +23,15 @@
 // edges were hanging 0.04mm off the board. Small enough that the placement check let it
 // through, and still a board whose copper runs to the router bit.
 export default () => (
-  <board width="38mm" height="28mm" pcbPack pcbPackGap="1.8mm" minTraceWidth="0.25mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
+  <board width="40mm" height="28mm" pcbPack pcbPackGap="1.8mm" minTraceWidth="0.25mm" layers={2} minViaHoleDiameter="0.3mm" minViaPadDiameter="0.6mm">
     <net name="VBAT" />
+
+    {/* M3 mounting, one per corner — see rover-power for why these exist. */}
+    <hole name="MH1" diameter="3.2mm" pcbX={-16.6} pcbY={-11.6} />
+    <hole name="MH2" diameter="3.2mm" pcbX={16.4} pcbY={-11.6} />
+    <hole name="MH3" diameter="3.2mm" pcbX={-16.6} pcbY={4.9} />
+    <hole name="MH4" diameter="3.2mm" pcbX={16.4} pcbY={11.4} />
+
     <net name="V3V3" />
     <net name="GND" />
     <net name="AIN1" />
