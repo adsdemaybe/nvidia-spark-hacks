@@ -13,11 +13,17 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from .assets import build_router as build_assets_router
 from .corrections import build_router as build_corrections_router
 from .episodes import build_router as build_episodes_router
 from .follow import FollowSessionStore
 from .follow import build_router as build_follow_router
+from .robots import build_router as build_robots_router
 from .scenes import build_router as build_scenes_router
+from .spatial_episodes import build_router as build_spatial_episodes_router
+from .spatial_live import LiveSessionStore
+from .spatial_live import build_router as build_spatial_live_router
+from .spatial_store import HumanEpisodeStore
 from .store import CorrectionStore, EpisodeStore
 from .twin import build_router as build_twin_router
 
@@ -44,6 +50,15 @@ def create_app(
     app.include_router(build_twin_router(twin_hz))
     app.include_router(build_corrections_router(correction_store))
     app.include_router(build_follow_router(follow_store))
+
+    # Shadow Robot Spatial Demonstration Pipeline (spec section 46) --
+    # additive only, none of the routers above are touched.
+    spatial_episode_store = HumanEpisodeStore()
+    live_session_store = LiveSessionStore()
+    app.include_router(build_spatial_episodes_router(spatial_episode_store, dataset_root))
+    app.include_router(build_spatial_live_router(live_session_store))
+    app.include_router(build_robots_router())
+    app.include_router(build_assets_router())
     return app
 
 

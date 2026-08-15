@@ -50,6 +50,7 @@ from .robot_trajectory import (
     RobotTrajectoryMetadata,
 )
 from .scene_manifest import SceneManifest, VisualAsset
+from .simulation_provider import SimulationProvider, TaskSpec
 from .spatial_episode import EpisodeSource, EventType, SpatialEpisode, SpatialEvent
 from .spatial_frame import SpatialFrame
 from .twin_state import ObjectState, RobotState, TaskState, TaskStatus, TwinState
@@ -109,12 +110,14 @@ __all__ = [
     "RobotTrajectoryMetadata",
     "SceneManifest",
     "SchemaVersion",
+    "SimulationProvider",
     "Simulator",
     "Source",
     "SpatialEpisode",
     "SpatialEvent",
     "SpatialFrame",
     "Target",
+    "TaskSpec",
     "TaskState",
     "TaskStatus",
     "TimestampNs",

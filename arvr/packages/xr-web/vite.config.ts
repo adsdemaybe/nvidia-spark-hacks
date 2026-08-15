@@ -26,6 +26,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         probe: resolve(__dirname, "probe.html"),
+        spatialTeach: resolve(__dirname, "spatial-teach.html"),
       },
     },
   },
