@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""List the purchasable motors and gear ratios. There are no other parts."""
+from __future__ import annotations
+import argparse, json, sys
+from _common import bootstrap
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--format", choices=("text", "json"), default="text")
+    a = ap.parse_args()
+    bootstrap()
+    import rover_arm as R
+
+    if a.format == "json":
+        print(json.dumps({"motors": R.MOTORS,
+                          "gear_ratios": list(R.GEAR_OPTIONS),
+                          "gear_backlash_deg": R.GEAR_BACKLASH_DEG,
+                          "max_end_effector_slop_mm": R.MAX_BACKLASH_MM},
+                         indent=2))
+        return 0
+
+    print(f"{'motor':20} {'torque':>7} {'mass':>7} {'frame':>6} {'pitch':>6} "
+          f"{'pilot':>6} {'holes':>7}")
+    for k in R.MOTOR_BY_TORQUE:
+        m = R.MOTORS[k]
+        print(f"{k:20} {m['torque']:6.2f}N {m['mass']*1000:6.0f}g "
+              f"{m['frame']:6.1f} {m['bolt_pitch']:6.1f} {m['pilot_d']:6.1f} "
+              f"{('M%.1f tap' % m['hole_d']) if m['tapped'] else ('%.1f clr' % m['hole_d']):>7}")
+    print("\ngear ratios (real products only):")
+    for r in R.GEAR_OPTIONS:
+        print(f"  {r:>7.3f}:1   backlash {R.GEAR_BACKLASH_DEG[r]:.1f} deg")
+    print(f"\nmax allowed end-effector slop: {R.MAX_BACKLASH_MM} mm")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,38 @@
+<mujoco model="rocket_ship">
+  <compiler angle="radian" meshdir="." balanceinertia="true" discardvisual="false"/>
+  <option gravity="0 0 -9.81" density="1.225" viscosity="1.8e-5" integrator="implicitfast"/>
+  <visual><global offwidth="1600" offheight="1200"/></visual>
+
+  <asset>
+    <mesh name="ship" file="rocket_ship.stl" scale="0.001 0.001 0.001"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1=".14 .16 .19"
+             rgb2=".19 .22 .26" width="512" height="512"/>
+    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.05"/>
+    <material name="hull" rgba="0.72 0.75 0.79 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="2 -2 4" dir="-0.4 0.4 -1" directional="true"/>
+    <geom name="ground" type="plane" size="30 30 0.1" material="grid"/>
+    <body name="rocket" pos="0 0 0.6">
+      <freejoint name="root"/>
+      <inertial pos="0 0 0.31887" mass="1.3430"
+                diaginertia="0.051853 0.051853 0.007723"/>
+      <geom type="mesh" mesh="ship" material="hull" mass="0"
+            friction="0.6 0.01 0.001"/>
+      <site name="main" pos="0 0 0" zaxis="0 0 1" size="0.012"/>
+      <site name="rcs0" pos="0.05600 0.00000 0.53340" zaxis="-0.94693 0.32144 0.00000" size="0.006"/>
+      <site name="rcs1" pos="0.00000 0.05600 0.53340" zaxis="-0.32144 -0.94693 0.00000" size="0.006"/>
+      <site name="rcs2" pos="-0.05600 0.00000 0.53340" zaxis="0.94693 -0.32144 0.00000" size="0.006"/>
+      <site name="rcs3" pos="-0.00000 -0.05600 0.53340" zaxis="0.32144 0.94693 0.00000" size="0.006"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general site="main" gear="0 0 1 0 0 0" ctrlrange="0 80.0" name="main_thruster"/>
+    <general site="rcs0" gear="0 0 1 0 0 0" ctrlrange="0 3.0" name="rcs0"/>
+    <general site="rcs1" gear="0 0 1 0 0 0" ctrlrange="0 3.0" name="rcs1"/>
+    <general site="rcs2" gear="0 0 1 0 0 0" ctrlrange="0 3.0" name="rcs2"/>
+    <general site="rcs3" gear="0 0 1 0 0 0" ctrlrange="0 3.0" name="rcs3"/>
+  </actuator>
+</mujoco>

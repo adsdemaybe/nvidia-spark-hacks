@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="rover_arm">
+  <disable_collisions link1="base_link" link2="turntable" reason="Adjacent" />
+  <disable_collisions link1="turntable" link2="link_shoulder" reason="Adjacent" />
+  <disable_collisions link1="link_shoulder" link2="link_elbow" reason="Adjacent" />
+  <disable_collisions link1="link_elbow" link2="gripper_body" reason="Adjacent" />
+  <disable_collisions link1="gripper_body" link2="jaw_a" reason="Adjacent" />
+  <disable_collisions link1="gripper_body" link2="jaw_b" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="wheel_0" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="wheel_1" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="wheel_2" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="wheel_3" reason="Adjacent" />
+  <disable_collisions link1="jaw_a" link2="jaw_b" reason="Coupled" />
+</robot>

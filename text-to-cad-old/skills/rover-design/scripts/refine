@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Run the deterministic closed loop until every criterion passes.
+
+A baseline and a fallback, not a substitute for diagnosis: it searches only the
+variables that are exposed and cannot invent a new one.
+"""
+from __future__ import annotations
+import argparse, json, sys
+from _common import bootstrap, WORKDIR, report_dict, print_report
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--max-iters", type=int, default=40)
+    ap.add_argument("--target-payload", type=float, default=None,
+                    help="kg at full forward reach (default: skill setting)")
+    ap.add_argument("--format", choices=("text", "json"), default="text")
+    a = ap.parse_args()
+
+    bootstrap()
+    import design_loop as D, rover_arm as R
+    if a.target_payload is not None:
+        D.TARGET_PAYLOAD = a.target_payload
+
+    start = R.current_design()
+    start["SHOULDER_MOTOR"] = R.SHOULDER_MOTOR
+    start["SHOULDER_GEAR"] = R.SHOULDER_GEAR
+
+    quiet = a.format == "json"
+    if quiet:
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            design, rep, hist = D.refine(start, WORKDIR, max_iters=a.max_iters)
+    else:
+        design, rep, hist = D.refine(start, WORKDIR, max_iters=a.max_iters)
+
+    d = report_dict(rep)
+    d["design"] = design
+    d["accepted_steps"] = len(hist)
+    if a.format == "json":
+        print(json.dumps(d, indent=2, default=str))
+    else:
+        print("\nconverged design:")
+        for k, v in design.items():
+            print(f"  {k:22} {v}")
+        print()
+        print_report(d, "text")
+    return 0 if d["passed"] else 1
+
+if __name__ == "__main__":
+    sys.exit(main())

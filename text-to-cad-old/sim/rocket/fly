@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Open the rocket in the MuJoCo viewer with live thruster controls."""
+import os, sys, mujoco, mujoco.viewer
+here = os.path.dirname(os.path.abspath(__file__))
+m = mujoco.MjModel.from_xml_path(os.path.join(here, "rocket.xml"))
+d = mujoco.MjData(m)
+d.qpos[2] = 0.60
+hold = "--hover" in sys.argv
+with mujoco.viewer.launch_passive(m, d) as v:
+    v.cam.distance, v.cam.elevation, v.cam.azimuth = 3.2, -12, 135
+    while v.is_running():
+        if hold:                       # gravity-cancelling hover, hands free
+            d.ctrl[0] = m.body_mass[1] * 9.81
+        mujoco.mj_step(m, d)
+        v.sync()

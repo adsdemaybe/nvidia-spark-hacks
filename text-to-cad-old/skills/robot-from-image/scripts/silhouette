@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Compare the CAD's silhouette against a reference image.
+
+Uses an ORTHOGRAPHIC camera and normalises both masks to their bounding box,
+because a photograph or generated image carries no scale. Only proportion,
+topology and outline can be compared — never millimetres. See
+references/what-images-cannot-tell-you.md.
+
+  silhouette --reference robot.png --sweep
+  silhouette --reference robot.png --azimuth -60 --elevation 18
+  silhouette --render-only out.png --azimuth -60 --elevation 18
+"""
+from __future__ import annotations
+import argparse, json, math, sys
+import numpy as np
+from _common import bootstrap
+
+RES = 256
+
+
+def load_stl(path):
+    raw = open(path, "rb").read()
+    n = int.from_bytes(raw[80:84], "little")
+    dt = np.dtype([("n", "<3f4"), ("v", "<3,3f4"), ("a", "<u2")])
+    return np.frombuffer(raw, dtype=dt, count=n, offset=84)["v"].astype(np.float64)
+
+
+def rasterise(tris, azimuth, elevation, res=RES):
+    """Project triangles with an orthographic camera and fill a boolean mask."""
+    az, el = math.radians(azimuth), math.radians(elevation)
+    fwd = np.array([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az),
+                    math.sin(el)])
+    up0 = np.array([0.0, 0.0, 1.0])
+    right = np.cross(up0, fwd)
+    right /= np.linalg.norm(right) or 1.0
+    up = np.cross(fwd, right)
+
+    v = tris.reshape(-1, 3)
+    u = v @ right
+    w = v @ up
+    # Scale-free: fit the projection to its own bounding box.
+    umin, umax, wmin, wmax = u.min(), u.max(), w.min(), w.max()
+    span = max(umax - umin, wmax - wmin) or 1.0
+    pad = 0.04 * span
+    su = (u - (umin + umax) / 2) / (span + 2 * pad) * res + res / 2
+    sw = (w - (wmin + wmax) / 2) / (span + 2 * pad) * res + res / 2
+    pts = np.stack([su, res - sw], axis=1).reshape(-1, 3, 2)
+
+    mask = np.zeros((res, res), bool)
+    for tri in pts:
+        x0 = max(int(np.floor(tri[:, 0].min())), 0)
+        x1 = min(int(np.ceil(tri[:, 0].max())) + 1, res)
+        y0 = max(int(np.floor(tri[:, 1].min())), 0)
+        y1 = min(int(np.ceil(tri[:, 1].max())) + 1, res)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        ax, ay = tri[0]; bx, by = tri[1]; cx, cy = tri[2]
+        d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(d) < 1e-12:
+            continue
+        l1 = ((by - cy) * (xx - cx) + (cx - bx) * (yy - cy)) / d
+        l2 = ((cy - ay) * (xx - cx) + (ax - cx) * (yy - cy)) / d
+        l3 = 1.0 - l1 - l2
+        inside = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+        mask[y0:y1, x0:x1] |= inside
+    return mask
+
+
+def image_mask(path, res=RES):
+    """Reference image -> boolean mask, background removed by corner sampling."""
+    import imageio.v2 as imageio
+    img = imageio.imread(path)
+    if img.ndim == 2:
+        img = np.stack([img] * 3, -1)
+    if img.shape[2] == 4:                       # honour alpha when present
+        m = img[..., 3] > 128
+    else:
+        rgb = img[..., :3].astype(np.int16)
+        corners = np.concatenate([rgb[:8, :8].reshape(-1, 3),
+                                  rgb[:8, -8:].reshape(-1, 3),
+                                  rgb[-8:, :8].reshape(-1, 3),
+                                  rgb[-8:, -8:].reshape(-1, 3)])
+        bg = np.median(corners, axis=0)
+        m = np.abs(rgb - bg).sum(-1) > 60
+    return normalise(m, res)
+
+
+def normalise(mask, res=RES):
+    """Crop to the subject's bounding box and resample — removes scale/position."""
+    ys, xs = np.nonzero(mask)
+    if len(xs) == 0:
+        return np.zeros((res, res), bool)
+    sub = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    h, w = sub.shape
+    side = max(h, w)
+    sq = np.zeros((side, side), bool)
+    sq[(side - h) // 2:(side - h) // 2 + h, (side - w) // 2:(side - w) // 2 + w] = sub
+    yi = (np.arange(res) * side // res).clip(0, side - 1)
+    xi = (np.arange(res) * side // res).clip(0, side - 1)
+    return sq[yi][:, xi]
+
+
+def iou(a, b):
+    inter = np.logical_and(a, b).sum()
+    union = np.logical_or(a, b).sum()
+    return float(inter) / float(union) if union else 0.0
+
+
+def build_tris(design, pose):
+    bootstrap()
+    import rover_arm as R
+    from build123d import export_stl
+    import tempfile, os
+    if design:
+        R.reconfigure(**design)
+    asm = R.build_machine(*pose, with_vendor=False)
+    tmp = os.path.join(tempfile.mkdtemp(), "a.stl")
+    export_stl(asm, tmp, tolerance=0.4, angular_tolerance=0.7)
+    return load_stl(tmp)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--reference")
+    ap.add_argument("--design", metavar="JSON")
+    ap.add_argument("--pose", default="20,-40,70,4",
+                    help="yaw,shoulder,elbow,jaw for the comparison pose")
+    ap.add_argument("--azimuth", type=float, default=-60.0)
+    ap.add_argument("--elevation", type=float, default=18.0)
+    ap.add_argument("--sweep", action="store_true",
+                    help="search viewpoints; an image's camera is unknown")
+    ap.add_argument("--render-only", metavar="PNG")
+    ap.add_argument("--format", choices=("text", "json"), default="text")
+    a = ap.parse_args()
+
+    design = json.loads(a.design) if a.design else None
+    pose = tuple(float(x) for x in a.pose.split(","))
+    tris = build_tris(design, pose)
+
+    if a.render_only:
+        import imageio.v2 as imageio
+        m = rasterise(tris, a.azimuth, a.elevation)
+        imageio.imwrite(a.render_only, (np.logical_not(m) * 255).astype(np.uint8))
+        print(f"wrote {a.render_only}")
+        return 0
+
+    if not a.reference:
+        print("error: --reference is required unless --render-only", file=sys.stderr)
+        return 2
+    ref = image_mask(a.reference)
+
+    if a.sweep:
+        best = None
+        for az in range(-180, 180, 15):
+            for el in (0, 12, 24, 36):
+                s = iou(normalise(rasterise(tris, az, el)), ref)
+                if best is None or s > best[0]:
+                    best = (s, az, el)
+        score, az, el = best
+    else:
+        az, el = a.azimuth, a.elevation
+        score = iou(normalise(rasterise(tris, az, el)), ref)
+
+    verdict = ("strong" if score >= 0.80 else
+               "plausible" if score >= 0.62 else
+               "weak" if score >= 0.45 else "no match")
+    out = {"iou": round(score, 4), "azimuth": az, "elevation": el,
+           "verdict": verdict, "pose": list(pose),
+           "note": "orthographic + bbox-normalised: proportion and outline only, "
+                   "never absolute size"}
+    if a.format == "json":
+        print(json.dumps(out, indent=2))
+    else:
+        print(f"  best viewpoint : azimuth {az}, elevation {el}")
+        print(f"  silhouette IoU : {score:.3f}  -> {verdict}")
+        print(f"  {out['note']}")
+    return 0 if score >= 0.62 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
