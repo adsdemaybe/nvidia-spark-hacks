@@ -7,10 +7,17 @@ Blackwell, sm_121, aarch64, CUDA 13). Two workstreams live here:
 
 - **realsim (F3)** — turns one phone video into N validated digital-cousin simulation
   scenes. Implemented, end-to-end, and driven by a single validation loop.
-- **AR/XR spatial layer (F4 + F5)** — the human-facing interface: place a robot in a
-  real room, teach it a task by moving a phone, replay the verified demonstration, walk
-  and have it follow, correct its trajectory in space, and see live Isaac Sim state
-  overlaid on the physical room. Planned in `STRUCT_2.md`; not yet implemented.
+- **AR/XR spatial layer (`arvr/`)** — now a **hand-demonstration data collection**
+  app: a human picks a mug off a table in front of a webcam, and that recording is
+  exported as a LeRobot dataset for reinforcement learning. Read
+  `arvr/DATA_COLLECTION.md` before touching that tree — it is the current, accurate
+  description of what the app does and what the dataset contains.
+
+  The mode-based AR app, the button task, and the ball-sorting demos were all removed;
+  `STRUCT_2.md` and `arvr/ar-xr-plan.md` describe earlier directions and are history,
+  not specifications. The **capture scene deliberately contains no robot**: the data is
+  *for* a robot arm the CAD half has not generated yet, and a `HumanEpisode` is
+  robot-independent by design so the same recordings compile onto that arm later.
 
 The organizing idea across both: humans express physical intent spatially, STRUCT turns
 that into robot-compatible data, and simulation state comes back into the room as a
@@ -77,20 +84,41 @@ make gates       # uv run r2s gates
 make fixture     # regenerate fixtures/tiny_room
 ```
 
-`arxr/` has the same loop contract (`make loop` = lint + tests) and its own uv workspace.
+`arvr/` has the same loop contract (`make loop` = lint + tests) and its own uv workspace.
+Its browser client (`arvr/packages/xr-web/`) has its own: `npm run typecheck`,
+`npx vitest run`, `npm run build`.
+
+- **`arxr/` is dead.** It was consolidated into `arvr/` (see `arvr/STATE.md`). A stale
+  untracked `arxr/` directory may still sit in the working tree on this machine — ignore
+  it, and never `git add -A` from the repo root, which sweeps its `node_modules` and
+  `dist` into the index.
 
 **`make` is not installed on the Windows dev machine.** The Makefiles are the source of
 truth for what the loop *is*, but here you run the steps directly:
 
 ```bash
-uv run ruff check packages tools tests
-uv run pytest tests/ -q
+uv run --no-sync ruff check packages tools tests
+uv run --no-sync pytest tests/ -q
 ```
 
-`pytest` deselects `cuda` and `isaac` markers by default (and `isaac`/`device` in arxr),
+- **Always pass `--no-sync` to `uv run` in `arvr/`.**
+  Why: without it uv re-syncs on every invocation, and on this OneDrive-backed venv the
+  uninstall step intermittently fails to delete `numpy.libs` ("Access is denied"),
+  leaving two `numpy-*.dist-info` directories and a half-written package. The symptom is
+  a later `ImportError: cannot import name '_methods' from partially initialized module
+  'numpy._core'`, which looks like a code bug and is not. Repair with
+  `uv pip install --reinstall numpy`.
+
+`pytest` deselects `cuda` and `isaac` markers by default (and `isaac`/`device` in arvr),
 so a green local run says nothing about the GPU rungs or anything needing a phone.
 `make clean-run` and the Makefile's `rm -rf` also need a POSIX shell — use the Bash tool,
 not PowerShell.
+
+- **Pinocchio is Linux-only and is not installed here.** Anything downstream of IK —
+  `ar_datapipe.retarget.IkSolver`, and therefore `POST /spatial/episodes/{id}/finish` —
+  cannot run on this machine and returns 503. Use the human-layer export
+  (`/export-human`) for anything that must work locally, and measure robot reach with
+  `arvr/tools/so101_reach_envelope.py`, which does FK from the URDF without Pinocchio.
 
 ## Conventions
 
@@ -150,6 +178,21 @@ not PowerShell.
   tolerance.
 - **`realsim/STATE.md` is the live resume document** for realsim. Read it before touching
   that subtree — it is more current than this file for pipeline state.
+- **Vite proxy keys match as bare prefixes, not path segments.** `arvr/packages/xr-web`
+  proxies `/spatial` to the backend, which also swallowed every request for
+  `/spatial-training/...` — the fixture meshes and assets. Keys are now anchored
+  (`^/spatial(/|$)`); keep them that way when adding routes.
+  Why: the failure is silent and misleading — assets 404 while sitting plainly on disk,
+  and the client falls back to a placeholder rather than erroring.
+- **A 404 is not a thrown `fetch`.** It resolves with a parseable error body that sails
+  through `.json()` and only explodes later, far from the cause. Check `response.ok`
+  and the parsed shape before using it — `ShadowRobot.loadRealMeshes` crashed this way
+  with "cannot convert undefined to object" deep in the render path.
+- **Fixture GLBs are authored Z-up (struct_world); three.js renders Y-up.** Placing one
+  with `placeAtStruct` alone leaves it lying on its side — it also needs
+  `orientToStruct`. And check whether an asset's local origin is its centre or its base
+  before positioning it; the generated mug is base-origin, and assuming centre leaves it
+  hovering half its height above the table.
 
 ## Keeping this file current
 
