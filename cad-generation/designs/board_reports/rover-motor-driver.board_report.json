@@ -1,0 +1,182 @@
+{
+  "design_id": "rover-motor-driver",
+  "mass": {
+    "total_g": 7.0008,
+    "substrate_g": 2.9008,
+    "components_g": 4.1000000000000005,
+    "com_mm": {
+      "x_mm": 1.6712375728488174,
+      "y_mm": 0.3142498000228545
+    }
+  },
+  "outline_mm": {
+    "points": [
+      {
+        "x_mm": -20,
+        "y_mm": -14
+      },
+      {
+        "x_mm": 20,
+        "y_mm": -14
+      },
+      {
+        "x_mm": 20,
+        "y_mm": 14
+      },
+      {
+        "x_mm": -20,
+        "y_mm": 14
+      }
+    ]
+  },
+  "thickness_mm": 1.4,
+  "mounting_holes": [
+    {
+      "x_mm": -16.6,
+      "y_mm": -11.6,
+      "diameter_mm": 3.2,
+      "plated": false
+    },
+    {
+      "x_mm": 16.4,
+      "y_mm": -11.6,
+      "diameter_mm": 3.2,
+      "plated": false
+    },
+    {
+      "x_mm": -16.6,
+      "y_mm": 4.9,
+      "diameter_mm": 3.2,
+      "plated": false
+    },
+    {
+      "x_mm": 16.4,
+      "y_mm": 11.4,
+      "diameter_mm": 3.2,
+      "plated": false
+    }
+  ],
+  "component_heightmap": [
+    {
+      "ref": "J1",
+      "x_mm": -14,
+      "y_mm": 9,
+      "width_mm": 4.039999999999999,
+      "depth_mm": 1.5,
+      "height_mm": 8.5,
+      "side": "top"
+    },
+    {
+      "ref": "C1",
+      "x_mm": -7,
+      "y_mm": 9,
+      "width_mm": 4.050000000000001,
+      "depth_mm": 1.75,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "C2",
+      "x_mm": -2,
+      "y_mm": 5,
+      "width_mm": 1.5599999999999998,
+      "depth_mm": 0.6400000000000006,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "U1",
+      "x_mm": 0,
+      "y_mm": 0,
+      "width_mm": 5.9,
+      "depth_mm": 3.8,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "C3",
+      "x_mm": 7,
+      "y_mm": 5,
+      "width_mm": 2.8499999999999988,
+      "depth_mm": 1.4000000000000004,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "R1",
+      "x_mm": -7,
+      "y_mm": -6,
+      "width_mm": 2.45,
+      "depth_mm": 0.9499999999999993,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "J2",
+      "x_mm": 0,
+      "y_mm": -11,
+      "width_mm": 14.2,
+      "depth_mm": 1.5,
+      "height_mm": 8.5,
+      "side": "top"
+    },
+    {
+      "ref": "J3",
+      "x_mm": 14,
+      "y_mm": 7,
+      "width_mm": 4.039999999999999,
+      "depth_mm": 1.5,
+      "height_mm": 8.5,
+      "side": "top"
+    },
+    {
+      "ref": "J4",
+      "x_mm": 14,
+      "y_mm": -4,
+      "width_mm": 4.039999999999999,
+      "depth_mm": 1.5,
+      "height_mm": 8.5,
+      "side": "top"
+    }
+  ],
+  "connector_edges": [
+    {
+      "ref": "J1",
+      "edge": "north",
+      "x_mm": -14,
+      "y_mm": 9,
+      "width_mm": 4.039999999999999,
+      "height_mm": 8.5,
+      "needs_cutout": true
+    },
+    {
+      "ref": "J2",
+      "edge": "south",
+      "x_mm": 0,
+      "y_mm": -11,
+      "width_mm": 14.2,
+      "height_mm": 8.5,
+      "needs_cutout": true
+    },
+    {
+      "ref": "J3",
+      "edge": "east",
+      "x_mm": 14,
+      "y_mm": 7,
+      "width_mm": 1.5,
+      "height_mm": 8.5,
+      "needs_cutout": true
+    },
+    {
+      "ref": "J4",
+      "edge": "east",
+      "x_mm": 14,
+      "y_mm": -4,
+      "width_mm": 1.5,
+      "height_mm": 8.5,
+      "needs_cutout": true
+    }
+  ],
+  "keepouts": [],
+  "thermal_hotspots": []
+}

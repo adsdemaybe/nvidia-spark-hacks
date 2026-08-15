@@ -1,0 +1,140 @@
+{
+  "design_id": "rover-indicator",
+  "mass": {
+    "total_g": 2.22668,
+    "substrate_g": 0.9116799999999999,
+    "components_g": 1.315,
+    "com_mm": {
+      "x_mm": -0.8701295201825137,
+      "y_mm": -0.17963964287638998
+    }
+  },
+  "outline_mm": {
+    "points": [
+      {
+        "x_mm": -11,
+        "y_mm": -8
+      },
+      {
+        "x_mm": 11,
+        "y_mm": -8
+      },
+      {
+        "x_mm": 11,
+        "y_mm": 8
+      },
+      {
+        "x_mm": -11,
+        "y_mm": 8
+      }
+    ]
+  },
+  "thickness_mm": 1.4,
+  "mounting_holes": [
+    {
+      "x_mm": -9.1,
+      "y_mm": -5.1,
+      "diameter_mm": 2.2,
+      "plated": false
+    },
+    {
+      "x_mm": -9.1,
+      "y_mm": 4.9,
+      "diameter_mm": 2.2,
+      "plated": false
+    },
+    {
+      "x_mm": 8.9,
+      "y_mm": -2.1,
+      "diameter_mm": 2.2,
+      "plated": false
+    }
+  ],
+  "component_heightmap": [
+    {
+      "ref": "J1",
+      "x_mm": -3.5,
+      "y_mm": 0,
+      "width_mm": 9.120000000000001,
+      "depth_mm": 1.5,
+      "height_mm": 8.5,
+      "side": "top"
+    },
+    {
+      "ref": "C1",
+      "x_mm": 0.5,
+      "y_mm": -4,
+      "width_mm": 1.56,
+      "depth_mm": 0.6400000000000001,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "R1",
+      "x_mm": 3.5,
+      "y_mm": 4,
+      "width_mm": 1.5599999999999992,
+      "depth_mm": 0.6400000000000001,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "D1",
+      "x_mm": 7.5,
+      "y_mm": 4,
+      "width_mm": 2.45,
+      "depth_mm": 0.9499999999999997,
+      "height_mm": 0.8,
+      "side": "top"
+    },
+    {
+      "ref": "R2",
+      "x_mm": 3.5,
+      "y_mm": 0,
+      "width_mm": 1.5599999999999992,
+      "depth_mm": 0.64,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "D2",
+      "x_mm": 7.5,
+      "y_mm": 0,
+      "width_mm": 2.45,
+      "depth_mm": 0.95,
+      "height_mm": 0.8,
+      "side": "top"
+    },
+    {
+      "ref": "R3",
+      "x_mm": 3.5,
+      "y_mm": -4,
+      "width_mm": 1.5599999999999992,
+      "depth_mm": 0.6400000000000001,
+      "height_mm": 2,
+      "side": "top"
+    },
+    {
+      "ref": "D3",
+      "x_mm": 7.5,
+      "y_mm": -4,
+      "width_mm": 2.45,
+      "depth_mm": 0.9499999999999997,
+      "height_mm": 0.8,
+      "side": "top"
+    }
+  ],
+  "connector_edges": [
+    {
+      "ref": "J1",
+      "edge": "west",
+      "x_mm": -3.5,
+      "y_mm": 0,
+      "width_mm": 1.5,
+      "height_mm": 8.5,
+      "needs_cutout": true
+    }
+  ],
+  "keepouts": [],
+  "thermal_hotspots": []
+}
