@@ -75,6 +75,42 @@ Every component needs a unique \`name\`. Anything that appears on the PCB needs 
   <pinheader name="J1" pinCount={4} footprint="pinrow4" pitch="2.54mm" />
   <testpoint name="TP1" footprint="pad" />
 
+### Components are self-closing. Connections are traces, never children.
+
+This is the mistake most often made from React intuition, and it fails quietly enough
+to be worth stating twice: a component **never** wraps child elements describing its
+pins. There is no \`<connection>\`, no \`<pin>\`, no \`<wire>\`. The compiler drops
+unknown elements silently, so a board written that way compiles to a board with no
+connections at all rather than to an error.
+
+  WRONG — invents a child element; the pins end up connected to nothing:
+    <pinheader name="J1" pinCount={2} footprint="pinrow2">
+      <connection pin="1" net="net.VCC" />
+    </pinheader>
+
+  RIGHT — the component is self-closing, and every connection is its own <trace>:
+    <net name="VCC" />
+    <pinheader name="J1" pinCount={2} footprint="pinrow2" pitch="2.54mm" />
+    <trace from=".J1 > .pin1" to="net.VCC" />
+    <trace from=".J1 > .pin2" to="net.GND" />
+
+A trace joins two endpoints. Each is either \`.<ref> > .<port>\` or \`net.<NAME>\`:
+
+    <trace from=".R1 > .pin2" to=".D1 > .anode" />
+    <trace from=".U1 > .VCC"  to="net.V3V3" />
+
+### Prefer <pinheader> to <connector>, and mind the prop types
+
+Both exist, but \`pinheader\` is the one with a stable footprint story. Its pin count is
+\`pinCount\` — a **number in braces**, not a string, and not \`pins\`:
+
+    RIGHT  <pinheader name="J1" pinCount={2} footprint="pinrow2" pitch="2.54mm" />
+    WRONG  <pinheader name="J1" pins="2" footprint="pinrow2" />
+
+A prop the compiler does not recognise is ignored, so \`pins="2"\` produces a header with
+no pins — and then every trace referencing \`.J1 > .pin1\` fails to resolve. The error you
+see is about the traces; the cause is the prop.
+
 Position props (all in mm, all optional but strongly recommended):
   pcbX pcbY pcbRotation  — placement on the board
   schX schY schRotation  — placement on the schematic sheet

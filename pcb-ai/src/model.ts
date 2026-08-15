@@ -221,6 +221,37 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
   // sparsity and bandwidth-bound decode compound. No reasoning switch: this is an
   // instruct-tuned coder and does not emit a <think> block, so `extraBody` stays empty and
   // `extractCode()`'s trace-stripping is simply a no-op on its output.
+  // Nemotron-3-Nano-Omni, NVFP4 — the reviewer tier, and the first local endpoint that
+  // can actually see.
+  //
+  // `vision: true` is the whole point. Every other local endpoint here is text-only, so
+  // `contentOf` swaps the rendered views for a measured-geometry digest and tells the
+  // model in as many words: "You are a text-only model, so the rendered views were not
+  // attached. Do not describe them or claim to have seen them." That substitution is the
+  // right call for a text-only model — one handed an image answers confidently about
+  // something it never received — but it is a workaround for a capability the pipeline
+  // was built around. It renders assembly.png, pcb.png and schematic.png for every board
+  // and has never shown them to a local reviewer. This endpoint is where that changes.
+  //
+  // Pairing it with `coder-next` rather than replacing it is Principle 4 at the model
+  // level: two independent implementations for anything load-bearing. A model reviewing
+  // its own HDL shares its own blind spots, so its agreement is worth very little. A
+  // different family reviewing is a genuinely separate opinion.
+  //
+  // 30B total, 3B active, so it is cheap to keep resident beside the designer: ~22 GB of
+  // weights, and only the routed experts are read per token.
+  nemotron: {
+    envBaseUrl: ["NEMOTRON_BASE_URL"],
+    defaultBaseUrl: "http://localhost:8101/v1",
+    defaultModel: "nemotron-omni",
+    envModel: ["NEMOTRON_MODEL"],
+    envKey: ["NEMOTRON_API_KEY", "LLM_API_KEY"],
+    envVision: "NEMOTRON_VISION",
+    vision: true,
+    timeoutMs: 30 * 60_000,
+    maxRetries: 1,
+    maxTokens: 4000,
+  },
   "coder-next": {
     envBaseUrl: ["CODER_NEXT_BASE_URL", "LLM_BASE_URL"],
     defaultBaseUrl: "http://localhost:8100/v1",
@@ -369,6 +400,19 @@ export async function resolveModel(spec: ModelSpec): Promise<ChatLike> {
       ...(endpoint.maxRetries !== undefined ? { maxRetries: endpoint.maxRetries } : {}),
       ...(endpoint.maxTokens ? { maxTokens: endpoint.maxTokens } : {}),
       ...(Object.keys(extraBody).length ? { modelKwargs: extraBody } : {}),
+      // Stream, even though nothing here consumes tokens incrementally.
+      //
+      // Not for progress — for the connection. A non-streaming request to a local model
+      // is a socket that goes completely silent for as long as generation takes, and
+      // undici (Node's HTTP stack, under the OpenAI SDK) applies a 300s *body* timeout to
+      // exactly that silence. The request is then aborted underneath the SDK and surfaces
+      // as `TimeoutError: Request timed out` — which reads like the 30-minute client
+      // timeout fired, so the obvious fix of raising that timeout does nothing at all.
+      // It cost two full generation runs before the number stopped making sense: 30
+      // minutes configured and confirmed applied, dying at 166s.
+      //
+      // Streaming keeps bytes moving, so the idle window never opens.
+      streaming: true,
       ...spec.kwargs,
     })
     CAPABILITIES.set(model as object, { id: `${provider}:${modelName} @ ${baseURL}`, vision })

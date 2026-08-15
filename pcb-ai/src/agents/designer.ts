@@ -10,6 +10,7 @@ import {
 import { describeBuild } from "../build.ts"
 import { describePhysics, type PhysicsReport } from "../physics/index.ts"
 import { describePartsPlan } from "./parts.ts"
+import { kindsForParts, retrieveForKinds } from "../docs-rag.ts"
 import type { PartsPlan, Verdict } from "../schemas.ts"
 import type { BuildResult } from "../types.ts"
 
@@ -49,6 +50,14 @@ export async function designFromSpec(
   spec: string,
   plan?: PartsPlan,
 ): Promise<string> {
+  // Real documentation for the elements this board actually uses, retrieved from the
+  // docs service. Best-effort: an empty string when it is down or has nothing, and the
+  // prompt below is then exactly what it was before retrieval existed.
+  const docs = await retrieveForKinds(
+    kindsForParts(plan?.parts ?? []),
+    { source: "tscircuit", budgetChars: 6000, perKindChars: 1100 },
+  )
+
   const raw = await askText(
     model,
     SYSTEM,
@@ -58,6 +67,7 @@ export async function designFromSpec(
       `<specification>\n${spec}\n</specification>`,
       "",
       plan ? `<parts_plan>\n${describePartsPlan(plan)}\n</parts_plan>` : "",
+      docs ? `\n${docs}` : "",
     ].join("\n"),
   )
   return extractCode(raw)
