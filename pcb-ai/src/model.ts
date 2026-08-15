@@ -206,6 +206,33 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
   // weights are the floor. This one runs at 0.75 utilisation in ~53 GB, at a 32k context
   // rather than 16k, which is the difference between a designer turn fitting and being
   // truncated mid-file (plan §8.8 measured that turn at 14.3k tokens).
+  // Qwen3-Coder-Next, NVFP4. The intended default for design work on this box.
+  //
+  // 80B total parameters, 3B active — 512 experts, 10 routed plus 1 shared — quantised to
+  // 4-bit. It is chosen for the same reason qwen3.8-27b is being retired: decode here is
+  // bound by memory bandwidth, not arithmetic. Measured on the GB10 mid-generation, the
+  // GPU reported 96% "utilization" while doing 0.6% of its bf16 math; it was waiting on
+  // memory. What sets the token rate is bytes of weights read per token.
+  //
+  //   qwen3.8-27b   dense bf16   ~45 GB/token   3.8 tok/s   (measured, batch 1)
+  //   this model    sparse fp4    ~2 GB/token   see setup/serve_coder_next.sh
+  //
+  // So it is a considerably larger and stronger model that is much faster *here*, because
+  // sparsity and bandwidth-bound decode compound. No reasoning switch: this is an
+  // instruct-tuned coder and does not emit a <think> block, so `extraBody` stays empty and
+  // `extractCode()`'s trace-stripping is simply a no-op on its output.
+  "coder-next": {
+    envBaseUrl: ["CODER_NEXT_BASE_URL", "LLM_BASE_URL"],
+    defaultBaseUrl: "http://localhost:8100/v1",
+    defaultModel: "qwen3-coder-next",
+    envModel: ["CODER_NEXT_MODEL"],
+    envKey: ["CODER_NEXT_API_KEY", "LLM_API_KEY"],
+    envVision: "CODER_NEXT_VISION",
+    vision: false,
+    timeoutMs: 30 * 60_000,
+    maxRetries: 1,
+    maxTokens: 6000,
+  },
   qwen3: {
     envBaseUrl: ["QWEN3_BASE_URL", "LLM_BASE_URL"],
     defaultBaseUrl: "http://localhost:8100/v1",

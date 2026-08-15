@@ -587,6 +587,34 @@ never as edits to a vendored tree, so upstream stays merge-able.
 ## 8. Laguna as the local agent runtime
 The master plan names Laguna S 2.1 NVFP4 as the project's model; this section is the
 PCB-side contract for it. **Everything the agents do runs on the Spark.**
+> **PIVOT #2, 2026-08-15 (later still): Qwen3-Coder-Next (NVFP4) replaces Qwen3.8-27B.**
+> Neither of the first two models was chosen against the constraint that actually governs
+> this box, because nobody had measured it yet. **Decode speed here is set by memory
+> bandwidth, not by compute.** Sampled on the GB10 mid-generation, the GPU reported **96%
+> "utilization" while performing 0.6% of its bf16 arithmetic** — `utilization.gpu` counts
+> *time with a kernel resident*, not capability used, and the kernel was stalled on memory
+> essentially the whole time. The governing quantity is therefore **bytes of weights read
+> per token**:
+>
+> | model | form | bytes/token | tok/s |
+> |---|---|---|---|
+> | Qwen3.8-27B | dense bf16 | ~45 GB | **3.8** (measured, batch 1) |
+> | Qwen3-Coder-Next | sparse NVFP4, 3B of 80B active | ~2 GB | expected ~10x |
+>
+> 172 GB/s of traffic at 3.8 tok/s against the GB10's ~221 GB/s is ~78% of peak — near the
+> practical ceiling, so the dense model was not misconfigured. It was simply the wrong
+> *shape*: no amount of tuning makes a 45 GB/token read faster on a 221 GB/s bus.
+>
+> Qwen3-Coder-Next is **larger** (80B total) and **faster here** (3B active, 4-bit),
+> because sparsity and bandwidth-bound decode compound. It also scores 70.6% on SWE-bench
+> Verified — the best efficiency-per-active-parameter available — and is a *coder* model,
+> which is what both F1 (tscircuit `.tsx`) and F2 (build123d Python) actually need.
+> Served by `setup/serve_coder_next.sh`; endpoint `coder-next` in `src/model.ts`.
+>
+> The lesson worth keeping: the first two model choices were made on memory *footprint*
+> and context length. Footprint decides whether a model fits; **bytes-per-token decides
+> whether it is usable**, and only the second was ever the binding constraint.
+
 > **PIVOT, 2026-08-15 (later the same day): Qwen3.8-27B replaces Laguna as the GPU tier.**
 > Two measured reasons, neither about answer quality. **Memory:** Laguna's checkpoint is
 > 93 GB and vLLM held 97–117 GB of the 121 GB unified pool, so nothing else — Isaac Sim,
