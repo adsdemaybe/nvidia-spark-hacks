@@ -1,0 +1,36 @@
+[project]
+name = "arvr"
+version = "0.1.0"
+description = "STRUCT AR/XR spatial robotics interface (Feat 4 + Feat 5): PLACE, TEACH, REPLAY, FOLLOW, TEST, CORRECT, TWIN."
+requires-python = ">=3.11"
+dependencies = [
+    "ar-contracts",
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+# xr-web is TypeScript, not a uv member. isaac-bridge is Python but has no
+# pyproject.toml yet (blocked on Isaac Sim being installed on the Spark —
+# see STATE.md); un-exclude it once it has real content.
+exclude = ["packages/xr-web", "packages/isaac-bridge"]
+
+[tool.uv.sources]
+ar-contracts = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "websockets>=13.0",
+]
+
+[tool.ruff]
+line-length = 96
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
