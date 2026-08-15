@@ -114,11 +114,16 @@ export function buildGraph(deps: GraphDeps) {
   // ── nodes ────────────────────────────────────────────────────────────────────
 
   async function parts(state: GraphState) {
-    const plan = await selectParts({ model: models.parts, spec: state.spec })
+    const { plan, ruleProblems } = await selectParts({ model: models.parts, spec: state.spec })
     console.log(
       `  parts     ${plan.topology} — ${plan.parts.length} parts, ` +
-        `${plan.rails.length} rail(s)`,
+        `${plan.rails.length} rail(s), ${plan.placement_rules?.length ?? 0} placement rule(s)`,
     )
+    // Malformed rules are reported here, at the cost of nothing, rather than at L3'
+    // after a compile, a route and a solve. They do not block: a bad rule is the plan's
+    // problem to fix on the next pass, and failing the run outright would throw away a
+    // parts plan that may be otherwise sound.
+    for (const problem of ruleProblems) console.log(`            ! ${problem}`)
     for (const p of plan.parts) {
       console.log(`            ${p.ref.padEnd(4)} ${p.value.padEnd(10)} ${p.footprint}`)
     }

@@ -96,3 +96,62 @@ Name real reference designators from the bill of materials. Do not invent rules 
 specification does not ask for: every rule is a gate, and an over-specified board fails
 for reasons nobody asked about.
 `.trim()
+
+/**
+ * Structural validation, run the moment the parts plan arrives.
+ *
+ * The grammar constrains syntax, not sense. A weak model emits well-formed rules that
+ * are nonsense — `opposite_edges` over three parts, an `at_edge` with no edge, a `why`
+ * that says "board edge". None of that is caught by Zod, and waiting for L3' to catch
+ * it means five stages of compiling, routing and solving before anyone learns the plan
+ * was malformed. Principle 3: fail at the earliest, cheapest stage.
+ *
+ * This checks *shape*, which is all a tool can check here. Whether the rule is the
+ * right rule for the specification is the spec reviewer's job.
+ */
+export function validateRules(rules: PlacementRule[]): string[] {
+  const problems: string[] = []
+
+  rules.forEach((rule, i) => {
+    const at = `placement rule ${i + 1} (${rule.kind})`
+
+    if (!rule.refs?.length) {
+      problems.push(`${at}: names no components`)
+      return
+    }
+    if (rule.refs.includes("*") && rule.kind !== "on_layer") {
+      problems.push(`${at}: the "*" wildcard is only meaningful for on_layer`)
+    }
+
+    const exactlyTwo = ["opposite_edges", "adjacent"]
+    if (exactlyTwo.includes(rule.kind) && rule.refs.length !== 2) {
+      problems.push(
+        `${at}: needs exactly two components, got ${rule.refs.length} ` +
+          `(${rule.refs.join(", ")}). Split it into one rule per pair.`,
+      )
+    }
+    if (rule.kind === "in_row" && rule.refs.length < 2) {
+      problems.push(`${at}: needs at least two components to form a row`)
+    }
+    if (rule.kind === "at_edge" && !rule.edge) {
+      problems.push(`${at}: no edge given — use "any" if only proximity matters`)
+    }
+    if (rule.kind === "on_layer" && !rule.layer) {
+      problems.push(`${at}: no layer given`)
+    }
+    if (rule.kind === "in_row" && !rule.axis) {
+      problems.push(`${at}: no axis given — which direction do these line up along?`)
+    }
+    if (rule.kind === "adjacent" && (rule.max_mm == null || rule.max_mm <= 0)) {
+      problems.push(`${at}: needs a positive max_mm — "near" is not a measurement`)
+    }
+    if ((rule.why ?? "").trim().length < 12) {
+      problems.push(
+        `${at}: "why" is ${JSON.stringify(rule.why ?? "")} — state what breaks if this ` +
+          `is not true, so a reviewer can judge whether the rule is worth failing a board for`,
+      )
+    }
+  })
+
+  return problems
+}

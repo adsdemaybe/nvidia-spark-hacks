@@ -11,7 +11,7 @@
 import { askStructured, type ChatLike } from "../model.ts"
 import { FOOTPRINTS } from "../hdl-guide.ts"
 import { PartsPlanSchema, type PartsPlan } from "../schemas.ts"
-import { PLACEMENT_RULE_GUIDANCE } from "../placement/constraints.ts"
+import { PLACEMENT_RULE_GUIDANCE, validateRules } from "../placement/constraints.ts"
 
 const SYSTEM = `
 You are the engineer choosing what a board will be built from, before anyone starts
@@ -61,9 +61,12 @@ Rules:
 ${PLACEMENT_RULE_GUIDANCE}
 `.trim()
 
-export function selectParts(args: { model: ChatLike; spec: string }): Promise<PartsPlan> {
+export async function selectParts(args: {
+  model: ChatLike
+  spec: string
+}): Promise<{ plan: PartsPlan; ruleProblems: string[] }> {
   const { model, spec } = args
-  return askStructured<PartsPlan>(
+  const plan = await askStructured<PartsPlan>(
     model,
     PartsPlanSchema,
     "parts_plan",
@@ -73,6 +76,13 @@ export function selectParts(args: { model: ChatLike; spec: string }): Promise<Pa
       "Choose the topology and the parts for this board.",
     ].join("\n\n"),
   )
+
+  // Structural check on the rules the moment they arrive. Zod guarantees the shape of
+  // each field; it cannot tell that `opposite_edges` was given three components, or
+  // that `why` says "board edge". Catching it here costs milliseconds — catching it at
+  // L3' costs a compile, a route and a solve first.
+  const ruleProblems = validateRules(plan.placement_rules ?? [])
+  return { plan, ruleProblems }
 }
 
 /** Render the plan for the prompts that consume it. */

@@ -101,6 +101,14 @@ Now `placement_rules` sits beside the prose and is machine-checked:
 A rule naming a part that does not exist **fails** rather than being skipped — a typo
 must not silently disable a gate. "No rules" is never reported as "passed".
 
+Rules are also **structurally validated the moment the parts plan arrives**, not at L3'.
+The grammar constrains syntax, not sense: a weak model emits well-formed nonsense —
+`opposite_edges` over three parts, an `at_edge` with no edge, a `why` that reads "board
+edge". Zod cannot see any of that. Catching it at emission costs milliseconds; catching
+it at L3' costs a compile, a route and a solve first. Measured against a real Qwen plan:
+5 rules in, 3 problems out, before anything was built. Whether a rule is the *right* rule
+for the specification remains the spec reviewer's job — a tool can only check shape.
+
 ---
 
 ## Agents
