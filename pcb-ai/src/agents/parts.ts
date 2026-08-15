@@ -66,22 +66,58 @@ export async function selectParts(args: {
   spec: string
 }): Promise<{ plan: PartsPlan; ruleProblems: string[] }> {
   const { model, spec } = args
-  const plan = await askStructured<PartsPlan>(
-    model,
-    PartsPlanSchema,
-    "parts_plan",
-    SYSTEM,
-    [
-      `<specification>\n${spec}\n</specification>`,
-      "Choose the topology and the parts for this board.",
-    ].join("\n\n"),
-  )
+  const ask = (extra: string) =>
+    askStructured<PartsPlan>(
+      model,
+      PartsPlanSchema,
+      "parts_plan",
+      SYSTEM,
+      [
+        `<specification>\n${spec}\n</specification>`,
+        "Choose the topology and the parts for this board.",
+        extra,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    )
 
   // Structural check on the rules the moment they arrive. Zod guarantees the shape of
   // each field; it cannot tell that `opposite_edges` was given three components, or
   // that `why` says "board edge". Catching it here costs milliseconds — catching it at
   // L3' costs a compile, a route and a solve first.
-  const ruleProblems = [...validateRules(plan.placement_rules ?? []), ...validateRefs(plan)]
+  const check = (p: PartsPlan) => [...validateRules(p.placement_rules ?? []), ...validateRefs(p)]
+
+  let plan = await ask("")
+  let ruleProblems = check(plan)
+
+  // One retry, with the problems quoted back.
+  //
+  // The plan is built once, before any iteration, so a problem found here was previously
+  // printed and then carried unchanged through every downstream stage — a check nobody
+  // acts on, which is worse than no check because it reads like one. A hand made that
+  // visible: the first five-channel plan collapsed fifteen parts into three ranged rows,
+  // and the loop had no way to say so before the HDL was written against it.
+  //
+  // One retry rather than a loop: these are structural mistakes with a stated fix, so a
+  // model that does not take the correction the first time is not going to take it the
+  // third, and the plan stage is not where a budget should be spent.
+  if (ruleProblems.length) {
+    const retry = await ask(
+      [
+        "The plan you just produced has structural problems. Fix exactly these and return",
+        "the whole plan again, keeping every choice that was not at fault:",
+        ...ruleProblems.map((p) => `  - ${p}`),
+      ].join("\n"),
+    )
+    const retryProblems = check(retry)
+    // Keep the better one. A retry that fixes two of three is still progress; one that
+    // introduces more is not, and silently preferring the newer answer would hide that.
+    if (retryProblems.length < ruleProblems.length) {
+      plan = retry
+      ruleProblems = retryProblems
+    }
+  }
+
   return { plan, ruleProblems }
 }
 
@@ -124,10 +160,17 @@ export function validateRefs(plan: PartsPlan): string[] {
       )
       continue
     }
-    if (!/^[A-Za-z]{1,3}[0-9]+$/.test(ref)) {
+    // Letter first, digit last, letters/digits/underscore between. Deliberately looser
+    // than the IPC letter-then-number convention: on a five-channel board the model
+    // reaches for `J_SERVO1`, and that is *more* readable than `J3`, not less. What the
+    // rule actually enforces is the part that matters — a trailing index, so two of the
+    // same thing can be told apart. `FUSE` and `R_SNC` fail for that reason and only that
+    // reason: add a second fuse and nothing distinguishes them.
+    if (!/^[A-Za-z][A-Za-z0-9_]*[0-9]$/.test(ref)) {
       problems.push(
-        `part ref "${ref}" is not a reference designator. Expected letters then digits, ` +
-          `e.g. R1, C12, U3, J5.`,
+        `part ref "${ref}" has no index. A designator ends in a number so a second one ` +
+          `can be told from the first — write ${ref.replace(/[^A-Za-z0-9_]/g, "")}1 ` +
+          `(or R1, C12, U3, J_SERVO1).`,
       )
       continue
     }
