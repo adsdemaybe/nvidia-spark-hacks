@@ -76,7 +76,7 @@ export class StubChatModel {
                 {
                   kind: "at_edge",
                   refs: ["J1"],
-                  edge: "left",
+                  edge: "west",
                   layer: null,
                   max_mm: null,
                   axis: null,

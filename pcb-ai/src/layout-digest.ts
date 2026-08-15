@@ -168,31 +168,38 @@ export function describeLayout(build: BuildResult): string {
     // Naming the edge, not just the distance. "J2 is 4.42 mm from an edge" does not tell
     // a reviewer that J1 and J2 are on the *same* side when the spec wanted opposite
     // ones — which is a defect that routes, simulates and fabricates perfectly well.
-    out.push("CONNECTOR ACCESS  which edge each connector sits on, and its clearance:")
+    out.push(
+      "CONNECTOR ACCESS  which outline edge each connector sits on (compass points; " +
+        "the copper side is reported separately), and its clearance:",
+    )
     for (const c of connectors) {
+      // Compass points, matching src/placement/check.ts and src/cad/contracts.ts.
+      // "top"/"bottom" are reserved for the copper side a part is soldered to; using
+      // them for edges too is what made an earlier report misread as "the connectors
+      // are on the bottom of the board".
       const gaps: Record<string, number> = {
-        left: c.court.cx - c.court.w / 2 - (bx - halfW),
-        right: bx + halfW - (c.court.cx + c.court.w / 2),
-        bottom: c.court.cy - c.court.h / 2 - (by - halfH),
-        top: by + halfH - (c.court.cy + c.court.h / 2),
+        west: c.court.cx - c.court.w / 2 - (bx - halfW),
+        east: bx + halfW - (c.court.cx + c.court.w / 2),
+        south: c.court.cy - c.court.h / 2 - (by - halfH),
+        north: by + halfH - (c.court.cy + c.court.h / 2),
       }
-      let nearest = "left"
+      let nearest = "west"
       for (const e of Object.keys(gaps)) if (gaps[e] < gaps[nearest]) nearest = e
       const verdict = gaps[nearest] <= 2 ? "at edge" : gaps[nearest] <= 10 ? "near edge" : "INTERIOR"
       out.push(
         `  ${c.name.padEnd(8)} ${nearest.padEnd(6)} edge  ${mm(gaps[nearest]).padStart(7)} mm  ${verdict}` +
-          `   (L ${mm(gaps.left)} R ${mm(gaps.right)} T ${mm(gaps.top)} B ${mm(gaps.bottom)})`,
+          `   (N ${mm(gaps.north)} S ${mm(gaps.south)} E ${mm(gaps.east)} W ${mm(gaps.west)})`,
       )
     }
     const sides = new Set(
       connectors.map((c) => {
         const g: Record<string, number> = {
-          left: c.court.cx - c.court.w / 2 - (bx - halfW),
-          right: bx + halfW - (c.court.cx + c.court.w / 2),
-          bottom: c.court.cy - c.court.h / 2 - (by - halfH),
-          top: by + halfH - (c.court.cy + c.court.h / 2),
+          west: c.court.cx - c.court.w / 2 - (bx - halfW),
+          east: bx + halfW - (c.court.cx + c.court.w / 2),
+          south: c.court.cy - c.court.h / 2 - (by - halfH),
+          north: by + halfH - (c.court.cy + c.court.h / 2),
         }
-        return Object.keys(g).reduce((a, b) => (g[b] < g[a] ? b : a), "left")
+        return Object.keys(g).reduce((a, b) => (g[b] < g[a] ? b : a), "west")
       }),
     )
     if (connectors.length > 1 && sides.size === 1) {

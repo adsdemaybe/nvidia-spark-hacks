@@ -40,10 +40,10 @@ const mm = (n: number) => (Math.round(n * 100) / 100).toFixed(2)
 
 /** Which edge is opposite which. */
 const OPPOSITE: Record<Edge, Edge> = {
-  left: "right",
-  right: "left",
-  top: "bottom",
-  bottom: "top",
+  north: "south",
+  south: "north",
+  east: "west",
+  west: "east",
 }
 
 const DEFAULT_EDGE_TOLERANCE_MM = 3
@@ -75,12 +75,12 @@ export function extractPlacement(circuitJson: any[]): PlacedPart[] {
     const h = court ? court.height : c.height
 
     const gaps: Record<Edge, number> = {
-      left: cx - w / 2 - (bx - halfW),
-      right: bx + halfW - (cx + w / 2),
-      bottom: cy - h / 2 - (by - halfH),
-      top: by + halfH - (cy + h / 2),
+      west: cx - w / 2 - (bx - halfW),
+      east: bx + halfW - (cx + w / 2),
+      south: cy - h / 2 - (by - halfH),
+      north: by + halfH - (cy + h / 2),
     }
-    let nearest: Edge = "left"
+    let nearest: Edge = "west"
     for (const e of EDGES) if (gaps[e] < gaps[nearest]) nearest = e
 
     return {
@@ -281,12 +281,12 @@ export function describePlacement(report: PlacementReport): string {
   if (connectors.length) {
     lines.push(
       "",
-      "  which OUTLINE EDGE each connector sits near (in-plane; not the copper side):",
+      "  which OUTLINE EDGE each connector sits near — compass points, not copper side:",
     )
     for (const c of connectors) {
       lines.push(
         `    ${c.ref.padEnd(6)} ${c.nearest.padEnd(6)} edge, ${mm(c.nearestGap).padStart(7)} mm clear` +
-          `   (left ${mm(c.gaps.left)}, right ${mm(c.gaps.right)}, top ${mm(c.gaps.top)}, bottom ${mm(c.gaps.bottom)})`,
+          `   (N ${mm(c.gaps.north)}, S ${mm(c.gaps.south)}, E ${mm(c.gaps.east)}, W ${mm(c.gaps.west)})`,
       )
     }
   }

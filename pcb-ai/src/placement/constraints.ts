@@ -25,15 +25,24 @@
 import { z } from "zod"
 
 /**
- * The four edges of the board OUTLINE, in the XY plane.
+ * The four edges of the board OUTLINE, named by compass point.
  *
- * Note the vocabulary trap, which has already caused one misreading: "top" and "bottom"
- * mean two unrelated things in PCB work. Here they are *edges of the rectangle* —
- * y-max and y-min. The copper **side** a part is soldered to is `layer`, and it uses
- * the same two words for a completely different axis. Every human-facing message says
- * which one it means.
+ * This started as left/right/top/bottom and caused a real misreading: "top" and
+ * "bottom" mean two unrelated things in PCB work — an edge of the rectangle in plane,
+ * and the copper face a part is soldered to. A report saying "J5 bottom edge" was read
+ * as "J5 is on the bottom of the board", which is a different axis entirely. Prose
+ * disambiguation helps and is still there; sharing the words at all was the mistake.
+ *
+ * `src/cad/contracts.ts` had already got this right — `Edge = north|south|east|west`
+ * beside `Side = top|bottom` — so this adopts that convention rather than inventing a
+ * third. Two modules in one directory disagreeing about vocabulary is worse than either
+ * choice.
+ *
+ *   north = y-max    south = y-min    east = x-max    west = x-min
+ *
+ * The copper side stays `layer: top | bottom`, and now cannot be confused with an edge.
  */
-export const EDGES = ["left", "right", "top", "bottom"] as const
+export const EDGES = ["north", "south", "east", "west"] as const
 export type Edge = (typeof EDGES)[number]
 
 export const PlacementRuleSchema = z.object({
@@ -62,12 +71,13 @@ export const PlacementRuleSchema = z.object({
   // silently against the offline stub. A field that does not apply to a given rule is
   // emitted as null.
   edge: z
-    .enum(["left", "right", "top", "bottom", "any"])
+    .enum(["north", "south", "east", "west", "any"])
     .nullable()
     .describe(
-      "For at_edge/same_edge: which edge of the board outline in the XY plane " +
-        "(top = y-max, bottom = y-min), or 'any' when only proximity matters. " +
-        "This is NOT the copper side — that is `layer`. null for every other rule kind.",
+      "For at_edge/same_edge: which edge of the board outline, by compass point — " +
+        "north = y-max, south = y-min, east = x-max, west = x-min — or 'any' when only " +
+        "proximity matters. Compass points deliberately avoid top/bottom, which name " +
+        "the copper side (`layer`), not an edge. null for every other rule kind.",
     ),
   layer: z
     .enum(["top", "bottom"])

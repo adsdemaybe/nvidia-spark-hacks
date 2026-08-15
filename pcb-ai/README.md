@@ -283,10 +283,10 @@ npx tsx tools/placement-check.ts runs/<dir>/iter-0/circuit.json    # just report
 
 | Rule | Checks |
 |---|---|
-| `at_edge(refs, edge, max_mm)` | the part sits against a named edge, or any edge |
+| `at_edge(refs, edge, max_mm)` | the part sits against a named **outline edge** (`north`/`south`/`east`/`west`), or any |
 | `opposite_edges(a, b)` | the two are on **opposing** sides, and both really at an edge |
 | `same_edge(refs, edge)` | parts share one edge |
-| `on_layer(refs or ["*"], layer)` | nothing is on the wrong side of the board |
+| `on_layer(refs or ["*"], layer)` | nothing is on the wrong **copper side** (`top`/`bottom`) |
 | `adjacent(a, b, max_mm)` | decoupling against the pin it serves |
 | `in_row(refs, axis, max_mm)` | indicator LEDs actually line up |
 
@@ -297,9 +297,9 @@ that emitted none is called out as unchecked.
 Verified on the rover — asserting the two headers belong on opposite edges:
 
 ```
-[opposite_edges] J1 is on the left edge and J2 is on the left edge
-                 — both on the same side, not opposite ones.
-[at_edge]        SW1 is 16.50 mm from its nearest edge (left), limit 3.00 mm
+[opposite_edges] J1 is on the west edge and J2 is on the west edge
+                 — both against the same edge, not opposing ones.
+[at_edge]        SW1 is 16.50 mm from its nearest edge (west), limit 3.00 mm
                  — it is sitting in the interior.
 ```
 

@@ -91,15 +91,24 @@ Now `placement_rules` sits beside the prose and is machine-checked:
 
 | Rule | Checks |
 |---|---|
-| `at_edge(refs, edge, max_mm)` | part sits against a named edge, or any edge |
+| `at_edge(refs, edge, max_mm)` | part sits against a named **outline edge** (`north`/`south`/`east`/`west`), or any |
 | `opposite_edges(a, b)` | the two are on **opposing** sides, and both really at an edge |
 | `same_edge(refs, edge)` | parts share one edge |
-| `on_layer(refs \| ["*"], layer)` | nothing on the wrong side of the board |
+| `on_layer(refs \| ["*"], layer)` | nothing on the wrong **copper side** (`top`/`bottom`) — only emit if the spec asks for single-sided assembly |
 | `adjacent(a, b, max_mm)` | decoupling against the pin it serves |
 | `in_row(refs, axis, max_mm)` | indicator LEDs actually line up |
 
 A rule naming a part that does not exist **fails** rather than being skipped — a typo
 must not silently disable a gate. "No rules" is never reported as "passed".
+
+**Outline edges are compass points; the copper side is top/bottom.** These are different
+axes and must not share words: an edge is where a part sits *in plane*, a side is which
+*face* it is soldered to. Reports that said "bottom edge" were read as "on the bottom of
+the board". `src/cad/contracts.ts` already used `north|south|east|west` beside
+`top|bottom`, so the placement grammar adopts that rather than inventing a third
+vocabulary. A part on the bottom copper side is a normal design choice — bottom-side
+connectors are common — and is only a defect when the specification asks for
+single-sided assembly.
 
 Rules are also **structurally validated the moment the parts plan arrives**, not at L3'.
 The grammar constrains syntax, not sense: a weak model emits well-formed nonsense —
