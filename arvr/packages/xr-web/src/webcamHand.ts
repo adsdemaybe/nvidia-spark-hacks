@@ -138,11 +138,17 @@ export interface ControlVolumeBounds {
 }
 
 /** Recentered on this fixture scene's actual reachable geometry -- see
- * module docstring's axis note. Not the spec's literal example numbers. */
+ * module docstring's axis note. Not the spec's literal example numbers.
+ *
+ * First live test (real camera, real user) found the original yMax=-0.05
+ * fell short of the button (struct Y=0.0) entirely -- the arm could only
+ * ever bend back toward the robot base (Y=-0.7), never forward far enough
+ * to reach the button, regardless of hand motion. Widened to comfortably
+ * cross past the button on all three axes. */
 export const DEFAULT_CONTROL_VOLUME: ControlVolumeBounds = {
-  xMin: 0.05, xMax: 0.45,
-  yMin: -0.55, yMax: -0.05,
-  zMin: 0.4, zMax: 0.8,
+  xMin: 0.0, xMax: 0.5,
+  yMin: -0.6, yMax: 0.15,
+  zMin: 0.35, zMax: 0.85,
 };
 
 // relative_mediapipe depth strategy (spec's default): the wrist's raw,
