@@ -1,0 +1,21 @@
+{
+  "task_type": "pick_and_place",
+  "instruction": "Pick up the red bottle and place it into the right basket.",
+  "summary": "A hand approaches a red bottle, grasps it, lifts it, transports it to a basket on the right, and releases it.",
+  "objects": [
+    {"id": "bottle_1", "label": "red bottle", "role": "manipulated_object", "attributes": {"color": "red"}},
+    {"id": "basket_1", "label": "basket", "role": "target", "attributes": {"position": "right"}}
+  ],
+  "timeline": [
+    {"start_s": 0.0, "end_s": 1.2, "phase": "approach", "description": "Hand approaches the bottle.", "object_ids": ["bottle_1"]},
+    {"start_s": 1.2, "end_s": 2.0, "phase": "grasp", "description": "Hand closes around the bottle.", "object_ids": ["bottle_1"]},
+    {"start_s": 2.0, "end_s": 3.1, "phase": "lift", "description": "Bottle is lifted off the surface.", "object_ids": ["bottle_1"]},
+    {"start_s": 3.1, "end_s": 5.8, "phase": "transport", "description": "Bottle is carried toward the basket.", "object_ids": ["bottle_1", "basket_1"]},
+    {"start_s": 5.8, "end_s": 6.4, "phase": "release", "description": "Hand opens and releases the bottle into the basket.", "object_ids": ["bottle_1", "basket_1"]}
+  ],
+  "spatial_relations": [
+    {"time_s": 6.4, "subject_id": "bottle_1", "relation": "inside", "object_id": "basket_1"}
+  ],
+  "success_condition": "red bottle is inside the target basket",
+  "ambiguity_notes": []
+}

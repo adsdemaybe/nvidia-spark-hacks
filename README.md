@@ -20,6 +20,7 @@ One rule runs through all of it:
 | [`rag/`](rag/) | **Docs retrieval** over tscircuit and build123d, so agents write the real API instead of a plausible one. |
 | [`realsim/`](realsim/) | F3: one phone video → 8 validated digital-cousin simulation scenes. Start at [`realsim/STATE.md`](realsim/STATE.md). |
 | [`ar-vr/`](ar-vr/) | F5: WebXR / hand-tracking teleoperation against the SO-101. |
+| [`packages/cosmos-vss/`](packages/cosmos-vss/) | F6: standalone semantic video understanding. Watches a recorded demonstration independently of F5's hand/object capture and produces a `SemanticEpisode` sidecar — task type, objects, phase timeline, success condition — joined later by `episode_id`, never merged into F5's pipeline. See [`COSMOS_VSS.md`](COSMOS_VSS.md). |
 | [`setup/`](setup/) | Model serving, OpenShell, and box configuration. |
 
 Plans: [`master-example.md`](master-example.md) — the end-to-end demo, from one prompt to a robot hand picking up a cup in VR ·

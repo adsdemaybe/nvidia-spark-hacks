@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>COSMOS / VSS debug panel</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background: #111; color: #eee; }
+  header { padding: 0.75rem 1rem; border-bottom: 1px solid #333; font-weight: 600; letter-spacing: 0.02em; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem; }
+  .panel { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 1rem; }
+  video { width: 100%; background: #000; border-radius: 4px; }
+  h3 { margin: 0 0 0.4rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: #9ad; }
+  .row { margin-bottom: 0.9rem; }
+  .objects li, .notes li { margin: 0.15rem 0; }
+  .timeline { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 1rem; margin: 0 1rem 1rem; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; }
+  .phase { padding: 0.25rem 0.6rem; border-radius: 999px; background: #243; font-size: 0.85rem; }
+  footer { padding: 0.6rem 1rem; border-top: 1px solid #333; font-size: 0.85rem; color: #9ad; display: flex; gap: 1.5rem; }
+  input[type=file] { color: #eee; }
+  button { background: #2a5; border: none; color: #fff; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; color: #ccc; }
+  .status-ok { color: #7d7; }
+  .status-bad { color: #d77; }
+</style>
+</head>
+<body>
+<header>COSMOS / VSS — ROBOT DEMONSTRATION UNDERSTANDING</header>
+<main>
+  <div class="panel">
+    <h3>Video</h3>
+    <input id="file" type="file" accept="video/*" />
+    <div class="row"><input id="episodeId" placeholder="episode_id (optional)" style="width:100%;margin-top:0.5rem;" /></div>
+    <button id="run">Analyze</button>
+    <video id="preview" controls></video>
+  </div>
+  <div class="panel">
+    <div class="row"><h3>Task</h3><div id="task">—</div></div>
+    <div class="row"><h3>Instruction</h3><div id="instruction">—</div></div>
+    <div class="row"><h3>Objects</h3><ul id="objects" class="objects"></ul></div>
+    <div class="row"><h3>Success condition</h3><div id="success">—</div></div>
+    <div class="row"><h3>Ambiguity notes</h3><ul id="notes" class="notes"></ul></div>
+  </div>
+</main>
+<div class="timeline" id="timeline"><span style="color:#777">No analysis yet.</span></div>
+<footer>
+  <span>Backend: <strong id="backend">—</strong></span>
+  <span>Model: <strong id="model">—</strong></span>
+  <span id="ready">—</span>
+</footer>
+<script>
+async function refreshHealth() {
+  try {
+    const r = await fetch("/health");
+    const h = await r.json();
+    document.getElementById("backend").textContent = h.backend;
+    document.getElementById("model").textContent = h.model;
+    const readyEl = document.getElementById("ready");
+    readyEl.textContent = h.backend_ready ? "READY" : "NOT READY";
+    readyEl.className = h.backend_ready ? "status-ok" : "status-bad";
+  } catch (e) {
+    document.getElementById("ready").textContent = "UNREACHABLE";
+  }
+}
+
+document.getElementById("file").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) document.getElementById("preview").src = URL.createObjectURL(f);
+});
+
+document.getElementById("run").addEventListener("click", async () => {
+  const fileInput = document.getElementById("file");
+  const file = fileInput.files[0];
+  if (!file) { alert("choose a video first"); return; }
+  const episodeId = document.getElementById("episodeId").value.trim();
+
+  const btn = document.getElementById("run");
+  btn.disabled = true;
+  btn.textContent = "Analyzing…";
+
+  const form = new FormData();
+  form.append("file", file);
+  if (episodeId) form.append("episode_id", episodeId);
+
+  try {
+    const resp = await fetch("/analyze/video", { method: "POST", body: form });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : resp.statusText);
+    render(data);
+  } catch (err) {
+    alert("Analysis failed: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Analyze";
+  }
+});
+
+function render(ep) {
+  document.getElementById("task").textContent = ep.task_type;
+  document.getElementById("instruction").textContent = ep.instruction;
+  document.getElementById("success").textContent = ep.success_condition || "(none reported)";
+
+  const objects = document.getElementById("objects");
+  objects.innerHTML = "";
+  for (const o of ep.objects) {
+    const li = document.createElement("li");
+    li.textContent = `${o.label} → ${o.role}`;
+    objects.appendChild(li);
+  }
+
+  const notes = document.getElementById("notes");
+  notes.innerHTML = "";
+  for (const n of ep.ambiguity_notes) {
+    const li = document.createElement("li");
+    li.textContent = n;
+    notes.appendChild(li);
+  }
+  if (ep.ambiguity_notes.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "(none)";
+    notes.appendChild(li);
+  }
+
+  const timeline = document.getElementById("timeline");
+  timeline.innerHTML = "";
+  for (const p of ep.timeline) {
+    const span = document.createElement("span");
+    span.className = "phase";
+    span.textContent = `${p.start_s.toFixed(1)}s ${p.phase}`;
+    timeline.appendChild(span);
+  }
+}
+
+refreshHealth();
+</script>
+</body>
+</html>
