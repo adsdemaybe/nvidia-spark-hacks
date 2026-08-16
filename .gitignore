@@ -35,3 +35,7 @@ cad-generation/enclosures/
 models/
 *.safetensors
 *.gguf
+
+# Cosmos/VSS semantic sidecar artifacts — generated per run (COSMOS_VSS.md §4/§6).
+artifacts/semantic/*
+!artifacts/semantic/.gitkeep
