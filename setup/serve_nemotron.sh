@@ -55,6 +55,8 @@ docker run -d --name "$CONTAINER" \
     --port "$PORT" \
     --max-model-len "$MAXLEN" \
     --gpu-memory-utilization "$UTIL" \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes \
     --trust-remote-code
 
 echo "started $CONTAINER; waiting for /v1/models on :$PORT"

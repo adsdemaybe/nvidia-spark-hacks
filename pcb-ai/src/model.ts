@@ -241,6 +241,14 @@ const LOCAL_ENDPOINTS: Record<string, LocalEndpoint> = {
   // 30B total, 3B active, so it is cheap to keep resident beside the designer: ~22 GB of
   // weights, and only the routed experts are read per token.
   nemotron: {
+    // Same failure Coder-Next had, found the same way: a structured-output call
+    // degenerated into thousands of repeated whitespace tokens inside a JSON string,
+    // exhausted its budget mid-value, and died with OUTPUT_PARSING_FAILURE. The
+    // repetition_penalty fix for Coder-Next was never carried to this endpoint, so the
+    // first structured call the integration reviewer made hit it immediately. 1.05 is
+    // the same mild value: enough to break a degenerate repeat, not enough to discourage
+    // the legitimately repetitive text of a component list.
+    extraBody: { repetition_penalty: 1.05 },
     envBaseUrl: ["NEMOTRON_BASE_URL"],
     defaultBaseUrl: "http://localhost:8101/v1",
     defaultModel: "nemotron-omni",

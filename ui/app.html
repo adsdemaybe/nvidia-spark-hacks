@@ -100,20 +100,16 @@ main{grid-area:main;min-width:0;min-height:0;overflow:hidden;position:relative}
 label{display:block;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
   color:var(--ink-3);margin:0 0 6px}
 .field+.field{margin-top:14px}
-textarea,select,input{width:100%;background:var(--sunk);color:var(--ink);border:1px solid var(--line);
+textarea{width:100%;background:var(--sunk);color:var(--ink);border:1px solid var(--line);
   border-radius:7px;padding:9px 10px;font:13px/1.5 var(--ui);outline:none}
 textarea{min-height:180px;resize:vertical;font-family:var(--mono);font-size:12.5px}
-textarea:focus,select:focus,input:focus{border-color:var(--accent);
+textarea:focus{border-color:var(--accent);
   box-shadow:0 0 0 3px color-mix(in oklab,var(--accent) 16%,transparent)}
-.two{display:grid;grid-template-columns:1fr 92px;gap:10px}
 button.go{margin-top:16px;width:100%;background:var(--accent);color:var(--accent-ink);border:0;
   border-radius:7px;padding:11px;font:600 14px var(--ui);cursor:pointer;transition:filter .15s}
 button.go:hover{filter:brightness(1.08)}
 button.go[disabled]{opacity:.55;cursor:progress}
-.presets{margin-top:16px}
-.presets button{display:block;width:100%;text-align:left;background:none;border:1px solid var(--line);
-  border-radius:7px;padding:8px 10px;margin-top:6px;color:var(--ink-2);font:13px var(--ui);cursor:pointer}
-.presets button:hover{border-color:var(--accent);color:var(--ink)}
+.hint{margin:14px 0 0;font-size:12.5px;color:var(--ink-3);line-height:1.55}
 
 .stream{display:flex;flex-direction:column;min-height:0}
 .stagebar{display:flex;align-items:center;gap:7px;padding:10px 16px;border-bottom:1px solid var(--line);
@@ -229,27 +225,9 @@ tr:last-child td{border-bottom:0}
           <label for="spec">Specification</label>
           <textarea id="spec" placeholder="A small board with two status LEDs a microcontroller can drive over a 2-pin header, powered from 3V3."></textarea>
         </div>
-        <div class="field two">
-          <div>
-            <label for="model">Model</label>
-            <select id="model">
-              <option value="coder-next">coder-next</option>
-              <option value="nemotron">nemotron</option>
-              <option value="stub">stub</option>
-            </select>
-          </div>
-          <div>
-            <label for="iters">Iters</label>
-            <input id="iters" type="number" min="0" max="8" value="3"/>
-          </div>
-        </div>
         <button class="go" id="go">Design it</button>
-        <div class="presets">
-          <label>Start from</label>
-          <button data-spec="A small board with two status LEDs a microcontroller can drive over a 2-pin header, powered from 3V3. Keep it under 25x20mm.">Two-LED indicator</button>
-          <button data-spec="A power distribution board: 2S LiPo in on a 2-pin header, reverse-polarity protection with a P-FET, bulk capacitance for four motors starting together, and three fan-out headers.">Power distribution</button>
-          <button data-spec="A hand servo driver: VBAT in on a 2-pin header, five 3-pin servo headers in a row with signal/V+/GND pin order, PWM in on a 6-pin header, and bulk capacitance for five servos starting together. 46x30mm.">Hand servo driver</button>
-        </div>
+        <p class="hint">F1 designs and gates the board, then F2 fits an enclosure to it.
+        Each iteration appears on the right with what changed and whether it helped.</p>
       </div>
 
       <div class="stream">
@@ -509,7 +487,6 @@ $('#t-play').onclick = () => { $('#t-play').classList.add('on'); $('#t-raw').cla
   $('#timeline').hidden = false; $('#log').hidden = true; };
 $('#t-raw').onclick = () => { $('#t-raw').classList.add('on'); $('#t-play').classList.remove('on');
   $('#timeline').hidden = true; $('#log').hidden = false; };
-$$('.presets button').forEach(b => b.onclick = () => { $('#spec').value = b.dataset.spec; $('#spec').focus(); });
 
 $('#go').onclick = async () => {
   const spec = $('#spec').value.trim();
@@ -520,7 +497,10 @@ $('#go').onclick = async () => {
   $('#go').disabled = true; $('#go').textContent = 'Designing…';
 
   const res = await fetch('/run', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({spec, model:$('#model').value, iterations:+$('#iters').value})});
+    // No model picker and no iteration spinner: the server's defaults are the right
+    // answer for everyone who is not debugging the pipeline, and a prompt box with three
+    // knobs beside it asks the user to have an opinion they do not have.
+    body: JSON.stringify({spec})});
   const {id, error} = await res.json();
   if (error){ $('#go').disabled = false; $('#go').textContent = 'Design it'; return; }
 

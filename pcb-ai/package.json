@@ -5,10 +5,10 @@
   "type": "module",
   "description": "LangGraph PCB design loop: HDL generation, physics solvers, multi-agent review, model-agnostic",
   "scripts": {
-    "design": "tsx src/cli.ts",
+    "design": "node --env-file-if-exists=.env node_modules/.bin/tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
-    "stub": "tsx src/cli.ts --model stub",
-    "cad:check": "tsx src/cad/integration-check.ts",
+    "stub": "node --env-file-if-exists=.env node_modules/.bin/tsx src/cli.ts --model stub",
+    "cad:check": "node --env-file-if-exists=.env node_modules/.bin/tsx src/cad/integration-check.ts",
     "cad:serve": "../cad-generation/engine/.venv/bin/python -m cad_api.service"
   },
   "dependencies": {

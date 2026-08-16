@@ -62,6 +62,13 @@ CAD_DESIGNS = ROOT / "cad-generation" / "designs"
 
 CAD_API = os.environ.get("CAD_API_URL", "http://127.0.0.1:8210")
 
+# `node --env-file-if-exists=pcb-ai/.env`, not `npx tsx`. This console is a long-running
+# systemd service, so it never inherits the API key from a shell someone typed `export`
+# into — that env-file is the only way the key reaches it. `--env-file-if-exists` is a
+# builtin flag on Node 24 (which this repo already requires), so a run on a machine with
+# no .env is silent and unaffected rather than failing on a missing file.
+TSX = ["node", "--env-file-if-exists=.env", "node_modules/.bin/tsx"]
+
 # `tab` entries get a framed pane; the rest are status-only, because an API with no page
 # in it has nothing to show and pretending otherwise wastes a tab.
 SERVICES = [
@@ -281,7 +288,7 @@ def _pipeline(run: Run) -> None:
         (outdir / "spec.md").write_text(run.spec, encoding="utf8")
 
         rc = _stream_command(run, "F1 — board", [
-            "npx", "tsx", "src/cli.ts", "--spec", str(outdir / "spec.md"),
+            *TSX, "src/cli.ts", "--spec", str(outdir / "spec.md"),
             "--model", run.model, "--iterations", str(run.iterations),
             "--out", str(outdir),
         ], PCB)
@@ -298,7 +305,7 @@ def _pipeline(run: Run) -> None:
             return
 
         _stream_command(run, "F2 — enclosure",
-                        ["npx", "tsx", "src/cad/integration-check.ts", str(circuit)], PCB)
+                        [*TSX, "src/cad/integration-check.ts", str(circuit)], PCB)
         run.emit(f"{STAGE}done")
     except Exception as exc:  # noqa: BLE001 — a crash here must still close the stream
         run.emit(f"!! console error: {type(exc).__name__}: {exc}")

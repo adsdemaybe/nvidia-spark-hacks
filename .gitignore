@@ -35,3 +35,10 @@ cad-generation/enclosures/
 models/
 *.safetensors
 *.gguf
+
+# API keys. `.env.example` is the template and is tracked; `.env` is where a real key
+# goes and must never be. This line has to exist *before* any real `.env` is written —
+# an untracked-ignore-rule race is exactly how a key ends up in a commit.
+.env
+.env.*
+!.env.example
