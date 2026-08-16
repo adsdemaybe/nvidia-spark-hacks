@@ -10,6 +10,44 @@ One rule runs through all of it:
 > and when a model and a measurement disagree, the measurement is right and the question is
 > why the model was wrong.
 
+## Quick start
+
+Everything runs **on the GB10**, and one command sets up and serves the whole stack. It
+provisions once, then downloads and serves a **single LLM — Nemotron-3.5-Lightning
+(NVFP4, ~21 GB)** — on one endpoint that every part of the pipeline talks to.
+
+```bash
+# 0. one-time box provisioning (apt, docker, uv venvs, node, infra compose)
+setup/setup_spark.sh
+
+# 1. the whole stack: download the model, serve it, start runtime + console
+setup/quickstart.sh
+```
+
+Then open the console it prints — `http://<this-box>:8600/` (or over an SSH tunnel:
+`ssh -L 8600:localhost:8600 spark`).
+
+**One model, one endpoint.** The stack serves a single global LLM, Nemotron-3.5-Lightning,
+on **:8100**. It answers to every legacy served-model-name the code still asks for
+(`qwen3-coder-next`, `qwen3.8-27b`, `nemotron-omni`, `laguna-nvfp4`), so nothing else has
+to change. Lightning is text-only; if you need the multimodal vision reviewer, bring
+`setup/serve_nemotron.sh` (Nemotron-3-Nano-Omni) back up on :8101.
+
+The scripts, individually (all idempotent, all in [`setup/`](setup/)):
+
+| script | what it does | port(s) |
+|---|---|---|
+| [`setup/get_model.sh`](setup/get_model.sh) | download **only** Nemotron-3.5-Lightning (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4`) into `~/models/` | — |
+| [`setup/serve_llm.sh`](setup/serve_llm.sh) | serve it as the one global LLM (vLLM, NVFP4, tool-calling) | 8100 |
+| [`setup/setup_runtime.sh`](setup/setup_runtime.sh) | infra (postgres/redis/minio) + CAD API + docs RAG | 5432/6379/9000, 8210, 8220 |
+| [`setup/setup_frontend.sh`](setup/setup_frontend.sh) | the console (whole pipeline in one page) | 8600 |
+| [`setup/quickstart.sh`](setup/quickstart.sh) | all of the above, in order | — |
+
+GPU memory is the binding constraint on this box (see "Models"): only one LLM fits at a
+time, which is the other reason the stack serves exactly one. To hand memory to Isaac
+Sim/Lab and bring the LLM back afterward, wrap the run in
+[`setup/gpu_mem_broker.sh`](setup/gpu_mem_broker.sh).
+
 ## Features
 
 | dir | what |
@@ -96,7 +134,7 @@ ones come first, headed by three battery internal resistances that nothing else 
 model is as sensitive to.
 
 **The AI design loop completes.** Four iterations, every stage, three reviewers, verdicts,
-applied revisions, clean exit — against Qwen3-Coder-Next running locally. It had never
+applied revisions, clean exit — against Nemotron-3.5-Lightning running locally. It had never
 finished a single iteration before two fixes landed: a `repetition_penalty`, because the
 model was emitting `\t\t\t\n` thousands of times inside a JSON string until it ran out of
 budget; and a rule against writing `"` inside a field, because `a standard 0.1" header`
@@ -144,8 +182,8 @@ Everything is local. Nothing leaves the box.
 | **8600** | **console** — the whole pipeline in one page: prompt, watch it build, browse what exists | `python ui/app.py` |
 | 3246 | CAD viewer (STEP/STL/3MF) | [`ui/README.md`](ui/README.md) |
 | 8081 | joint viewer (Viser, one slider per joint) | `python -m cad_api.viewer <ir.json> --host 0.0.0.0` |
-| 8100 | vLLM — Qwen3-Coder-Next (NVFP4) | `setup/serve_coder_next.sh` |
-| 8101 | vLLM — Nemotron-3-Nano-Omni (vision reviewer) | `setup/serve_nemotron.sh` |
+| 8100 | vLLM — **Nemotron-3.5-Lightning** (NVFP4), the one global LLM | `setup/serve_llm.sh` |
+| 8101 | vLLM — Nemotron-3-Nano-Omni (optional vision reviewer) | `setup/serve_nemotron.sh` |
 | 8210 | CAD API | `cad-generation/api` |
 | 8220 | docs RAG | `rag/` — `PYTHONPATH=src uvicorn docsrag.server:app --port 8220` |
 | 8500 | PCB viewer UI | `pcb-ai/tools/serve-ui.ts` |
@@ -170,9 +208,14 @@ quantity is *bytes of weights read per token*.
 | Qwen3-Coder-Next | NVFP4, 3B of 80B active | ~2 GB | **30.2** |
 
 3.8 tok/s × 45 GB is 172 GB/s against the GB10's ~221 GB/s — about 78% of peak, so the
-dense model was not misconfigured, it was the wrong *shape*. Qwen3-Coder-Next is a
-**larger** model that is ~8× faster here, because sparsity and bandwidth-bound decode
-compound.
+dense model was not misconfigured, it was the wrong *shape*. A sparse NVFP4 model is
+**larger** yet ~8× faster here, because sparsity and bandwidth-bound decode compound.
+
+**Nemotron-3.5-Lightning is that shape, and is the one model the stack now serves.**
+Same sparse-NVFP4 class (30B total, ~3B active), so it decodes fast for the same
+bytes-per-token reason — with one endpoint (`:8100`) instead of a per-tier split. The
+measured rows above are the evidence that picked the shape; Lightning is the model of that
+shape actually wired in.
 
 **Footprint decides whether a model fits; bytes-per-token decides whether it is usable.**
 Only the second was ever the binding constraint, and it took two model choices to notice.
@@ -193,7 +236,7 @@ running agent turns against the local model**:
 
 ```
 $ nemoclaw my-assistant agent --agent main -m "Reply with exactly: PCB-STACK-OK"
-PCB-STACK-OK        model: qwen3-coder-next
+PCB-STACK-OK        model: nemotron-lightning
 ```
 
 No cloud key is involved. `onboard --non-interactive` hard-defaults to NVIDIA Endpoints and
@@ -207,5 +250,5 @@ dataset or eval subcommand exists in either CLI. It provides non-interactive age
 snapshots and a pluggable inference endpoint, which is what reproducible batches of design
 runs are built from. Two things it needed on this box are recorded in that directory: a
 port forwarder, because its `vllm-local` provider hardcodes port 8000; and
-`--enable-auto-tool-choice --tool-call-parser qwen3_coder` on vLLM, because agents always
-send `tools` and vLLM answers 400 to those without it.
+`--enable-auto-tool-choice --tool-call-parser hermes` on vLLM (the Nemotron family's tool
+format), because agents always send `tools` and vLLM answers 400 to those without it.

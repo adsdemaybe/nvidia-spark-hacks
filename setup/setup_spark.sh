@@ -20,7 +20,9 @@ WITH_MODEL=0
 
 STRUCT_HOME="${STRUCT_HOME:-$HOME/struct}"
 VENV="$STRUCT_HOME/.venv"
-HF_MODEL="poolside/Laguna-S-2.1-NVFP4"
+# The one model this stack serves: Nemotron-3.5-Lightning (NVFP4, ~21 GB). Downloaded
+# by setup/get_model.sh and served on one endpoint by setup/serve_llm.sh.
+HERE="$(cd "$(dirname "$0")" && pwd)"
 PASS=(); FAIL=(); WARN=()
 
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -135,12 +137,13 @@ if [[ ! -d "$STRUCT_HOME/dgx-spark-playbooks" ]]; then
     || warn "playbooks clone failed"
 else ok "playbooks present"; fi
 
-# ---------------------------------------------------------- Laguna model ----
+# ------------------------------------------------------ Nemotron model ------
+# One model, one endpoint. get_model.sh pulls only Nemotron-3.5-Lightning (~21 GB).
 if [[ $WITH_MODEL -eq 1 ]]; then
-  log "Downloading $HF_MODEL (~70 GB — this is the long pole)"
-  "$VENV/bin/hf" download "$HF_MODEL" && ok "Laguna weights cached" || bad "Laguna download"
+  log "Downloading Nemotron-3.5-Lightning (the one served model)"
+  bash "$HERE/get_model.sh" && ok "Nemotron-3.5-Lightning downloaded" || bad "model download"
 else
-  warn "Laguna weights NOT downloaded (re-run with --with-model; needs ~70 GB free)"
+  warn "model NOT downloaded (re-run with --with-model, or: setup/get_model.sh — needs ~21 GB free)"
 fi
 
 # ------------------------------------------------------------- SSH ----------
@@ -167,8 +170,7 @@ printf '   PASS %d: %s\n' "${#PASS[@]}" "${PASS[*]:-—}"
 printf '   WARN %d: %s\n' "${#WARN[@]}" "${WARN[*]:-—}"
 printf '   FAIL %d: %s\n' "${#FAIL[@]}" "${FAIL[*]:-—}"
 echo
-echo "Next: 1) teammates run setup_mac_cmux.sh on their Macs"
-echo "      2) ./serve_laguna.sh   (starts the local model for the agent fleet)"
-echo "      3) run the Isaac playbook in $STRUCT_HOME/dgx-spark-playbooks/nvidia/isaac"
-echo "      4) cd <repo>/realsim && bash spark/preflight.sh --group host"
+echo "Next: 1) setup/quickstart.sh   (model + LLM :8100 + runtime + console :8600 — the whole stack)"
+echo "      2) run the Isaac playbook in $STRUCT_HOME/dgx-spark-playbooks/nvidia/isaac"
+echo "      3) cd <repo>/realsim && bash spark/preflight.sh --group host"
 [[ ${#FAIL[@]} -eq 0 ]] || exit 1
