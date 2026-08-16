@@ -188,6 +188,68 @@ not PowerShell.
   through `.json()` and only explodes later, far from the cause. Check `response.ok`
   and the parsed shape before using it — `ShadowRobot.loadRealMeshes` crashed this way
   with "cannot convert undefined to object" deep in the render path.
+- **A 404 from `ar_backend` usually means a stale uvicorn, not a missing route.**
+  Without `--reload`, uvicorn serves whatever it imported at startup forever, so a route
+  added since then is absent and FastAPI answers `404 {"detail":"Not Found"}` — while
+  older routes on the same prefix still answer 200, which makes it look like a routing
+  or proxy bug. Check what the *live* process actually serves before reading any code:
+  `curl -s http://127.0.0.1:8000/openapi.json | grep -o "/spatial/episodes[^\"]*"`.
+  Why: the code on disk is correct, so every code-first hypothesis is a dead end. This
+  cost a full debugging session; `/export-human` 404'd while `create` and `artifact` 200'd.
+- **On Windows a second uvicorn can bind an already-used port instead of failing.**
+  Windows' default `SO_REUSEADDR` semantics let both sockets bind, and which one gets a
+  given connection is undefined — so a successful "Uvicorn running on ..." line does NOT
+  prove the old process is gone, and killing the new one silently hands traffic back to
+  the stale one. Confirm with `netstat -ano | grep :8000` and check the PID.
+- **`app.routes` does not contain flat routes in this FastAPI version** — it holds
+  `_IncludedRouter` wrappers, so `{r.path for r in app.routes}` finds nothing and any
+  route-existence check written that way passes vacuously. Read `/openapi.json` instead;
+  it is also what a client can actually see.
+- **A camera pointed at the user sees them mirrored, and the flip must reach positions,
+  not just labels.** `resolveHandSide` flips the handedness *label* for a mirrored
+  preview; `placeInControlVolume` and `worldLandmarksToStructJoints` must take the same
+  `mirrored` flag and always agree with each other.
+  Why: with image-x unflipped the camera→struct map is a **reflection** (negative
+  determinant), which renders a right hand as a left hand *and* inverts left/right
+  control. A reflection is correct on every axis taken one at a time, so no per-axis test
+  catches it — assert the sign of a scalar triple product (`webcamHand.test.ts`'s
+  chirality tests). Flipping one of the two functions without the other puts the fingers
+  on the wrong side of the wrist.
+- **MediaPipe world landmarks are camera-relative, so they rotate with the camera exactly
+  as the wrist anchor does.** The image→struct mapping has two consumers
+  (`placeInControlVolume` for the anchor, `worldLandmarksToStructJoints` for the finger
+  geometry); both now derive from `cameraBasis(tiltDeg, mirrored)`. Keep it that way —
+  a rotation cannot mirror, so deriving from one basis makes inside-out hands
+  unrepresentable rather than merely tested-against.
+- **A mirrored CSS preview does NOT mirror what MediaPipe sees.** `transform: scaleX(-1)`
+  on the `<video>` element changes presentation only; the landmarker reads the raw frame,
+  so its handedness label needs no correction (`LANDMARKER_INPUT_MIRRORED = false`).
+  Geometry is a separate question — a camera pointed at you really does see you mirrored,
+  so positions DO flip. Never drive both from one flag.
+  Why: while both were flipped the result looked self-consistent (a "left" label on the
+  left of the screen, in a world mirrored end to end) and every frame self-reported a
+  plausible handedness, so no unit test could catch it. Only real two-handed data showed
+  it: the right hand was on the +X side of the left in 0.0% of 1215 paired instants.
+- **Calibrate constants against a recorded episode, not against population averages.**
+  Query `arvr/datasets/human_demos.sqlite` directly. Doing this once found four wrong
+  constants at the same time — handedness, palm length (9.4cm vs an assumed 10), grip
+  thresholds (91% of frames saturated, so closure was effectively a boolean), and a mug
+  clamped 5cm inside the table.
+- **Hand POSITION is metric (the palm is the ruler); the control volume only clamps.**
+  `metresPerImageUnit` divides the real palm length by the apparent palm span — both in
+  normalized image units, so focal length cancels and no calibration is needed.
+  Why: interpolating image position across the control volume makes the frame width equal
+  the box width, while MediaPipe world landmarks arrive in true metres. Each hand then
+  renders full size with the GAP between two hands squashed by the box-to-FOV ratio —
+  hands 40cm apart landed ~18cm apart. Never size a control volume to set scale; size it
+  to the reachable workspace, and keep depth on its own fixed travel so widening the box
+  does not change depth sensitivity.
+- **Camera placement is a continuous tilt angle, not a mode.** A laptop lid cannot reach
+  90°; fully open it looks down ~30-50°, so presets for only 0° and 90° put vertical
+  motion on the wrong axis at every real lid angle.
+  Why: the demonstrator sees vertical control inverted AND the hand model tipped over,
+  which look like two bugs and are one. If someone reports either, check that the tilt
+  setting matches the physical camera before touching the mapping.
 - **Fixture GLBs are authored Z-up (struct_world); three.js renders Y-up.** Placing one
   with `placeAtStruct` alone leaves it lying on its side — it also needs
   `orientToStruct`. And check whether an asset's local origin is its centre or its base
