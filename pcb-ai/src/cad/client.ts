@@ -45,7 +45,13 @@ export class CadClient {
   private readonly fetchImpl: typeof fetch
 
   constructor(opts: CadClientOptions = {}) {
-    this.baseUrl = (opts.baseUrl ?? process.env.CAD_API_URL ?? "http://127.0.0.1:8200").replace(
+    // 8210, not 8200 — that was this constructor's own long-standing bug. Every other
+    // reference to the CAD API (ui/app.py, README.md, master-example.md, the CAD service
+    // itself) has always used 8210; this fallback silently pointed at a port nothing
+    // serves. Invisible as long as CAD_API_URL was set, which every prior test in this
+    // repo's history happened to do — the first bare `CadClient()` call surfaced it as
+    // `ECONNREFUSED 127.0.0.1:8200`.
+    this.baseUrl = (opts.baseUrl ?? process.env.CAD_API_URL ?? "http://127.0.0.1:8210").replace(
       /\/+$/,
       "",
     )
