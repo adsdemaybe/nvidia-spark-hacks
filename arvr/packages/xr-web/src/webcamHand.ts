@@ -42,6 +42,13 @@
  * reachable geometry (robot base at struct Y=-0.7, button at Y=0.0,Z=0.53)
  * rather than the spec's generic example numbers, which don't overlap it.
  *
+ * That paragraph describes the `frontal` placement, which is the default and
+ * the only one that existed at first. It is no longer the only one: which
+ * image axis drives which struct axis depends on where the camera physically
+ * is, so the assignment lives in `CameraPlacement` / `placeInControlVolume`
+ * rather than being hardcoded here. See `CameraPlacement` for why `overhead`
+ * is the better placement for recording a pickup.
+ *
  * Two-handed capture: the landmarker has always run with numHands: 2, but
  * for a while only one hand ever left this module, because the single-hand
  * teleop path (ArmRetargeter / LiveRetargetSession) drives one end-effector
@@ -120,10 +127,6 @@ export interface MediapipeHandResult {
 
 // ------------------------------------------------------------------ math --
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
 function clamp01(t: number): number {
   return Math.min(1, Math.max(0, t));
 }
@@ -179,6 +182,166 @@ function normalizeDepth(zRaw: number): number {
   return clamp01((zRaw - Z_FAR_RAW) / (Z_NEAR_RAW - Z_FAR_RAW));
 }
 
+// ------------------------------------------------------ camera placement --
+
+/**
+ * Where the camera physically is, which decides what each image axis means.
+ *
+ * This is the single most important knob for data quality, and it is not an
+ * algorithm: a forward-facing laptop webcam cannot see toward/away motion at
+ * all, so that axis has to be *inferred* from apparent hand size. Move the
+ * camera and the same axis becomes one the camera measures directly.
+ *
+ * - `frontal` -- the shipped default. Camera faces the demonstrator
+ *   horizontally. Image up/down is height; toward/away is inferred.
+ * - `overhead` -- the laptop lid tilted forward so the webcam looks down at
+ *   the desk. The image plane is now the desk plane, so image x AND image y
+ *   are both measured directly (left/right and toward/away); height is what
+ *   gets inferred instead.
+ *
+ * Overhead is the better trade for this task: reaching to the mug is
+ * measured on both axes it happens in, and the estimate is demoted to the
+ * lift, which is a large deliberate motion rather than a fine one.
+ */
+export type CameraPlacement = "frontal" | "tilted" | "overhead";
+
+/**
+ * The camera's image axes as unit vectors in struct_world.
+ *
+ * `tiltDeg` is how far the camera is tilted DOWN from horizontal: 0 means it
+ * looks straight at you, 90 means it looks straight down at the desk.
+ *
+ * This replaces two hand-written axis tables, and the reason is a bug rather
+ * than tidiness. The tables described 0 and 90 degrees, but a laptop lid
+ * cannot reach 90 -- fully open it looks down maybe 30-50 degrees. At that
+ * real angle both tables are wrong in the same way: "up" arrives partly as
+ * image-y and partly as apparent size, and a table that assigns it wholly to
+ * one of the two throws the other half away. The demonstrator sees vertical
+ * control inverted AND the hand model tipped over, which are the same error
+ * seen twice.
+ *
+ * Deriving the basis from one rotation fixes both at once and makes a third
+ * class of bug unrepresentable: a rotation cannot mirror, so the hand can no
+ * longer come out inside-out no matter what angle is chosen.
+ *
+ * `mirrored` is the user-facing-camera flip -- a camera pointed at you sees
+ * your right hand on its left. It is the same flag `resolveHandSide` uses.
+ */
+export interface CameraBasis {
+  /** struct direction of image +x (rightward across the frame). */
+  right: Vec3;
+  /** struct direction of image +y (downward through the frame). */
+  down: Vec3;
+  /** struct direction of increasing distance from the lens. */
+  away: Vec3;
+}
+
+export function cameraBasis(tiltDeg: number, mirrored: boolean): CameraBasis {
+  const t = (tiltDeg * Math.PI) / 180;
+  const sin = Math.sin(t);
+  const cos = Math.cos(t);
+  return {
+    // Tilting the lid rotates the camera about its own horizontal axis, so
+    // this one is independent of the angle.
+    right: mirrored ? [-1, 0, 0] : [1, 0, 0],
+    // Upright (t=0): down the image is down in the world. Flat (t=90): down
+    // the image is further across the desk, away from the demonstrator.
+    down: [0, sin, -cos],
+    // Upright: away from the lens is toward the demonstrator. Flat: away from
+    // the lens is down toward the tabletop.
+    away: [0, -cos, -sin],
+  };
+}
+
+/**
+ * An adult palm, wrist to middle-finger knuckle. The ruler.
+ *
+ * Already the reference behind `PALM_SPAN_NEAR`/`FAR`; named here because it
+ * is now load-bearing for position and not only for depth.
+ */
+export const PALM_LENGTH_M = 0.1;
+
+/** Webcams are 16:9 by default here (1280x720 is what `create` requests). */
+export const DEFAULT_IMAGE_ASPECT = 16 / 9;
+
+/**
+ * How far the hand travels along the camera's view axis across the full
+ * palm-span range, in metres.
+ *
+ * The one axis with no ruler: apparent hand size is already spent estimating
+ * it, so it cannot also calibrate it. 35cm is roughly the usable working depth
+ * for a desk task and matches the range `PALM_SPAN_NEAR`/`FAR` were derived
+ * for.
+ */
+export const DEPTH_TRAVEL_M = 0.35;
+
+/**
+ * Metres per normalized image unit, measured with the hand itself.
+ *
+ * This is what makes two hands land the real distance apart. Before it, the
+ * wrist anchor was interpolated across the control volume, so the full image
+ * width always became the box's width -- 32cm for the mug scene -- regardless
+ * of how much desk the camera could actually see. The finger geometry has
+ * always been MediaPipe's world landmarks, which are real metres. So every
+ * hand rendered full size while the GAP between two hands was squashed by
+ * whatever ratio the field of view had to the box: hands 40cm apart landed
+ * about 18cm apart, and the hands looked too big for the space between them.
+ *
+ * No camera calibration is needed, which is the nice part. Apparent palm span
+ * and image position are expressed in the same normalized units, so their
+ * ratio converts one to the other and the focal length cancels: a palm that
+ * spans a quarter of the frame means the frame is four palms wide. It also
+ * scales correctly with distance for free -- the same gap in pixels is a
+ * bigger gap in metres when the hands are further away, because the palm looks
+ * smaller at the same time.
+ *
+ * Null when there is no usable span, so callers fall back rather than divide
+ * by zero.
+ */
+export function metresPerImageUnit(
+  palmSpanImageUnits: number | null | undefined,
+  palmLengthM: number = PALM_LENGTH_M,
+): number | null {
+  if (palmSpanImageUnits === null || palmSpanImageUnits === undefined) return null;
+  if (!(palmSpanImageUnits > 1e-6)) return null;
+  return palmLengthM / palmSpanImageUnits;
+}
+
+/**
+ * The demonstrator's actual palm length, measured from their own hand.
+ *
+ * MediaPipe's world landmarks are already metric, so the ruler does not have
+ * to be assumed -- it can be read off the same frame it is used on. This
+ * matters: the recorded episode measured a 9.4cm palm against the 10cm adult
+ * average, so a fixed constant put every position 6% too far out, and it would
+ * be wrong by a different amount for the next person.
+ *
+ * Falls back to the population average when the landmarks are missing, which
+ * is the same relationship `normalizeDepth` has to `depthFromPalmSpan`: an
+ * approximate answer beats no anchor at all.
+ */
+export function worldPalmLengthM(
+  worldLandmarks: readonly MediapipeLandmark[] | undefined,
+): number | null {
+  const wrist = worldLandmarks?.[0];
+  const middleMcp = worldLandmarks?.[9];
+  if (!wrist || !middleMcp) return null;
+  const d = Math.hypot(
+    middleMcp.x - wrist.x, middleMcp.y - wrist.y, middleMcp.z - wrist.z,
+  );
+  // A plausible adult palm is 7-13cm. Outside that the landmarks are garbage
+  // and using them would scale the whole scene by the error.
+  return d >= 0.07 && d <= 0.13 ? d : null;
+}
+
+/** Preset tilts, so the UI offers positions people actually use rather than
+ * asking for an angle nobody can measure. */
+export const PLACEMENT_TILT_DEG: Record<CameraPlacement, number> = {
+  frontal: 0,
+  tilted: 45,
+  overhead: 90,
+};
+
 /**
  * Apparent palm length at the near and far ends of the usable range, in
  * normalized image units (the image is 0..1 across).
@@ -189,15 +352,43 @@ function normalizeDepth(zRaw: number): number {
  * scale that barely moves as the whole hand translates toward the camera.
  * Depth was the axis people could not control, and this is why.
  *
- * The reference numbers: an adult palm (wrist to middle-finger knuckle) is
- * about 10cm. A typical laptop camera has a horizontal field of view near
- * 60 degrees, so it sees ~35cm across at 30cm away and ~80cm across at 70cm.
- * A 10cm palm therefore spans ~0.29 of the image up close and ~0.12 at arm's
- * length. The bounds below sit just inside that, so the extremes of the
- * control volume are reachable without pressing your hand into the lens.
+ * These have to be per-placement, because the two placements do not put the
+ * hand at the same distances. An adult palm (wrist to middle-finger knuckle)
+ * is about 10cm, and a typical laptop camera's ~60 degree horizontal field of
+ * view sees `2 * d * tan(30deg)` across at distance `d` -- so the palm spans
+ * about `0.087 / d` of the image.
+ *
+ * - frontal: the hand works between roughly 30cm and 70cm from the lens, so
+ *   ~0.29 down to ~0.12. The bounds sit just inside that, so the extremes of
+ *   the control volume are reachable without pressing your hand into the lens.
+ * - overhead: the lens is ~50cm above the desk and the useful range is the
+ *   34cm the control volume is tall, putting the hand at ~20cm (fully lifted)
+ *   to ~54cm (resting on the table) -- about 0.43 down to 0.16. Reusing the
+ *   frontal numbers here would peg depth at "near" through the entire lift.
+ *
+ * The overhead pair assumes that ~50cm camera height, which varies per desk.
+ * `WebcamStatus.palmSpanImage` reports the live measured span for exactly
+ * this reason: hold your hand on the table, then at lift height, read the two
+ * numbers off the HUD, and retuning is an edit rather than a guess.
  */
-export const PALM_SPAN_NEAR = 0.27;
-export const PALM_SPAN_FAR = 0.11;
+export interface PlacementProfile {
+  readonly palmSpanNear: number;
+  readonly palmSpanFar: number;
+}
+
+export const CAMERA_PLACEMENTS: Record<CameraPlacement, PlacementProfile> = {
+  frontal: { palmSpanNear: 0.27, palmSpanFar: 0.11 },
+  // A fully-opened laptop lid: the camera looks down at the desk at an angle,
+  // which is as close to overhead as a laptop hinge actually gets. Distances
+  // sit between the two extremes, so the span bounds do too.
+  tilted: { palmSpanNear: 0.34, palmSpanFar: 0.13 },
+  overhead: { palmSpanNear: 0.43, palmSpanFar: 0.16 },
+};
+
+/** The frontal profile's numbers, kept as named exports because they were the
+ * module-level constants before placement existed. */
+export const PALM_SPAN_NEAR = CAMERA_PLACEMENTS.frontal.palmSpanNear;
+export const PALM_SPAN_FAR = CAMERA_PLACEMENTS.frontal.palmSpanFar;
 
 /**
  * Depth from apparent palm size: 0 = far from the camera, 1 = near.
@@ -207,9 +398,16 @@ export const PALM_SPAN_FAR = 0.11;
  * fingers curl -- and the fingers curl precisely when someone grabs
  * something, which is the exact moment a fingertip-based measure would report
  * a spurious lunge toward the camera.
+ *
+ * "Depth" here means distance from the lens, not a struct axis --
+ * `placeInControlVolume` is what decides which axis that becomes.
  */
-export function depthFromPalmSpan(spanImage: number): number {
-  return clamp01((spanImage - PALM_SPAN_FAR) / (PALM_SPAN_NEAR - PALM_SPAN_FAR));
+export function depthFromPalmSpan(
+  spanImage: number,
+  placement: CameraPlacement = "frontal",
+): number {
+  const { palmSpanNear, palmSpanFar } = CAMERA_PLACEMENTS[placement];
+  return clamp01((spanImage - palmSpanFar) / (palmSpanNear - palmSpanFar));
 }
 
 /** Normalized-image distance from the wrist (landmark 0) to the middle-finger
@@ -225,46 +423,162 @@ export function palmSpanImage(
   return Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
 }
 
+/**
+ * The axis table: which struct axis each image axis drives, per placement.
+ *
+ * Separated from `imageToControlSpace` so the axis assignment is one small
+ * pure thing that can be pinned per placement, independently of where `depth`
+ * came from. `depth` is distance-from-lens, 0 = far, 1 = near.
+ *
+ * `frontal` is the live-tuned shipped mapping and must stay byte-identical:
+ * every episode already recorded was produced by it.
+ *
+ * `overhead` follows from rotating the camera about its own horizontal axis:
+ * - image x is untouched by that rotation, so it still drives struct X.
+ * - the camera's up-vector rotates from world-up to pointing back at the
+ *   demonstrator, so the TOP of the frame is what is nearest them -- image y
+ *   drives struct Y, top = yMin.
+ * - what was "toward the lens" is now "up off the table", so apparent hand
+ *   size drives struct Z, near = high.
+ *
+ * That top-is-nearest sign is the one thing only a live camera can settle. If
+ * it feels inverted in use it is this lerp and nothing else -- swap yMin/yMax
+ * here and in `worldLandmarksToStructJoints`'s overhead branch together, since
+ * the finger geometry has to rotate with the anchor.
+ */
+export function placeInControlVolume(
+  xImage: number,
+  yImage: number,
+  depth: number,
+  bounds: ControlVolumeBounds,
+  tiltDeg: number,
+  mirrored: boolean = true,
+  metresPerUnit: number | null = null,
+  aspect: number = DEFAULT_IMAGE_ASPECT,
+): Vec3 {
+  const { right, down, away } = cameraBasis(tiltDeg, mirrored);
+
+  // Offsets from the centre of the frame, along the camera's own axes, then
+  // rotated into struct space. One rotation rather than three independent
+  // lerps is what lets a partial tilt work: image-y and apparent size each
+  // contribute to BOTH height and reach in the proportion the angle dictates,
+  // instead of one of them being discarded.
+  const cx = clamp01(xImage) - 0.5;
+  const cy = clamp01(yImage) - 0.5;
+  // depth 1 = nearest the lens, which is the -away direction.
+  const cd = -(clamp01(depth) - 0.5);
+
+  const centre: Vec3 = [
+    (bounds.xMin + bounds.xMax) / 2,
+    (bounds.yMin + bounds.yMax) / 2,
+    (bounds.zMin + bounds.zMax) / 2,
+  ];
+  const half: Vec3 = [
+    (bounds.xMax - bounds.xMin) / 2,
+    (bounds.yMax - bounds.yMin) / 2,
+    (bounds.zMax - bounds.zMin) / 2,
+  ];
+
+  // Lateral placement is METRIC when the hand can be used as a ruler, so the
+  // distance between two hands is their real distance. The control volume then
+  // acts only as a reach limit, which is what it should always have been -- as
+  // a scale factor it squashed every gap to the width of the box.
+  //
+  // MediaPipe normalizes x by image width but y by image HEIGHT, so one unit
+  // of y is a shorter real distance than one unit of x; without the aspect
+  // divide every vertical measurement comes out stretched by ~1.78.
+  const scaleRight = metresPerUnit ?? half[0]! * 2;
+  const scaleDown = metresPerUnit !== null ? metresPerUnit / aspect : half[2]! * 2;
+  // Depth has no ruler -- apparent size is already spent measuring it -- so it
+  // spans a fixed travel instead. Documented mixture, not an oversight.
+  //
+  // Fixed rather than derived from the volume on purpose: the box is a reach
+  // limit now, so widening it to stop clipping a two-handed reach must not
+  // also make the depth axis twice as sensitive.
+  const scaleAway = DEPTH_TRAVEL_M;
+
+  const out: Vec3 = [0, 0, 0];
+  for (let axis = 0; axis < 3; axis += 1) {
+    out[axis] =
+      centre[axis]! +
+      cx * scaleRight * right[axis]! +
+      cy * scaleDown * down[axis]! +
+      cd * scaleAway * away[axis]!;
+  }
+  // Clamped per axis: a rotated box does not fit an axis-aligned one, so the
+  // corners of the input range can otherwise land outside the reachable volume
+  // -- and a hand outside the volume is a hand that cannot touch the mug.
+  return [
+    Math.min(bounds.xMax, Math.max(bounds.xMin, out[0])),
+    Math.min(bounds.yMax, Math.max(bounds.yMin, out[1])),
+    Math.min(bounds.zMax, Math.max(bounds.zMin, out[2])),
+  ];
+}
+
 /** Spec section 15: image x/y (+ relative z) -> a control-space anchor.
- * Y-image is inverted so real upward hand motion moves the anchor up. */
+ * Resolves distance-from-lens, then hands the axis assignment to
+ * `placeInControlVolume`. */
 export function imageToControlSpace(
   xImage: number,
   yImage: number,
   zRaw: number,
   bounds: ControlVolumeBounds = DEFAULT_CONTROL_VOLUME,
   palmSpan?: number | null,
+  placement: CameraPlacement = "frontal",
+  mirrored: boolean = true,
+  palmLengthM: number = PALM_LENGTH_M,
 ): Vec3 {
-  const x = lerp(bounds.xMin, bounds.xMax, clamp01(xImage));
-  const z = lerp(bounds.zMin, bounds.zMax, clamp01(1 - yImage));
   // Apparent palm size when we have it, MediaPipe's landmark z only as a
   // fallback. The fallback exists so a partially-tracked hand still produces
   // a depth rather than none, not because the two are equally good.
   const depth =
     palmSpan !== undefined && palmSpan !== null
-      ? depthFromPalmSpan(palmSpan)
+      ? depthFromPalmSpan(palmSpan, placement)
       : normalizeDepth(zRaw);
-  // depth = 1 means the hand is NEAR the camera, and the person operating
-  // this is sitting at the camera. The scene puts the viewer on the -Y side,
-  // so moving your hand toward yourself has to DECREASE struct Y. Mapping
-  // near to yMax instead is what made the axis feel inverted: pulling your
-  // hand back pushed the object away from you.
-  const y = lerp(bounds.yMax, bounds.yMin, depth);
-  return [x, y, z];
+  return placeInControlVolume(
+    xImage, yImage, depth, bounds, PLACEMENT_TILT_DEG[placement], mirrored,
+    metresPerImageUnit(palmSpan, palmLengthM),
+  );
 }
 
 /** Translates MediaPipe's hand-centered *world* landmarks (real relative 3D
  * hand shape, roughly metric, NOT room-anchored) so the wrist lands exactly
  * on `wristAnchor`, giving every other joint a geometrically faithful
- * position around it. MediaPipe world landmarks: x right, y DOWN, z roughly
- * away-from-camera. struct_world here: x right (unchanged), z up (= -dy),
- * y depth (= -dz, a documented arbitrary-but-consistent sign choice -- see
- * module docstring). Only landmarks with a known joint name are emitted. */
+ * position around it. Only landmarks with a known joint name are emitted.
+ *
+ * MediaPipe world landmarks are CAMERA-relative -- x right, y DOWN, z roughly
+ * away-from-lens -- so they rotate with the camera exactly as the anchor does,
+ * and the two have to be changed together. Leaving this frontal while the
+ * anchor goes overhead is a uniquely nasty bug: the wrist tracks perfectly and
+ * the hand looks tracked, but the fingers point ninety degrees away from where
+ * they really are, so every grasp distance is silently wrong and every
+ * recorded joint position with it.
+ *
+ * - frontal: x right (unchanged), z up (= -dy), y depth (= -dz, a documented
+ *   arbitrary-but-consistent sign choice -- see module docstring).
+ * - overhead: x right (unchanged); image-down is now further from the
+ *   demonstrator, so y = +dy; further from the lens is now closer to the
+ *   table, so z = -dz. Both match what `placeInControlVolume` does with image
+ *   y and depth for the same placement, which is the property that keeps a
+ *   fingertip in the same world direction as the wrist motion that produced it.
+ */
 export function worldLandmarksToStructJoints(
   worldLandmarks: ReadonlyArray<MediapipeLandmark>,
   wristAnchor: Vec3,
+  tiltDeg: number = 0,
+  mirrored: boolean = true,
 ): Record<string, Vec3> {
   const wrist = worldLandmarks[0];
   if (!wrist) return {};
+  // The SAME basis the anchor uses. That is the whole point of sharing it:
+  // MediaPipe's world landmarks are camera-relative, so they rotate with the
+  // camera exactly as the anchor does, and deriving both from one rotation
+  // means the fingers cannot end up in a different orientation from the wrist
+  // motion that produced them.
+  //
+  // MediaPipe's world axes are (image right, image DOWN, away from lens),
+  // which is precisely `right`, `down`, `away`.
+  const { right, down, away } = cameraBasis(tiltDeg, mirrored);
   const joints: Record<string, Vec3> = {};
   for (let i = 0; i < MEDIAPIPE_LANDMARK_TO_JOINT.length; i += 1) {
     const landmark = worldLandmarks[i];
@@ -274,9 +588,9 @@ export function worldLandmarksToStructJoints(
     const dy = landmark.y - wrist.y;
     const dz = landmark.z - wrist.z;
     joints[name] = [
-      wristAnchor[0] + dx,
-      wristAnchor[1] - dz,
-      wristAnchor[2] - dy,
+      wristAnchor[0] + dx * right[0] + dy * down[0] + dz * away[0],
+      wristAnchor[1] + dx * right[1] + dy * down[1] + dz * away[1],
+      wristAnchor[2] + dx * right[2] + dy * down[2] + dz * away[2],
     ];
   }
   return joints;
@@ -415,11 +729,38 @@ function flipHand(side: "left" | "right"): "left" | "right" {
  */
 export function resolveHandSide(
   category: MediapipeHandednessCategory,
-  mirroredPreview: boolean,
+  inputMirrored: boolean,
 ): "left" | "right" {
   const rawSide: "left" | "right" = category.categoryName === "Left" ? "left" : "right";
-  return mirroredPreview ? flipHand(rawSide) : rawSide;
+  return inputMirrored ? flipHand(rawSide) : rawSide;
 }
+
+/**
+ * Whether the frame handed to the landmarker was mirrored before it got there.
+ *
+ * False, and this is measured rather than argued. Across 1215 instants where
+ * both hands were tracked in a real recording, the hand labelled "right" was
+ * on the +X side of the hand labelled "left" in 0.0% of them -- the labels
+ * were inverted in every frame.
+ *
+ * The cause was a conflation with `mirroredPreview`. That flag drives where a
+ * hand is PLACED, and it has to: a camera pointed at you sees you mirrored, so
+ * your right hand travels toward the image's left. But it was also driving
+ * what the hand is CALLED, and that is a different question -- the preview is
+ * mirrored by a CSS transform on the <video> element, and CSS does not touch
+ * the pixels MediaPipe reads. The landmarker always receives the raw frame, so
+ * its handedness needs no correction, and applying one inverted every label.
+ *
+ * Before the geometry was fixed both flips were wrong in the same direction,
+ * which made the result look self-consistent -- a "left" label on the left of
+ * the screen, in a world that was mirrored end to end. That is why no unit
+ * test caught it: every frame self-reported a plausible handedness, and only
+ * real two-handed data could show the two hands were on the wrong sides.
+ *
+ * If a future provider genuinely pre-flips its frames (some virtual-camera
+ * apps do), this is the one value to change.
+ */
+export const LANDMARKER_INPUT_MIRRORED = false;
 
 // ------------------------------------------------------------ conversion --
 
@@ -430,6 +771,9 @@ export interface SmoothingState {
 
 export interface MediapipeConversionOptions {
   controlVolume?: ControlVolumeBounds;
+  /** Where the camera is. Defaults to `frontal`, the shipped mapping, so
+   * every existing caller is unchanged by placement existing. */
+  placement?: CameraPlacement;
   /** MediaPipe's handedness classification assumes a non-mirrored input
    * frame; a laptop webcam's on-screen preview is typically shown mirrored
    * for natural selfie-view UX. Default true flips the label to match what
@@ -465,6 +809,8 @@ export function createHandPairSmoothingState(alpha: number): HandPairSmoothingSt
 
 export interface MediapipePairConversionOptions {
   controlVolume?: ControlVolumeBounds;
+  /** Same meaning and same default as the single-hand option. */
+  placement?: CameraPlacement;
   /** Same meaning and same default as the single-hand option -- see
    * `resolveHandSide`, which both paths share. */
   mirroredPreview?: boolean;
@@ -484,6 +830,7 @@ function convertHandAtIndex(
   bounds: ControlVolumeBounds,
   mirroredPreview: boolean,
   smoothing: SmoothingState | undefined,
+  placement: CameraPlacement,
 ): HandFrame | null {
   const imageLandmarks = result.landmarks[index];
   const worldLandmarks = result.worldLandmarks[index];
@@ -498,8 +845,15 @@ function convertHandAtIndex(
     wristImage.z,
     bounds,
     palmSpanImage(imageLandmarks),
+    placement,
+    mirroredPreview,
+    // Measured from THIS hand rather than assumed, so the scale is right for
+    // whoever is demonstrating.
+    worldPalmLengthM(worldLandmarks) ?? PALM_LENGTH_M,
   );
-  const positions = worldLandmarksToStructJoints(worldLandmarks, anchor);
+  const positions = worldLandmarksToStructJoints(
+    worldLandmarks, anchor, PLACEMENT_TILT_DEG[placement], mirroredPreview,
+  );
 
   const joints: Record<string, StructJoint> = {};
   for (const [name, rawPosition] of Object.entries(positions)) {
@@ -527,7 +881,7 @@ function convertHandAtIndex(
 
   const struct: StructHandFrame = {
     timestamp_ns: 0,
-    hand: resolveHandSide(handedCategory, mirroredPreview),
+    hand: resolveHandSide(handedCategory, LANDMARKER_INPUT_MIRRORED),
     joints,
   };
   return toHandFrame(struct);
@@ -552,6 +906,7 @@ export function mediapipeResultToHandFrame(
     options.controlVolume ?? DEFAULT_CONTROL_VOLUME,
     options.mirroredPreview ?? true,
     options.smoothing,
+    options.placement ?? "frontal",
   );
 }
 
@@ -575,6 +930,7 @@ export function mediapipeResultToHandPair(
 ): HandPair {
   const bounds = options.controlVolume ?? DEFAULT_CONTROL_VOLUME;
   const mirroredPreview = options.mirroredPreview ?? true;
+  const placement = options.placement ?? "frontal";
   const pair: HandPair = { left: null, right: null };
 
   for (let i = 0; i < result.handedness.length; i += 1) {
@@ -587,11 +943,11 @@ export function mediapipeResultToHandPair(
     // hands) be dropped without first running it through -- and polluting --
     // that side's smoothing history. First detection wins, matching
     // readBothHands.
-    const side = resolveHandSide(category, mirroredPreview);
+    const side = resolveHandSide(category, LANDMARKER_INPUT_MIRRORED);
     if (pair[side] !== null) continue;
 
     const smoothing = options.smoothing?.[side];
-    const hand = convertHandAtIndex(result, i, bounds, mirroredPreview, smoothing);
+    const hand = convertHandAtIndex(result, i, bounds, mirroredPreview, smoothing, placement);
     if (!hand) continue;
 
     // Bucket on the frame's own handedness, not on `side`. The two are equal
@@ -680,6 +1036,10 @@ export interface WebcamHandProviderOptions {
   presenceConfidence?: number;
   trackingConfidence?: number;
   controlVolume?: ControlVolumeBounds;
+  /** Where the camera physically sits -- see `CameraPlacement`. Defaults to
+   * `frontal`, so opening a camera without saying anything behaves exactly as
+   * it did before placement existed. */
+  placement?: CameraPlacement;
   mirroredPreview?: boolean;
   smoothingAlpha?: number;
   /** Consecutive missed-detection frames tolerated before emitting a `null`
@@ -705,6 +1065,20 @@ export interface WebcamStatus {
   resultFps: number;
   mode: "screen_control";
   depthQuality: "estimated";
+  /** Which placement the mapping is currently using. On the HUD because the
+   * two placements assign completely different meanings to the same image,
+   * and a mapping that silently disagrees with where the camera actually is
+   * looks exactly like tracking that "feels off". */
+  placement: CameraPlacement;
+  /** The live wrist-to-middle-knuckle span, in normalized image units, for
+   * the hand `handedness` names -- null when no hand is being reported.
+   *
+   * This is the raw input to `depthFromPalmSpan`, surfaced so the near/far
+   * calibration can be *measured*: rest your hand where the near end of the
+   * volume should be, read the number, repeat at the far end. Before this the
+   * constants could only be tuned by feel, and the estimated axis is precisely
+   * the one where feel is unreliable. */
+  palmSpanImage: number | null;
   /** Which hand the single-hand readouts below describe. Under `startPair`
    * both hands may be tracked at once and this names the one being reported
    * on -- right when it is present, otherwise left -- because this is a HUD
@@ -751,6 +1125,8 @@ export class WebcamHandProvider {
       resultFps: 0,
       mode: "screen_control",
       depthQuality: "estimated",
+      placement: options.placement ?? "frontal",
+      palmSpanImage: null,
       handedness: null,
       pinchActive: false,
       trackingLost: false,
@@ -835,7 +1211,10 @@ export class WebcamHandProvider {
         return;
       }
 
-      const conversionOptions: MediapipeConversionOptions = { smoothing: this.smoothingState };
+      const conversionOptions: MediapipeConversionOptions = {
+        smoothing: this.smoothingState,
+        placement: this.placement,
+      };
       if (this.options.controlVolume !== undefined) {
         conversionOptions.controlVolume = this.options.controlVolume;
       }
@@ -850,6 +1229,7 @@ export class WebcamHandProvider {
         this.status = {
           ...this.status,
           handedness: hand.handedness,
+          palmSpanImage: this.palmSpanForSide(result, hand.handedness),
           pinchActive: this.pinch.update(hand.pinchApertureM),
           trackingLost: false,
           resolutionWidth: this.video.videoWidth,
@@ -859,7 +1239,13 @@ export class WebcamHandProvider {
       } else {
         this.missCount += 1;
         if (this.missCount === lossThreshold) {
-          this.status = { ...this.status, handedness: null, pinchActive: false, trackingLost: true };
+          this.status = {
+            ...this.status,
+            handedness: null,
+            palmSpanImage: null,
+            pinchActive: false,
+            trackingLost: true,
+          };
           onFrame(null);
         }
         // Under threshold: skip the callback -- the caller naturally holds
@@ -895,6 +1281,7 @@ export class WebcamHandProvider {
 
       const conversionOptions: MediapipePairConversionOptions = {
         smoothing: this.pairSmoothingState,
+        placement: this.placement,
       };
       if (this.options.controlVolume !== undefined) {
         conversionOptions.controlVolume = this.options.controlVolume;
@@ -907,7 +1294,7 @@ export class WebcamHandProvider {
       this.recordResultTiming(nowMs);
       const hands = tracking.update(fresh);
       if (hands) {
-        this.status = { ...this.status, ...this.pairStatus(hands) };
+        this.status = { ...this.status, ...this.pairStatus(hands, result) };
         onFrame(hands);
       }
       // `hands === null` is the pair-shaped version of the single-hand path's
@@ -935,20 +1322,54 @@ export class WebcamHandProvider {
    * release its pinch. */
   private pairStatus(
     hands: HandPair,
+    result: MediapipeHandResult,
   ): Pick<
     WebcamStatus,
-    "handedness" | "pinchActive" | "trackingLost" | "resolutionWidth" | "resolutionHeight"
+    | "handedness"
+    | "palmSpanImage"
+    | "pinchActive"
+    | "trackingLost"
+    | "resolutionWidth"
+    | "resolutionHeight"
   > {
     const leftPinch = this.pairPinch.left.update(hands.left?.pinchApertureM ?? null);
     const rightPinch = this.pairPinch.right.update(hands.right?.pinchApertureM ?? null);
     const reported = hands.right ?? hands.left;
     return {
       handedness: reported?.handedness ?? null,
+      palmSpanImage: this.palmSpanForSide(result, reported?.handedness ?? null),
       pinchActive: hands.right ? rightPinch : hands.left ? leftPinch : false,
       trackingLost: hands.left === null && hands.right === null,
       resolutionWidth: this.video.videoWidth,
       resolutionHeight: this.video.videoHeight,
     };
+  }
+
+  private get placement(): CameraPlacement {
+    return this.options.placement ?? "frontal";
+  }
+
+  /** The measured palm span of whichever detection belongs to `side`.
+   *
+   * Resolved through `resolveHandSide`, the same single place every other
+   * two-handed decision is made, rather than by reading `categoryName` here --
+   * a mirrored preview would otherwise pair the HUD's number with the opposite
+   * hand from the one it is labelled with, which is exactly the sort of
+   * plausible-but-wrong readout that sends a calibration off in the wrong
+   * direction. Null when nothing is being reported, never a held stale value:
+   * a span from a hand that has left the frame reads as a real measurement. */
+  private palmSpanForSide(
+    result: MediapipeHandResult,
+    side: "left" | "right" | null,
+  ): number | null {
+    if (!side) return null;
+    for (let i = 0; i < result.handedness.length; i += 1) {
+      const category = result.handedness[i]?.[0];
+      if (!category) continue;
+      if (resolveHandSide(category, LANDMARKER_INPUT_MIRRORED) !== side) continue;
+      return palmSpanImage(result.landmarks[i]);
+    }
+    return null;
   }
 
   private recordResultTiming(nowMs: number): void {

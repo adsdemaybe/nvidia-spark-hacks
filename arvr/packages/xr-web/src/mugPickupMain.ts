@@ -25,7 +25,12 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GraspController } from "./grasp";
 import { GripLatch, graspClosure, pinchPoint, type HandPair } from "./hands";
 import { ShadowHands } from "./shadowHand";
-import { WebcamHandProvider } from "./webcamHand";
+import {
+  CAMERA_PLACEMENTS,
+  PLACEMENT_TILT_DEG,
+  WebcamHandProvider,
+  type CameraPlacement,
+} from "./webcamHand";
 import { MugPickupScene, buildMugSceneLighting } from "./mugPickupScene";
 import { MugPickupTask } from "./mugPickupTask";
 import {
@@ -64,6 +69,42 @@ const controlsEl = document.getElementById("controls")!;
 const statusEl = document.getElementById("status")!;
 const videoPanelEl = document.getElementById("video-panel")!;
 const cameraSelectEl = document.getElementById("camera-select") as HTMLSelectElement;
+const placementSelectEl = document.getElementById("placement-select") as HTMLSelectElement;
+
+/**
+ * How far the camera is tilted down, remembered across reloads.
+ *
+ * Defaults to `tilted` (45°), because that is what a laptop actually does. The
+ * previous default was `overhead`, which assumes the camera looks STRAIGHT
+ * down — an angle a laptop hinge cannot reach. At that mismatch the mapping
+ * puts vertical motion on the wrong axis, and the demonstrator sees vertical
+ * control inverted and the hand model tipped over at the same time.
+ *
+ * 90° is still offered, because a phone on a stand really can look straight
+ * down, and that is the best placement available for this task.
+ */
+const PLACEMENT_STORAGE_KEY = "struct-ar-mug-placement";
+
+function isPlacement(value: string | null): value is CameraPlacement {
+  return value === "frontal" || value === "tilted" || value === "overhead";
+}
+
+function loadPlacement(): CameraPlacement {
+  try {
+    const saved = localStorage.getItem(PLACEMENT_STORAGE_KEY);
+    if (isPlacement(saved)) return saved;
+  } catch {
+    // Storage can be unavailable (private windows, blocked cookies). The
+    // default is a working setting, so this is not worth failing the app over.
+  }
+  return "tilted";
+}
+
+function currentPlacement(): CameraPlacement {
+  return isPlacement(placementSelectEl.value) ? placementSelectEl.value : "tilted";
+}
+
+placementSelectEl.value = loadPlacement();
 
 // ---------------------------------------------------------------- renderer --
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -190,14 +231,20 @@ function renderReadout(): void {
 
   if (recording) lines.push("", `frames    ${framesRecorded}`);
   else if (exportPending) lines.push("", "saving…");
-  else if (exportError) lines.push("", "SAVE FAILED", exportError.slice(0, 120));
+  // Not truncated. The whole point of this line is to be actionable, and the
+  // useful part of an export failure (which URL, which status) is at the end
+  // of the message, which is exactly what a 120-character clip removed.
+  else if (exportError) lines.push("", "SAVE FAILED", exportError);
   else if (exportResult) {
     lines.push(
       "",
       "EPISODE SAVED",
-      `frames    ${exportResult.frames}`,
-      `dataset   ${exportResult.dataset_id ?? "—"}`,
+      `frames    ${exportResult.database_frames}`,
+      `database  ${exportResult.database_episodes} episode(s) in`,
+      `          ${exportResult.database_path}`,
+      `dataset   ${exportResult.dataset_id ?? "— (parquet skipped)"}`,
     );
+    if (exportResult.parquet_error) lines.push(`          ${exportResult.parquet_error}`);
   }
   if (episodesSaved > 0) lines.push("", `episodes this session: ${episodesSaved}`);
 
@@ -208,6 +255,7 @@ function renderReadout(): void {
   // as "nothing happens".
   if (tracking) {
     const status = provider?.getStatus();
+    const placement = status?.placement ?? currentPlacement();
     lines.push(
       "",
       `tracker   ${status ? `${status.resultFps.toFixed(0)} fps` : "starting…"}`,
@@ -221,7 +269,25 @@ function renderReadout(): void {
         `distance  ${(handToCanM * 100).toFixed(0)}cm  (grab under ${(MUG_GRASP_RADIUS_M * 100).toFixed(0)}cm)`,
       );
     }
-    lines.push("", "DEPTH  ESTIMATED (single camera)");
+
+    // The raw palm span, next to the two constants it is compared against.
+    //
+    // This is the only axis that is inferred rather than measured, and before
+    // this line the only way to tell whether its calibration suited your desk
+    // was by feel -- on the one axis where feel is least reliable. With it,
+    // retuning is a measurement: rest your hand where the low end of the range
+    // should be and read the number, then hold it at the high end and read it
+    // again. If the live span never approaches near/far, those are the two
+    // constants to change (CAMERA_PLACEMENTS in webcamHand.ts).
+    const profile = CAMERA_PLACEMENTS[placement];
+    const span = status?.palmSpanImage;
+    lines.push(
+      "",
+      `tilt      ${PLACEMENT_TILT_DEG[placement]}°  (${placement})`,
+      `palm span ${span != null ? span.toFixed(3) : "—"}` +
+        `  (near ${profile.palmSpanNear} / far ${profile.palmSpanFar})`,
+      "DEPTH  ESTIMATED (single camera)",
+    );
   }
 
   readoutEl.textContent = lines.join("\n");
@@ -276,13 +342,30 @@ async function refreshCameraList(): Promise<void> {
 
 void refreshCameraList();
 
-/** Switching camera mid-session restarts tracking on the new device. */
-cameraSelectEl.addEventListener("change", () => {
+/** Reopen the camera under whatever the pickers now say. The provider reads
+ * its device and its placement once, at construction, so changing either mid
+ * session means building a new one rather than mutating this one. */
+function restartTracking(): void {
   if (!tracking) return;
   provider?.stop();
   provider = undefined;
   tracking = false;
   void startCamera();
+}
+
+/** Switching camera mid-session restarts tracking on the new device. */
+cameraSelectEl.addEventListener("change", restartTracking);
+
+/** Moving the camera is a physical act, so changing placement takes effect
+ * immediately rather than waiting for a reload -- you tilt the lid and pick
+ * the matching placement in one motion, and the readout confirms it. */
+placementSelectEl.addEventListener("change", () => {
+  try {
+    localStorage.setItem(PLACEMENT_STORAGE_KEY, currentPlacement());
+  } catch {
+    // Not being able to remember the choice is not a reason to ignore it.
+  }
+  restartTracking();
 });
 
 async function startCamera(): Promise<void> {
@@ -290,6 +373,7 @@ async function startCamera(): Promise<void> {
     const deviceId = cameraSelectEl.value;
     provider = await WebcamHandProvider.create({
       controlVolume: MUG_CONTROL_VOLUME,
+      placement: currentPlacement(),
       ...(deviceId ? { cameraDeviceId: deviceId } : {}),
     });
     // Labels only become readable once permission exists, so re-list now

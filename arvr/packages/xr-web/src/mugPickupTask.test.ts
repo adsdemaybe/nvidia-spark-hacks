@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { MugPickupTask } from "./mugPickupTask";
 import {
   LIFT_THRESHOLD_Z_M,
@@ -260,5 +261,35 @@ describe("object states", () => {
     expect(states).toHaveLength(1);
     expect(states[0]!.id).toBe(MUG_ID);
     expect(states[0]!.position_m).toEqual(moved);
+  });
+});
+
+describe("the mug never sinks through the table", () => {
+  // Measured from a real recording: 5.4% of object samples sat below z=0, the
+  // worst 5cm inside the tabletop. The falling path already respected the
+  // surface; a HELD mug did not, so a hand dipping below the table plane
+  // dragged the mug through it.
+  it("clamps a held mug to the tabletop", () => {
+    const task = new MugPickupTask();
+    task.setHeld(true);
+    task.setMugPosition([MUG_START[0], MUG_START[1], -0.05]);
+    expect(task.mugPosition()[2]).toBeCloseTo(TABLE_Z_M, 9);
+  });
+
+  it("leaves a lifted mug alone", () => {
+    const task = new MugPickupTask();
+    task.setHeld(true);
+    task.setMugPosition([MUG_START[0], MUG_START[1], 0.12]);
+    expect(task.mugPosition()[2]).toBeCloseTo(0.12, 9);
+  });
+
+  it("still lets a mug carried off the table edge descend past it", () => {
+    // The clamp is to whatever the mug is resting ON, not to zero -- past the
+    // edge there is no tabletop to sit on.
+    const task = new MugPickupTask();
+    task.setHeld(true);
+    const offTable = TABLE_X_M[1] + 0.5;
+    task.setMugPosition([offTable, MUG_START[1], -0.30]);
+    expect(task.mugPosition()[2]).toBeLessThan(TABLE_Z_M);
   });
 });

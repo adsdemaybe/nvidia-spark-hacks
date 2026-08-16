@@ -84,8 +84,22 @@ export class MugPickupTask {
     return this.position[2];
   }
 
+  /**
+   * Move the mug, never below whatever it is resting on.
+   *
+   * The falling path has always respected the tabletop; a HELD mug did not,
+   * so a hand that dipped below the table plane dragged the mug through it.
+   * A real recording had 5.4% of object samples below z=0, worst case -5cm --
+   * a mug 5cm inside a solid table. That teaches a policy that pressing down
+   * through the surface is a legal move, which is worse than it looks: the
+   * table is the one constraint every grasp is defined against.
+   *
+   * `restingCentreZ` is reused rather than clamping to zero, so a mug carried
+   * off the edge of the table can still descend past it.
+   */
   setMugPosition(position: Vec3): void {
     this.position = [...position] as Vec3;
+    this.position[2] = Math.max(this.position[2], this.restingCentreZ());
     this.velocityZ = 0;
   }
 

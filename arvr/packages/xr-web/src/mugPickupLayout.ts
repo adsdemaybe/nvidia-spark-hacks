@@ -73,21 +73,31 @@ export const LIFT_THRESHOLD_Z_M = TABLE_Z_M + LIFT_CLEARANCE_M;
 export const MUG_PICKUP_TASK_ID = "pick_up_mug";
 
 /**
- * Where the webcam maps your hand to, in struct_world.
+ * The reachable workspace: where a tracked hand is allowed to be.
  *
- * The provider turns image position into a point inside this box: image
- * left/right sweeps struct X, image up/down sweeps struct Z, and apparent
- * hand size sweeps struct Y (depth). The box has to *contain the mug*, or
- * the hand can never reach it -- an earlier version inherited a box whose
- * floor sat above the object, and the hand tracked perfectly while being
- * unable to touch anything.
+ * This is a **reach limit, not a scale factor**, and the distinction is worth
+ * stating because it used to be both. The provider interpolated image position
+ * across this box, so the full width of the camera frame became exactly this
+ * many centimetres of struct X no matter how much desk the camera saw --
+ * while the finger geometry came through as real metres. Every hand rendered
+ * full size with the gap between two hands squashed to fit the box, so hands
+ * 40cm apart landed about 18cm apart. Position is metric now (`webcamHand.ts`
+ * uses the palm as a ruler) and this box only clamps.
  *
- * The floor is slightly below the tabletop so the mug's base is comfortably
- * inside, and the ceiling is high enough to lift well past the success
- * threshold.
+ * Which is why it is sized to the TABLE rather than to the mug: with metric
+ * placement a natural two-handed reach spans 40-50cm, and a box narrower than
+ * that clips the recording -- silently, and at exactly the moments the hands
+ * are furthest apart. Clamping distorts what the demonstrator did, and a
+ * `HumanEpisode` is supposed to be a record of that.
+ *
+ * It still has to *contain the mug*, or the hand can never reach it -- an
+ * earlier version inherited a box whose floor sat above the object, and the
+ * hand tracked perfectly while being unable to touch anything. The floor is
+ * slightly below the tabletop so the mug's base is comfortably inside, and the
+ * ceiling is high enough to lift well past the success threshold.
  */
 export const MUG_CONTROL_VOLUME = {
-  xMin: 0.10, xMax: 0.42,
-  yMin: -0.18, yMax: 0.18,
-  zMin: -0.01, zMax: 0.34,
+  xMin: TABLE_X_M[0] + 0.02, xMax: TABLE_X_M[1] - 0.02,
+  yMin: TABLE_Y_M[0] + 0.02, yMax: TABLE_Y_M[1] - 0.02,
+  zMin: -0.01, zMax: 0.40,
 };

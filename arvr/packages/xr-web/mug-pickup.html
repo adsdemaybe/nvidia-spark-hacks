@@ -39,7 +39,10 @@
       #title h1 { margin: 0 0 4px; font-size: 15px; letter-spacing: .06em; }
       #title p { margin: 0; color: var(--muted); max-width: 42ch; }
 
-      #controls { bottom: 92px; left: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+      /* Clears #camera-pick, which sits at bottom:20px. That panel holds two
+         label+select pairs now, not one, and the old 92px left the START
+         CAMERA button sitting on top of the camera dropdown. */
+      #controls { bottom: 152px; left: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
       #controls button { background: var(--panel); color: var(--ink);
         border: 1px solid var(--line); padding: 11px 20px; border-radius: 8px;
         cursor: pointer; font: inherit; font-weight: 700; letter-spacing: .04em; }
@@ -53,6 +56,7 @@
       #camera-pick select { background: var(--panel); color: var(--ink);
         border: 1px solid var(--line); padding: 8px 10px; border-radius: 6px;
         font: inherit; max-width: 320px; }
+      #camera-pick label:not(:first-child) { margin-top: 8px; }
 
       #video-panel { bottom: 20px; right: 16px; display: none; flex-direction: column;
         gap: 6px; align-items: flex-end; }
@@ -80,6 +84,16 @@
     <div class="hud" id="camera-pick">
       <label for="camera-select">Camera</label>
       <select id="camera-select"></select>
+      <!-- Where the camera physically is. This is not a preference: it decides
+           which struct axis each image axis drives, so a setting that
+           disagrees with the actual camera produces tracking that looks fine
+           and records the wrong geometry. -->
+      <label for="placement-select">Camera tilt</label>
+      <select id="placement-select">
+        <option value="tilted">45° — lid open, looking down at the desk</option>
+        <option value="frontal">0° — screen upright, facing you</option>
+        <option value="overhead">90° — straight down (phone on a stand)</option>
+      </select>
     </div>
 
     <div class="hud" id="controls"></div>

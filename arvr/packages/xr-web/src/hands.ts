@@ -292,14 +292,28 @@ export function graspClosure(hand: HandFrame): number {
 /**
  * Fingertip-to-wrist distances for an open hand and a closed fist.
  *
- * An adult hand runs about 18cm wrist to fingertip fully extended; curled
- * into a fist the tips sit roughly 7cm from the wrist. The range below is
- * deliberately narrower than that at the open end, because a hand *reaching*
- * for something is already slightly curled and should not have to be
- * splayed flat to read as open.
+ * Measured from a real 36-second two-handed recording (2488 frames), not
+ * assumed. The distribution of mean fingertip-to-wrist distance came out:
+ *
+ *   p1 6.1cm   p10 7.1   p25 9.6   p50 15.3   p75 17.6   p90 18.6   p99 19.6
+ *
+ * clearly bimodal -- a closed cluster near 6-7cm and an open cluster near
+ * 15-19cm, with little in between.
+ *
+ * The previous bounds (7.5cm / 13.5cm) sat INSIDE that range at both ends, so
+ * 21% of frames pinned at fully-closed and 70% at fully-open: 91% of the
+ * recording carried no gradient at all, and `graspClosure` was effectively a
+ * boolean. Widening to the measured extremes puts the whole real range inside
+ * the ramp, so the engage/release thresholds land in the sparse valley
+ * between the two clusters (about 12cm and 14cm) instead of on top of a
+ * cluster, where a few millimetres of tracking noise flips the grab.
+ *
+ * The open end is deliberately a little short of the p99 rather than beyond
+ * it: a hand *reaching* for something is already slightly curled and should
+ * not have to be splayed flat to read as open.
  */
-export const GRIP_OPEN_M = 0.135;
-export const GRIP_CLOSED_M = 0.075;
+export const GRIP_OPEN_M = 0.18;
+export const GRIP_CLOSED_M = 0.07;
 
 /** Grip closure at which a grab is made, and the looser value it must fall
  * back below to release. Lower and wider apart than the pinch thresholds:
