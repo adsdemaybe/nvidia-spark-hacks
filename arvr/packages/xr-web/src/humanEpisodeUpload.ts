@@ -23,17 +23,43 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   });
   if (!response.ok) {
     const detail = await response.text();
+    // A 404 on a route that exists in this repo almost always means the
+    // running backend is older than the client -- uvicorn without --reload
+    // keeps serving whatever it imported at startup, so a route added since
+    // then is simply absent and FastAPI answers `{"detail":"Not Found"}`.
+    // Said plainly here because the symptom ("export 404s") otherwise sends
+    // people looking for a bug in code that is correct on disk.
+    if (response.status === 404) {
+      throw new Error(
+        `${url} -> 404. This route exists in the repo, so the backend serving ` +
+          `:8000 is probably a stale process started before it was added. ` +
+          `Restart it: uv run --no-sync uvicorn ar_backend.app:app --port 8000 --reload`,
+      );
+    }
     throw new Error(`${url} -> ${response.status}: ${detail}`);
   }
   return response.json() as Promise<T>;
 }
 
 /** What the human-layer export returns. No verdict and no task_success:
- * nothing was retargeted or verified, so there is nothing to pass or fail. */
+ * nothing was retargeted or verified, so there is nothing to pass or fail.
+ *
+ * Field names mirror the server's `HumanExportResponse` exactly. They did not
+ * always: this said `frames` where the server sends `n_rows`, so the recorded
+ * frame count rendered as `undefined` on the HUD -- the one number that tells
+ * a demonstrator the take actually contained something. TypeScript cannot
+ * catch that, because the response is parsed from JSON and cast. */
 export interface HumanExportResult {
   episode_id: string;
+  /** The LeRobot parquet dataset. Null when pyarrow is unavailable -- the
+   * recording still exported to the shareable database below. */
   dataset_id: string | null;
-  frames: number;
+  n_rows: number | null;
+  parquet_error: string | null;
+  /** The committable SQLite copy, always written. */
+  database_path: string;
+  database_episodes: number;
+  database_frames: number;
 }
 
 /**

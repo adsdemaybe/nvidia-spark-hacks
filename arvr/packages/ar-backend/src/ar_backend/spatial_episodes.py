@@ -82,11 +82,21 @@ class ExportHumanRequest(BaseModel):
 
 class HumanExportResponse(BaseModel):
     episode_id: str
-    dataset_id: str
-    dataset_path: str
-    episode_path: str
-    n_rows: int
-    action_dim: int
+    # The LeRobot parquet export. Optional because it needs pyarrow, and the
+    # shareable SQLite copy below does not -- a machine without pyarrow should
+    # still be able to record and hand over demonstrations rather than losing
+    # the take entirely.
+    dataset_id: str | None = None
+    dataset_path: str | None = None
+    episode_path: str | None = None
+    n_rows: int | None = None
+    action_dim: int | None = None
+    parquet_error: str | None = None
+    # The committable copy. Always written, and written FIRST, because it is
+    # the one a collaborator receives by pulling the repo.
+    database_path: str
+    database_episodes: int
+    database_frames: int
 
 
 class HumanEpisodeStatusResponse(BaseModel):
@@ -97,7 +107,11 @@ class HumanEpisodeStatusResponse(BaseModel):
     rejection_reason: str | None = None
 
 
-def build_router(store: HumanEpisodeStore, dataset_root: Path) -> APIRouter:
+def build_router(
+    store: HumanEpisodeStore,
+    dataset_root: Path,
+    demo_db_path: Path | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/spatial/episodes", tags=["spatial-episodes"])
 
     @router.post("", response_model=CreateHumanEpisodeResponse)
@@ -205,15 +219,34 @@ def build_router(store: HumanEpisodeStore, dataset_root: Path) -> APIRouter:
         # sharing a directory would mean whichever exporter ran last decided
         # what the whole dataset claims to contain.
         dataset_dir = dataset_root / "human" / record.task_id
+        human_episode = _human_episode_from_record(record)
+
+        # The shareable copy goes first, on purpose. It is the artifact a
+        # collaborator gets by pulling the repo, it needs nothing but the
+        # standard library, and writing it before the parquet export means a
+        # missing pyarrow costs the LeRobot dataset but never the recording.
+        from ar_datapipe.sqlite_export import export_human_episode_sqlite
+
+        db_path = demo_db_path or (dataset_root.parent / "datasets" / "human_demos.sqlite")
+        try:
+            sqlite_result = export_human_episode_sqlite(db_path, human_episode)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+        parquet_error: str | None = None
+        result = None
         try:
             result = export_human_episode(
                 dataset_dir,
-                _human_episode_from_record(record),
+                human_episode,
                 episode_index=_next_episode_index(dataset_dir),
                 task=req.task if req else None,
             )
         except ImportError as exc:  # pyarrow missing -- the only hard dep left
-            raise HTTPException(503, f"dataset export unavailable: {exc}") from exc
+            # Degraded, not failed: the demonstration is already safely in the
+            # SQLite file, so turning this into a 503 would throw away a take
+            # the demonstrator cannot re-record.
+            parquet_error = f"dataset export unavailable: {exc}"
         except ValueError as exc:
             # Recordings this exporter refuses (no tracked joint anywhere,
             # duplicate frames for one hand at one instant, mixed coordinate
@@ -222,11 +255,15 @@ def build_router(store: HumanEpisodeStore, dataset_root: Path) -> APIRouter:
 
         response = HumanExportResponse(
             episode_id=episode_id,
-            dataset_id=result.dataset_id,
-            dataset_path=str(result.dataset_dir),
-            episode_path=str(result.episode_path),
-            n_rows=result.n_rows,
-            action_dim=result.action_dim,
+            dataset_id=result.dataset_id if result else None,
+            dataset_path=str(result.dataset_dir) if result else None,
+            episode_path=str(result.episode_path) if result else None,
+            n_rows=result.n_rows if result else None,
+            action_dim=result.action_dim if result else None,
+            parquet_error=parquet_error,
+            database_path=str(sqlite_result.database_path),
+            database_episodes=sqlite_result.n_episodes_in_database,
+            database_frames=sqlite_result.n_hand_frames,
         )
         record.human_export = response.model_dump()
         store.update(record)

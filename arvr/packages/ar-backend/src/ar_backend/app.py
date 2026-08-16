@@ -32,15 +32,22 @@ ARVR_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_SCENES_DIR = ARVR_ROOT / "fixtures" / "ar-xr"
 DEFAULT_DATASET_ROOT = ARVR_ROOT / "data" / "lerobot"
 
+# The shareable dataset. Deliberately NOT under `data/`, which .gitignore
+# excludes -- this is the copy that gets committed and pushed so a
+# collaborator can pull the recordings without re-recording them.
+DEFAULT_DEMO_DB_PATH = ARVR_ROOT / "datasets" / "human_demos.sqlite"
+
 
 def create_app(
     *,
     scenes_dir: Path | None = None,
     dataset_root: Path | None = None,
+    demo_db_path: Path | None = None,
     twin_hz: float = 30.0,
 ) -> FastAPI:
     scenes_dir = scenes_dir or DEFAULT_SCENES_DIR
     dataset_root = dataset_root or DEFAULT_DATASET_ROOT
+    demo_db_path = demo_db_path or DEFAULT_DEMO_DB_PATH
 
     app = FastAPI(title="struct-ar-api", version="0.1.0")
     # xr-web's dev server (vite --host) runs on a different origin
@@ -71,7 +78,9 @@ def create_app(
     # additive only, none of the routers above are touched.
     spatial_episode_store = HumanEpisodeStore()
     live_session_store = LiveSessionStore()
-    app.include_router(build_spatial_episodes_router(spatial_episode_store, dataset_root))
+    app.include_router(
+        build_spatial_episodes_router(spatial_episode_store, dataset_root, demo_db_path)
+    )
     app.include_router(build_spatial_live_router(live_session_store))
     app.include_router(build_robots_router())
     app.include_router(build_assets_router())
